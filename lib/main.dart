@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart';
+import 'screens/main/main_navigation_screen.dart';
 
 void main() {
   runApp(const SportNexusApp());
@@ -17,7 +17,7 @@ class SportNexusApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF139C4F)),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: const MainNavigationScreen(),
     );
   }
 }
