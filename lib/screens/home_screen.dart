@@ -37,7 +37,6 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: const MainDrawer(),
       body: Column(
         children: [
-          _buildTabs(),
           _buildFilters(),
           const Divider(height: 1, color: AppColors.divider),
           Expanded(
@@ -129,51 +128,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildTabs() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          _buildTabItem('Find sessions', true),
-          const SizedBox(width: 24),
-          _buildTabItem('Find venues', false),
-          const SizedBox(width: 24),
-          _buildTabItem('Find groups', false),
-          const SizedBox(width: 24),
-          _buildTabItem('Find tournaments', false),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabItem(String title, bool isSelected) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? AppColors.primaryGreen : AppColors.textSecondary,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        if (isSelected)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            height: 3,
-            width: 30,
-            decoration: BoxDecoration(
-              color: AppColors.primaryGreen,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          )
       ],
     );
   }
