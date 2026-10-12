@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import '../widgets/main_drawer.dart';
 import 'auth/login_screen.dart';
+import 'booking/court_booking_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -429,8 +430,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildSessionCard() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CourtBookingScreen()),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(12),
@@ -567,6 +575,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 

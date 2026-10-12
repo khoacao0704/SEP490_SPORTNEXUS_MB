@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/profile/top_up_wallet_screen.dart';
+import '../screens/booking/court_booking_screen.dart';
 
 class MainDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -61,6 +62,13 @@ class MainDrawer extends StatelessWidget {
                     icon: Icons.calendar_month_outlined,
                     title: 'Đặt Sân',
                     index: 1,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CourtBookingScreen()),
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
                   _buildDrawerItem(
