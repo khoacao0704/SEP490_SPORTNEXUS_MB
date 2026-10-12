@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import '../screens/auth/login_screen.dart';
+import '../screens/profile/top_up_wallet_screen.dart';
 
 class MainDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -88,6 +89,13 @@ class MainDrawer extends StatelessWidget {
                     icon: Icons.account_balance_wallet_outlined,
                     title: 'Nạp Ví Escrow',
                     index: 5,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TopUpWalletScreen()),
+                      );
+                    },
                   ),
                   const SizedBox(height: 32),
                   
@@ -174,6 +182,7 @@ class MainDrawer extends StatelessWidget {
     required IconData icon,
     required String title,
     required int index,
+    VoidCallback? onTapCustom,
   }) {
     final bool isSelected = selectedIndex == index;
 
@@ -211,9 +220,13 @@ class MainDrawer extends StatelessWidget {
                   )
                 : null,
             onTap: () {
-              Navigator.pop(context); // Close drawer
-              if (onItemSelected != null) {
-                onItemSelected!(index);
+              if (onTapCustom != null) {
+                onTapCustom();
+              } else {
+                Navigator.pop(context); // Close drawer
+                if (onItemSelected != null) {
+                  onItemSelected!(index);
+                }
               }
             },
           ),
