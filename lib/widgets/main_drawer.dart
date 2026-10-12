@@ -1,8 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
+import '../screens/auth/login_screen.dart';
 
 class MainDrawer extends StatelessWidget {
   const MainDrawer({super.key});
+
+  Future<void> _handleLogout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // Clear logged in state
+
+    if (!context.mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,32 +83,14 @@ class MainDrawer extends StatelessWidget {
                     isSelected: false,
                   ),
                   const SizedBox(height: 32),
-                  // Sign In Button
-                  OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.login),
-                    label: const Text('Sign In'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primaryGreen,
-                      side: const BorderSide(color: AppColors.cardBorder),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Sign Up Button
+                  
+                  // Log Out Button
                   ElevatedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.person_add_outlined),
-                    label: const Text('Sign up'),
+                    onPressed: () => _handleLogout(context),
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Log Out'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryGreen,
+                      backgroundColor: Colors.red.shade700,
                       foregroundColor: AppColors.white,
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -192,9 +189,7 @@ class MainDrawer extends StatelessWidget {
             fontSize: 16,
           ),
         ),
-        onTap: () {
-          // Handle navigation here
-        },
+        onTap: () {},
       ),
     );
   }
