@@ -1,9 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import '../widgets/main_drawer.dart';
+import 'auth/login_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  String? _userName;
+  bool _isLoggedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+      _userName = prefs.getString('user_name') ?? 'Khoa Cao';
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +58,7 @@ class HomeScreen extends StatelessWidget {
     return AppBar(
       backgroundColor: AppColors.background,
       elevation: 0,
-      titleSpacing: 16,
+      titleSpacing: 12,
       leading: Builder(
         builder: (context) {
           return IconButton(
@@ -59,20 +83,51 @@ class HomeScreen extends StatelessWidget {
           onPressed: () {},
         ),
         Padding(
-          padding: const EdgeInsets.only(right: 16.0, top: 10, bottom: 10),
-          child: OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.login, size: 18),
-            label: const Text('Sign In'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryGreen,
-              side: const BorderSide(color: AppColors.primaryGreen),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-            ),
-          ),
+          padding: const EdgeInsets.only(right: 16.0),
+          child: _isLoggedIn
+              ? Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: AppColors.primaryGreen,
+                      child: Text(
+                        (_userName != null && _userName!.isNotEmpty) ? _userName![0].toUpperCase() : 'U',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _userName ?? 'Khoa Cao',
+                      style: const TextStyle(
+                        color: AppColors.textMain,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                )
+              : OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.login, size: 18),
+                  label: const Text('Sign In'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primaryGreen,
+                    side: const BorderSide(color: AppColors.primaryGreen),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                ),
         ),
       ],
     );
@@ -245,15 +300,15 @@ class HomeScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   
                   // Host Info
-                  Row(
+                  const Row(
                     children: [
                       CircleAvatar(
                         radius: 10,
                         backgroundColor: AppColors.primaryGreen,
-                        child: const Text('C', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        child: Text('C', style: TextStyle(color: Colors.white, fontSize: 10)),
                       ),
-                      const SizedBox(width: 6),
-                      const Text('Chính Ngô', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      SizedBox(width: 6),
+                      Text('Chính Ngô', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     ],
                   ),
                   const SizedBox(height: 6),

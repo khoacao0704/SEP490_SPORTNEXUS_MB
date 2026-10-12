@@ -11,7 +11,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  int _selectedRoleIndex = 1; // 0: Court Owner, 1: Player
   bool _rememberMe = true;
   bool _isPasswordObscured = true;
 
@@ -19,12 +18,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
 
   Future<void> _handleLogin() async {
-    // Save login state in SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    if (_rememberMe) {
-      await prefs.setBool('is_logged_in', true);
-      await prefs.setString('user_role', _selectedRoleIndex == 0 ? 'Court Owner' : 'Player');
-    }
+    
+    // In real app, API response will determine user name and role
+    String input = _usernameController.text.trim();
+    String displayName = input.isNotEmpty ? input : 'Khoa Cao';
+
+    await prefs.setBool('is_logged_in', true);
+    await prefs.setString('user_name', displayName);
+    await prefs.setString('user_role', 'Player'); // BE auto-detects role
 
     if (!mounted) return;
 
@@ -105,35 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 20),
-
-                    // Role Switcher Toggle
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _buildRoleTab(
-                              title: 'Chủ Sân',
-                              icon: Icons.storefront_outlined,
-                              index: 0,
-                            ),
-                          ),
-                          Expanded(
-                            child: _buildRoleTab(
-                              title: 'Người Chơi',
-                              icon: Icons.directions_run_outlined,
-                              index: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
 
                     // Input 1: Email/Phone
                     Column(
@@ -151,6 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextField(
                           controller: _usernameController,
                           decoration: InputDecoration(
+                            hintText: 'Nhập email hoặc số điện thoại',
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -187,6 +162,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _passwordController,
                           obscureText: _isPasswordObscured,
                           decoration: InputDecoration(
+                            hintText: 'Nhập mật khẩu',
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -279,19 +255,19 @@ class _LoginScreenState extends State<LoginScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              _selectedRoleIndex == 0 ? 'ĐĂNG NHẬP CHỦ SÂN' : 'ĐĂNG NHẬP NGƯỜI CHƠI',
-                              style: const TextStyle(
-                                fontSize: 14,
+                              'ĐĂNG NHẬP',
+                              style: TextStyle(
+                                fontSize: 15,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.5,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            const Icon(Icons.arrow_forward, size: 18),
+                            SizedBox(width: 8),
+                            Icon(Icons.arrow_forward, size: 18),
                           ],
                         ),
                       ),
@@ -383,43 +359,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRoleTab({required String title, required IconData icon, required int index}) {
-    final bool isSelected = _selectedRoleIndex == index;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedRoleIndex = index;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF1D5238) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isSelected ? Colors.white : const Color(0xFF64748B),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : const Color(0xFF64748B),
-              ),
-            ),
-          ],
         ),
       ),
     );
