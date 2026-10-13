@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
-import '../home_screen.dart'; // Tab 1: Home
-// Placeholder for other tabs
-import '../community/community_screen.dart';
-import '../ai_chat/ai_chat_screen.dart';
-import '../booking/my_bookings_screen.dart';
-import '../profile/profile_screen.dart';
+import '../home_screen.dart'; // Tab 0: Home
+import '../community/community_screen.dart'; // Tab 1: LFG
+import '../ai_chat/ai_chat_screen.dart'; // Tab 2: AI Chat
+import '../booking/my_bookings_screen.dart'; // Tab 3: Bookings & QR
+import '../profile/profile_screen.dart'; // Tab 4: Profile
 
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  final int initialIndex;
+
+  const MainNavigationScreen({
+    super.key,
+    this.initialIndex = 0,
+  });
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
+  late int _currentIndex;
 
   final List<Widget> _pages = [
     const HomeScreen(),
@@ -24,6 +28,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     const MyBookingsScreen(),
     const ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,12 +69,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
               activeIcon: Icon(Icons.home),
-              label: 'Home',
+              label: 'Trang Chủ',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.people_outline),
               activeIcon: Icon(Icons.people),
-              label: 'Community',
+              label: 'Ghép Trận LFG',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.chat_bubble_outline),
@@ -74,12 +84,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.calendar_today_outlined),
               activeIcon: Icon(Icons.calendar_today),
-              label: 'Bookings',
+              label: 'Lịch Đặt & QR',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),
               activeIcon: Icon(Icons.person),
-              label: 'Profile',
+              label: 'Tài Khoản',
             ),
           ],
         ),

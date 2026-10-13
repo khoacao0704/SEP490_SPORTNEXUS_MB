@@ -4,6 +4,7 @@ import '../theme/app_colors.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/profile/top_up_wallet_screen.dart';
 import '../screens/booking/court_booking_screen.dart';
+import '../screens/main/main_navigation_screen.dart';
 
 class MainDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -50,13 +51,25 @@ class MainDrawer extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  
+                  // 1. Trang Chủ
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.home_outlined,
                     title: 'Trang Chủ',
                     index: 0,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 0)),
+                        (route) => false,
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
+
+                  // 2. Đặt Sân
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.calendar_month_outlined,
@@ -71,27 +84,60 @@ class MainDrawer extends StatelessWidget {
                     },
                   ),
                   const SizedBox(height: 8),
+
+                  // 3. Ghép Trận LFG
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.group_outlined,
                     title: 'Ghép Trận LFG',
                     index: 2,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 1)),
+                        (route) => false,
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
+
+                  // 4. Check-in QR
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.qr_code_scanner_outlined,
                     title: 'Check-in QR',
                     index: 3,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 3)),
+                        (route) => false,
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
+
+                  // 5. Giải Đấu
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.emoji_events_outlined,
                     title: 'Giải Đấu',
                     index: 4,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Tính năng Giải Đấu sắp ra mắt!'),
+                          backgroundColor: AppColors.primaryGreen,
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
+
+                  // 6. Nạp Ví Escrow
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.account_balance_wallet_outlined,
