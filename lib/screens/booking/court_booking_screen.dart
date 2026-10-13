@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import 'booking_checkout_screen.dart';
 
 class CourtBookingScreen extends StatefulWidget {
   const CourtBookingScreen({super.key});
@@ -870,10 +871,17 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
             Expanded(
               child: ElevatedButton(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Đã chọn ${selectedSlot['time']} tại ${_selectedCourtObj!['name']}.'),
-                      backgroundColor: AppColors.primaryGreen,
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => BookingCheckoutScreen(
+                        sport: _selectedSport ?? 'Badminton',
+                        courtName: _selectedCourtObj?['name'] ?? 'Sân Thiên Triều',
+                        location: '$_selectedCity, $_selectedWard',
+                        dateTime: 'Ngày ${_dates[_selectedDateIndex!].day}/${_dates[_selectedDateIndex!].month}, ${selectedSlot['time']}',
+                        totalAmount: price,
+                        initialSecondsRemaining: _secondsRemaining,
+                      ),
                     ),
                   );
                 },
