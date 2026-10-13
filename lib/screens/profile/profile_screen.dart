@@ -1,9 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/main_drawer.dart';
+import 'top_up_wallet_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  int _balance = 500000;
+  String _userName = 'Khoa Cao';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileData();
+  }
+
+  Future<void> _loadProfileData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _balance = prefs.getInt('wallet_balance') ?? 500000;
+      _userName = prefs.getString('user_name') ?? 'Khoa Cao';
+    });
+  }
+
+  String _formatCurrency(int amount) {
+    String str = amount.toString();
+    RegExp reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
+    return str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +52,7 @@ class ProfileScreen extends StatelessWidget {
             );
           }
         ),
-        title: const Text('Profile', style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold)),
+        title: const Text('Hồ Sơ Cá Nhân', style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold)),
       ),
       drawer: const MainDrawer(),
       body: SingleChildScrollView(
@@ -31,7 +61,7 @@ class ProfileScreen extends StatelessWidget {
           children: [
             _buildUserInfo(),
             const SizedBox(height: 24),
-            _buildWalletCard(),
+            _buildWalletCard(context),
           ],
         ),
       ),
@@ -41,22 +71,25 @@ class ProfileScreen extends StatelessWidget {
   Widget _buildUserInfo() {
     return Row(
       children: [
-        const CircleAvatar(
+        CircleAvatar(
           radius: 36,
           backgroundColor: AppColors.primaryGreen,
-          child: Text('K', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+          child: Text(
+            _userName.isNotEmpty ? _userName[0].toUpperCase() : 'K',
+            style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+          ),
         ),
         const SizedBox(width: 16),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Khoa Cao', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textMain)),
+            Text(_userName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textMain)),
             const SizedBox(height: 4),
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.star, color: Colors.amber, size: 16),
-                const SizedBox(width: 4),
-                const Text('Fair Play Score: 100', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                Icon(Icons.star, color: Colors.amber, size: 16),
+                SizedBox(width: 4),
+                Text('Fair Play Score: 100', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
               ],
             )
           ],
@@ -65,7 +98,7 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildWalletCard() {
+  Widget _buildWalletCard(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -90,20 +123,26 @@ class ProfileScreen extends StatelessWidget {
             children: [
               Icon(Icons.account_balance_wallet, color: Colors.white),
               SizedBox(width: 8),
-              Text('SportNexus Wallet', style: TextStyle(color: Colors.white, fontSize: 16)),
+              Text('SportNexus Escrow Wallet', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 16),
-          const Text('Available Balance', style: TextStyle(color: Colors.white70, fontSize: 14)),
-          const Text('500,000 ₫', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+          const Text('Số dư khả dụng', style: TextStyle(color: Colors.white70, fontSize: 14)),
+          Text('${_formatCurrency(_balance)} ₫', style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
           const SizedBox(height: 24),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () {},
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TopUpWalletScreen()),
+                    );
+                    _loadProfileData(); // Reload balance after coming back
+                  },
                   icon: const Icon(Icons.add, color: AppColors.primaryGreen),
-                  label: const Text('Top Up', style: TextStyle(color: AppColors.primaryGreen)),
+                  label: const Text('Nạp tiền', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -115,7 +154,7 @@ class ProfileScreen extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: () {},
                   icon: const Icon(Icons.arrow_upward, color: Colors.white),
-                  label: const Text('Withdraw', style: TextStyle(color: Colors.white)),
+                  label: const Text('Rút tiền', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.white),
                     padding: const EdgeInsets.symmetric(vertical: 12),

@@ -1,8 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
+import '../screens/auth/login_screen.dart';
+import '../screens/profile/top_up_wallet_screen.dart';
+import '../screens/booking/court_booking_screen.dart';
 
 class MainDrawer extends StatelessWidget {
-  const MainDrawer({super.key});
+  final int selectedIndex;
+  final Function(int)? onItemSelected;
+
+  const MainDrawer({
+    super.key,
+    this.selectedIndex = 0,
+    this.onItemSelected,
+  });
+
+  Future<void> _handleLogout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+
+    if (!context.mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,9 +41,9 @@ class MainDrawer extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
                 children: [
                   const Text(
-                    'EXPLORE',
+                    'MENU ĐIỀU HƯỚNG',
                     style: TextStyle(
-                      color: AppColors.textSecondary,
+                      color: Color(0xFF64748B),
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 1.2,
@@ -27,73 +51,69 @@ class MainDrawer extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _buildDrawerItem(
+                    context: context,
                     icon: Icons.home_outlined,
-                    title: 'Home',
-                    isSelected: false,
+                    title: 'Trang Chủ',
+                    index: 0,
                   ),
                   const SizedBox(height: 8),
                   _buildDrawerItem(
+                    context: context,
                     icon: Icons.calendar_month_outlined,
-                    title: 'Find sessions',
-                    isSelected: true,
+                    title: 'Đặt Sân',
+                    index: 1,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CourtBookingScreen()),
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
                   _buildDrawerItem(
-                    icon: Icons.location_on_outlined,
-                    title: 'Find venues',
-                    isSelected: false,
+                    context: context,
+                    icon: Icons.group_outlined,
+                    title: 'Ghép Trận LFG',
+                    index: 2,
                   ),
                   const SizedBox(height: 8),
                   _buildDrawerItem(
-                    icon: Icons.groups_outlined,
-                    title: 'Find groups',
-                    isSelected: false,
+                    context: context,
+                    icon: Icons.qr_code_scanner_outlined,
+                    title: 'Check-in QR',
+                    index: 3,
                   ),
                   const SizedBox(height: 8),
                   _buildDrawerItem(
+                    context: context,
                     icon: Icons.emoji_events_outlined,
-                    title: 'Find tournaments',
-                    isSelected: false,
+                    title: 'Giải Đấu',
+                    index: 4,
                   ),
                   const SizedBox(height: 8),
                   _buildDrawerItem(
-                    icon: Icons.school_outlined,
-                    title: 'Find classes',
-                    isSelected: false,
-                  ),
-                  const SizedBox(height: 8),
-                  _buildDrawerItem(
-                    icon: Icons.help_outline,
-                    title: 'Help',
-                    isSelected: false,
+                    context: context,
+                    icon: Icons.account_balance_wallet_outlined,
+                    title: 'Nạp Ví Escrow',
+                    index: 5,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TopUpWalletScreen()),
+                      );
+                    },
                   ),
                   const SizedBox(height: 32),
-                  // Sign In Button
-                  OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.login),
-                    label: const Text('Sign In'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primaryGreen,
-                      side: const BorderSide(color: AppColors.cardBorder),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      textStyle: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Sign Up Button
+                  
+                  // Log Out Button
                   ElevatedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.person_add_outlined),
-                    label: const Text('Sign up'),
+                    onPressed: () => _handleLogout(context),
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: const Text('Đăng Xuất'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryGreen,
+                      backgroundColor: Colors.red.shade700,
                       foregroundColor: AppColors.white,
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -101,7 +121,7 @@ class MainDrawer extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       textStyle: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -147,7 +167,7 @@ class MainDrawer extends StatelessWidget {
                   const Icon(Icons.language, size: 20, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   const Text(
-                    'EN',
+                    'VIE',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -166,36 +186,72 @@ class MainDrawer extends StatelessWidget {
   }
 
   Widget _buildDrawerItem({
+    required BuildContext context,
     required IconData icon,
     required String title,
-    required bool isSelected,
+    required int index,
+    VoidCallback? onTapCustom,
   }) {
-    return Container(
-      decoration: isSelected
-          ? BoxDecoration(
-              color: AppColors.lightGreen,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primaryGreen.withOpacity(0.3)),
-            )
-          : null,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-        leading: Icon(
-          icon,
-          color: isSelected ? AppColors.primaryGreen : AppColors.textMain,
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? AppColors.primaryGreen : AppColors.textMain,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+    final bool isSelected = selectedIndex == index;
+
+    return Stack(
+      alignment: Alignment.centerLeft,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF1D5238) : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+            leading: Icon(
+              icon,
+              color: isSelected ? Colors.white : const Color(0xFF334155),
+              size: 22,
+            ),
+            title: Text(
+              title,
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF334155),
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+            trailing: isSelected
+                ? Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF4ADE80), // Glowing light green dot
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                : null,
+            onTap: () {
+              if (onTapCustom != null) {
+                onTapCustom();
+              } else {
+                Navigator.pop(context); // Close drawer
+                if (onItemSelected != null) {
+                  onItemSelected!(index);
+                }
+              }
+            },
           ),
         ),
-        onTap: () {
-          // Handle navigation here
-        },
-      ),
+        if (isSelected)
+          Positioned(
+            left: 0,
+            child: Container(
+              width: 4,
+              height: 28,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4ADE80),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

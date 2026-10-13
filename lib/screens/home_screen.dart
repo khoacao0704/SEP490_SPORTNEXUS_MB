@@ -1,9 +1,182 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import '../widgets/main_drawer.dart';
+import 'auth/login_screen.dart';
+import 'booking/court_booking_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  String? _userName;
+  bool _isLoggedIn = false;
+
+  // Filter States
+  String _selectedLocation = 'Hồ Chí Minh';
+  String _selectedSport = 'All'; // 'All', 'Badminton', 'Pickleball', 'Football', 'Basketball', 'Tennis'
+  DateTime? _selectedDate;
+
+  // List of Vietnam 63 Provinces / Cities
+  final List<String> _vietnamProvinces = [
+    'Hồ Chí Minh', 'Hà Nội', 'Đà Nẵng', 'Hải Phòng', 'Cần Thơ',
+    'An Giang', 'Bà Rịa - Vũng Tàu', 'Bắc Giang', 'Bắc Kạn', 'Bạc Liêu',
+    'Bắc Ninh', 'Bến Tre', 'Bình Định', 'Bình Dương', 'Bình Phước',
+    'Bình Thuận', 'Cà Mau', 'Cao Bằng', 'Đắk Lắk', 'Đắk Nông',
+    'Điện Biên', 'Đồng Nai', 'Đồng Tháp', 'Gia Lai', 'Hà Giang',
+    'Hà Nam', 'Hà Tĩnh', 'Hải Dương', 'Hậu Giang', 'Hòa Bình',
+    'Hưng Yên', 'Khánh Hòa', 'Kiên Giang', 'Kon Tum', 'Lai Châu',
+    'Lâm Đồng', 'Lạng Sơn', 'Lào Cai', 'Long An', 'Nam Định',
+    'Nghệ An', 'Ninh Bình', 'Ninh Thuận', 'Phú Thọ', 'Phú Yên',
+    'Quảng Bình', 'Quảng Nam', 'Quảng Ngãi', 'Quảng Ninh', 'Quảng Trị',
+    'Sóc Trăng', 'Sơn La', 'Tây Ninh', 'Thái Bình', 'Thái Nguyên',
+    'Thanh Hóa', 'Thừa Thiên Huế', 'Tiền Giang', 'Trà Vinh', 'Tuyên Quang',
+    'Vĩnh Long', 'Vĩnh Phúc', 'Yên Bái'
+  ];
+
+  final List<Map<String, dynamic>> _sports = [
+    {'id': 'All', 'name': 'Tất cả', 'icon': Icons.sports},
+    {'id': 'Badminton', 'name': 'Cầu Lông', 'icon': Icons.sports_tennis},
+    {'id': 'Pickleball', 'name': 'Pickleball', 'icon': Icons.sports_kabaddi},
+    {'id': 'Football', 'name': 'Bóng Đá', 'icon': Icons.sports_soccer},
+    {'id': 'Basketball', 'name': 'Bóng Rổ', 'icon': Icons.sports_basketball},
+    {'id': 'Tennis', 'name': 'Tennis', 'icon': Icons.sports_baseball},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+      _userName = prefs.getString('user_name') ?? 'Khoa Cao';
+    });
+  }
+
+  void _showLocationPicker() {
+    String searchQuery = '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filteredList = _vietnamProvinces
+                .where((prov) => prov.toLowerCase().contains(searchQuery.toLowerCase()))
+                .toList();
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Chọn Tỉnh / Thành phố',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain),
+                  ),
+                  const SizedBox(height: 12),
+                  // Search Bar inside Bottom Sheet
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Tìm kiếm tỉnh thành...',
+                      prefixIcon: const Icon(Icons.search, color: AppColors.primaryGreen),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.cardBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.primaryGreen),
+                      ),
+                    ),
+                    onChanged: (value) {
+                      setModalState(() {
+                        searchQuery = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: filteredList.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.divider),
+                      itemBuilder: (context, index) {
+                        final city = filteredList[index];
+                        final isSelected = city == _selectedLocation;
+
+                        return ListTile(
+                          title: Text(
+                            city,
+                            style: TextStyle(
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSelected ? AppColors.primaryGreen : AppColors.textMain,
+                            ),
+                          ),
+                          trailing: isSelected ? const Icon(Icons.check_circle, color: AppColors.primaryGreen) : null,
+                          onTap: () {
+                            setState(() {
+                              _selectedLocation = city;
+                            });
+                            Navigator.pop(context);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showDatePicker() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 90)),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primaryGreen,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,8 +186,8 @@ class HomeScreen extends StatelessWidget {
       drawer: const MainDrawer(),
       body: Column(
         children: [
-          _buildTabs(),
-          _buildFilters(),
+          _buildFiltersBar(),
+          _buildSportsHorizontalBar(),
           const Divider(height: 1, color: AppColors.divider),
           Expanded(
             child: ListView.builder(
@@ -34,7 +207,7 @@ class HomeScreen extends StatelessWidget {
     return AppBar(
       backgroundColor: AppColors.background,
       elevation: 0,
-      titleSpacing: 16,
+      titleSpacing: 12,
       leading: Builder(
         builder: (context) {
           return IconButton(
@@ -59,130 +232,213 @@ class HomeScreen extends StatelessWidget {
           onPressed: () {},
         ),
         Padding(
-          padding: const EdgeInsets.only(right: 16.0, top: 10, bottom: 10),
-          child: OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.login, size: 18),
-            label: const Text('Sign In'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryGreen,
-              side: const BorderSide(color: AppColors.primaryGreen),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-            ),
-          ),
+          padding: const EdgeInsets.only(right: 16.0),
+          child: _isLoggedIn
+              ? Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: AppColors.primaryGreen,
+                      child: Text(
+                        (_userName != null && _userName!.isNotEmpty) ? _userName![0].toUpperCase() : 'U',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _userName ?? 'Khoa Cao',
+                      style: const TextStyle(
+                        color: AppColors.textMain,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                )
+              : OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.login, size: 18),
+                  label: const Text('Sign In'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primaryGreen,
+                    side: const BorderSide(color: AppColors.primaryGreen),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                ),
         ),
       ],
     );
   }
 
-  Widget _buildTabs() {
+  Widget _buildFiltersBar() {
+    String dateLabel = _selectedDate == null
+        ? 'Sớm nhất...'
+        : '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}';
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          _buildTabItem('Find sessions', true),
-          const SizedBox(width: 24),
-          _buildTabItem('Find venues', false),
-          const SizedBox(width: 24),
-          _buildTabItem('Find groups', false),
-          const SizedBox(width: 24),
-          _buildTabItem('Find tournaments', false),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabItem(String title, bool isSelected) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? AppColors.primaryGreen : AppColors.textSecondary,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
+          // Location Button
+          GestureDetector(
+            onTap: _showLocationPicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.cardBorder),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_on, size: 18, color: AppColors.primaryGreen),
+                  const SizedBox(width: 6),
+                  Text(
+                    _selectedLocation,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.keyboard_arrow_down, size: 18, color: AppColors.textSecondary),
+                ],
+              ),
+            ),
           ),
-        ),
-        if (isSelected)
+          const SizedBox(width: 8),
+
+          // Date Button
+          GestureDetector(
+            onTap: _showDatePicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.cardBorder),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.calendar_today, size: 16, color: AppColors.primaryGreen),
+                  const SizedBox(width: 6),
+                  Text(
+                    dateLabel,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.keyboard_arrow_down, size: 18, color: AppColors.textSecondary),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Magic Filter
           Container(
-            margin: const EdgeInsets.only(top: 4),
-            height: 3,
-            width: 30,
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppColors.primaryGreen,
-              borderRadius: BorderRadius.circular(2),
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.cardBorder),
             ),
-          )
-      ],
-    );
-  }
-
-  Widget _buildFilters() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          _buildFilterChip(Icons.location_on_outlined, 'Hồ Chí Minh'),
-          const SizedBox(width: 8),
-          _buildFilterChip(Icons.calendar_today_outlined, 'Soonest d...'),
-          const SizedBox(width: 8),
-          _buildIconButton(Icons.auto_awesome),
-          const SizedBox(width: 8),
-          _buildIconButton(Icons.tune),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.cardBorder),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: AppColors.primaryGreen),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontWeight: FontWeight.w500,
-            ),
+            child: const Icon(Icons.auto_awesome, size: 18, color: AppColors.textSecondary),
           ),
-          const SizedBox(width: 4),
-          const Icon(Icons.keyboard_arrow_down, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+
+          // Settings Filter
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.cardBorder),
+            ),
+            child: const Icon(Icons.tune, size: 18, color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildIconButton(IconData icon) {
+  Widget _buildSportsHorizontalBar() {
     return Container(
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.cardBorder),
+      height: 48,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _sports.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final sport = _sports[index];
+          final bool isSelected = _selectedSport == sport['id'];
+
+          return ChoiceChip(
+            showCheckmark: false,
+            avatar: Icon(
+              sport['icon'] as IconData,
+              size: 18,
+              color: isSelected ? Colors.white : AppColors.primaryGreen,
+            ),
+            label: Text(
+              sport['name'] as String,
+              style: TextStyle(
+                color: isSelected ? Colors.white : AppColors.textMain,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+            selected: isSelected,
+            selectedColor: AppColors.primaryGreen,
+            backgroundColor: AppColors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(
+                color: isSelected ? AppColors.primaryGreen : AppColors.cardBorder,
+              ),
+            ),
+            onSelected: (bool selected) {
+              setState(() {
+                _selectedSport = sport['id'] as String;
+              });
+            },
+          );
+        },
       ),
-      child: Icon(icon, size: 20, color: AppColors.textSecondary),
     );
   }
 
   Widget _buildSessionCard() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CourtBookingScreen()),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(12),
@@ -213,13 +469,13 @@ class HomeScreen extends StatelessWidget {
                       color: Colors.black.withOpacity(0.6),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Row(
+                    child: Row(
                       children: [
-                        Icon(Icons.sports_tennis, color: Colors.white, size: 12),
-                        SizedBox(width: 4),
+                        const Icon(Icons.sports_tennis, color: Colors.white, size: 12),
+                        const SizedBox(width: 4),
                         Text(
-                          'Badminton',
-                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          _selectedSport == 'All' ? 'Badminton' : _selectedSport,
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -236,47 +492,52 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Kèo sân Eco Quận 7',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  Text(
+                    'Kèo sân Eco - $_selectedLocation',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 8),
                   
                   // Host Info
-                  Row(
+                  const Row(
                     children: [
                       CircleAvatar(
                         radius: 10,
                         backgroundColor: AppColors.primaryGreen,
-                        child: const Text('C', style: TextStyle(color: Colors.white, fontSize: 10)),
+                        child: Text('C', style: TextStyle(color: Colors.white, fontSize: 10)),
                       ),
-                      const SizedBox(width: 6),
-                      const Text('Chính Ngô', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      SizedBox(width: 6),
+                      Text('Chính Ngô', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     ],
                   ),
                   const SizedBox(height: 6),
                   
                   // Time
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.access_time, size: 14, color: AppColors.tagOrangeText),
-                      SizedBox(width: 4),
-                      Text('Today, 14:00-16:00', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText)),
+                      const Icon(Icons.access_time, size: 14, color: AppColors.tagOrangeText),
+                      const SizedBox(width: 4),
+                      Text(
+                        _selectedDate == null
+                            ? 'Today, 14:00-16:00'
+                            : '${_selectedDate!.day}/${_selectedDate!.month}, 14:00-16:00',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   
                   // Location
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
-                      SizedBox(width: 4),
+                      const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
+                      const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          'Eco Quận 7 • Tân Thuận',
-                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                          'Sân vận động • $_selectedLocation',
+                          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -314,6 +575,7 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 
