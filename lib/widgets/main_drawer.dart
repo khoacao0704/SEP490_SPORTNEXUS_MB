@@ -3,7 +3,7 @@ import '../data/app_repositories.dart';
 import '../theme/app_colors.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/profile/top_up_wallet_screen.dart';
-import '../screens/booking/court_booking_screen.dart';
+import '../screens/facility/facility_search_screen.dart';
 import '../screens/main/main_navigation_screen.dart';
 
 class MainDrawer extends StatelessWidget {
@@ -78,7 +78,7 @@ class MainDrawer extends StatelessWidget {
                       Navigator.pop(context);
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const CourtBookingScreen()),
+                        MaterialPageRoute(builder: (_) => const FacilitySearchScreen()),
                       );
                     },
                   ),

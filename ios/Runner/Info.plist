@@ -6,6 +6,8 @@
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SportNexus dùng vị trí của bạn để tìm sân gần nhất và tính khoảng cách tới sân.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Test1</string>
 	<key>CFBundleExecutable</key>
