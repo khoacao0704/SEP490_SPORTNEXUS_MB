@@ -1,11 +1,21 @@
 import 'dart:async';
-import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+
 import '../../data/app_repositories.dart';
+import '../../core/constants/booking_rules.dart';
+import '../../core/constants/split_payment_rules.dart';
+import '../../core/strings/split_payment_strings.dart';
+import '../../data/repositories/booking_repository.dart';
+import '../../data/repositories/split_payment_repository.dart';
 import '../../data/repositories/wallet_repository.dart';
-import '../../models/wallet_transaction.dart';
+import '../../models/booking.dart';
+import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
+import '../main/main_navigation_screen.dart';
+import '../wallet/vietqr_payment_screen.dart';
+import 'split_payment_screen.dart';
 
 class BookingCheckoutScreen extends StatefulWidget {
   final String sport;
@@ -15,7 +25,11 @@ class BookingCheckoutScreen extends StatefulWidget {
   final int totalAmount;
   final int initialSecondsRemaining;
 
+  /// Chỗ đang giữ; có thì cho phép chia tiền nhóm (giữ tiếp khung giờ 30 phút).
+  final SlotHold? hold;
+
   const BookingCheckoutScreen({
+    this.hold,
     super.key,
     required this.sport,
     required this.courtName,
@@ -33,7 +47,29 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   late int _secondsRemaining;
   Timer? _timer;
 
-  int _paymentTypeIndex = 0; // 0: Full Payment (100%), 1: Partial Deposit (1/4)
+  int _paymentTypeIndex = 0; // 0: Full Payment (100%), 1: Partial Deposit (1/4), 2: Chia tiền nhóm
+  int _splitParts = SplitPaymentRules.allowedParts.last;
+
+  int get _payAmount {
+    switch (_paymentTypeIndex) {
+      case 0:
+        return widget.totalAmount;
+      case 1:
+        // Mỗi khung giờ là một lượt đặt riêng nên cọc 1/4 tính theo từng khung.
+        final hold = widget.hold;
+        return hold == null
+            ? BookingRules.depositAmount(widget.totalAmount)
+            : BookingRules.depositFor(hold.slots.map((s) => s.price));
+      default:
+        return SplitPaymentRules.bookerAmount(widget.totalAmount, _splitParts);
+    }
+  }
+
+  String get _payLabel => switch (_paymentTypeIndex) {
+    0 => 'Thanh toán 100% tiền sân',
+    1 => 'Ký quỹ 1 phần (1/4) tiền sân',
+    _ => SplitPaymentStrings.payNow(_splitParts),
+  };
   int _selectedPaymentMethod = 0; // 0: SportNexus Wallet, 1: VietQR
 
   int _walletBalance = 500000;
@@ -110,7 +146,10 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   }
 
   Future<void> _handleConfirmPayment() async {
-    int payAmount = _paymentTypeIndex == 0 ? widget.totalAmount : (widget.totalAmount / 4).round();
+    if (_paymentTypeIndex == 2) return _startSplit();
+    final hold = widget.hold;
+    if (hold == null) return;
+    final payAmount = _payAmount;
 
     if (_selectedPaymentMethod == 0 && _walletBalance < payAmount) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -122,50 +161,28 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
-
-    await Future.delayed(const Duration(seconds: 1)); // Process payment
-
-    if (_selectedPaymentMethod == 0) {
-      try {
-        await AppRepositories.wallet.pay(
-          amount: payAmount,
-          type: TransactionType.bookingPayment,
-          description: 'Đặt sân ${widget.courtName}',
-        );
-      } on WalletException catch (e) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
-        return;
-      }
+    setState(() => _isLoading = true);
+    final List<Booking> bookings;
+    try {
+      if (_selectedPaymentMethod == 1 && !await _payByVietQr(payAmount)) return;
+      bookings = await AppRepositories.booking.createBooking(
+        hold: hold,
+        paymentType: _paymentTypeIndex == 0 ? BookingPaymentType.full : BookingPaymentType.deposit,
+        facilityName: widget.courtName,
+        sportLabel: widget.sport,
+        location: widget.location,
+        schedule: widget.dateTime,
+      );
+    } on BookingException catch (e) {
+      _fail(e.message);
+      return;
+    } on WalletException catch (e) {
+      _fail(e.message);
+      return;
     }
-
-    // Save Booking Data for MyBookingsScreen
-    final prefs = await SharedPreferences.getInstance();
-    List<String> list = prefs.getStringList('my_bookings_data') ?? [];
-    Map<String, dynamic> newBooking = {
-      'id': 'SPN-BK-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-      'type': 'Booking',
-      'sport': widget.sport,
-      'courtName': widget.courtName,
-      'location': widget.location,
-      'dateTime': widget.dateTime,
-      'price': '${_formatCurrency(payAmount)} đ',
-      'paymentStatus': _paymentTypeIndex == 0 ? 'Đã thanh toán 100%' : 'Đã cọc 1/4',
-      'qrCode': 'SPN-BK-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}-KHOA',
-      'createdDate': '12/10/2026',
-    };
-    list.add(jsonEncode(newBooking));
-    await prefs.setStringList('my_bookings_data', list);
-
     if (!mounted) return;
-
-    setState(() {
-      _isLoading = false;
-    });
+    _timer?.cancel();
+    setState(() => _isLoading = false);
 
     // Success Dialog & QR Code Ticket
     showDialog(
@@ -178,10 +195,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: AppColors.lightGreen,
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(color: AppColors.lightGreen, shape: BoxShape.circle),
               child: const Icon(Icons.check_circle, color: AppColors.primaryGreen, size: 48),
             ),
             const SizedBox(height: 16),
@@ -197,33 +211,37 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Mock QR Code Box
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.cardBorder),
+            if (bookings.length == 1)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.cardBorder),
+                ),
+                child: Column(
+                  children: [
+                    QrImageView(data: bookings.single.ticketCode, size: 140, backgroundColor: Colors.white),
+                    const SizedBox(height: 4),
+                    Text(
+                      'MÃ CHECK-IN: ${bookings.single.ticketCode}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                    ),
+                  ],
+                ),
               ),
-              child: Column(
-                children: [
-                  const Icon(Icons.qr_code_2, size: 100, color: AppColors.textMain),
-                  const SizedBox(height: 4),
-                  Text(
-                    'MÃ CHECK-IN: SPN-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 20),
 
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  // Close dialog + checkout + booking flow screens, back to Home
-                  Navigator.popUntil(context, (route) => route.isFirst);
+                  // Đóng luồng đặt sân, mở tab "Lịch Đặt & QR" để xem vé và hủy nếu cần.
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 3)),
+                    (route) => false,
+                  );
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryGreen,
@@ -231,7 +249,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                child: const Text('Về Trang Chủ', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: const Text('Xem Lịch Đặt & QR', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -246,9 +264,69 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     super.dispose();
   }
 
+  /// Chia tiền nhóm: trả phần của mình (ví hoặc VietQR), giữ tiếp khung giờ 30 phút rồi sang màn chia tiền.
+  Future<void> _startSplit() async {
+    final hold = widget.hold!;
+    final amount = _payAmount;
+    if (_selectedPaymentMethod == 0 && _walletBalance < amount) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(SplitPaymentStrings.insufficient), backgroundColor: Colors.red));
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      if (_selectedPaymentMethod == 1 && !await _payByVietQr(amount)) return;
+      final split = await AppRepositories.split.create(
+        hold: hold,
+        parts: _splitParts,
+        facilityName: widget.courtName,
+        sportLabel: widget.sport,
+        location: widget.location,
+        schedule: widget.dateTime,
+      );
+      if (!mounted) return;
+      _timer?.cancel();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(SplitPaymentStrings.createdMessage), backgroundColor: AppColors.primaryGreen),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SplitPaymentScreen(splitId: split.id, initial: split),
+        ),
+      );
+    } on SplitPaymentException catch (e) {
+      _fail(e.message);
+    } on WalletException catch (e) {
+      _fail(e.message);
+    }
+  }
+
+  /// Chuyển khoản đúng số tiền vào ví qua VietQR (BE xác nhận) để trừ ví ở bước sau.
+  /// Trả về false nếu người dùng thoát / hết hạn (đã tắt trạng thái đang xử lý).
+  Future<bool> _payByVietQr(int amount) async {
+    final order = await AppRepositories.wallet.createTopUp(amount);
+    if (!mounted) return false;
+    final paid = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order)),
+    );
+    if (paid == true) return true;
+    if (mounted) setState(() => _isLoading = false);
+    _loadWalletBalance();
+    return false;
+  }
+
+  void _fail(String message) {
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    _loadWalletBalance();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
+  }
+
   @override
   Widget build(BuildContext context) {
-    int payAmount = _paymentTypeIndex == 0 ? widget.totalAmount : (widget.totalAmount / 4).round();
+    int payAmount = _payAmount;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -299,11 +377,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                   ),
                   Text(
                     _formatTimer(_secondsRemaining),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFD97706),
-                    ),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
                   ),
                 ],
               ),
@@ -325,10 +399,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.lightGreen,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        decoration: BoxDecoration(color: AppColors.lightGreen, borderRadius: BorderRadius.circular(8)),
                         child: const Icon(Icons.sports_tennis, color: AppColors.primaryGreen, size: 20),
                       ),
                       const SizedBox(width: 10),
@@ -338,7 +409,11 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                           children: [
                             Text(
                               widget.courtName,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textMain),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: AppColors.textMain,
+                              ),
                             ),
                             Text(
                               'Môn: ${widget.sport} • ${widget.location}',
@@ -352,7 +427,11 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                   const Divider(height: 24, color: AppColors.divider),
                   _buildSummaryRow(Icons.calendar_today_outlined, 'Ngày & Khung giờ', widget.dateTime),
                   const SizedBox(height: 10),
-                  _buildSummaryRow(Icons.payments_outlined, 'Tổng tiền sân gốc', '${_formatCurrency(widget.totalAmount)} đ'),
+                  _buildSummaryRow(
+                    Icons.payments_outlined,
+                    'Tổng tiền sân gốc',
+                    '${_formatCurrency(widget.totalAmount)} đ',
+                  ),
                 ],
               ),
             ),
@@ -371,7 +450,12 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                 children: [
                   const Text(
                     'CHỌN HÌNH THỨC THANH TOÁN',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B), letterSpacing: 0.5),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF64748B),
+                      letterSpacing: 0.5,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -391,9 +475,23 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                             ),
                             child: Column(
                               children: [
-                                const Text('Thanh toán 100%', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textMain)),
+                                const Text(
+                                  'Thanh toán 100%',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: AppColors.textMain,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
-                                Text('${_formatCurrency(widget.totalAmount)} đ', style: const TextStyle(fontSize: 11, color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
+                                Text(
+                                  '${_formatCurrency(widget.totalAmount)} đ',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.primaryGreen,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -415,9 +513,23 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                             ),
                             child: Column(
                               children: [
-                                const Text('Ký quỹ (1/4 tiền sân)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textMain)),
+                                const Text(
+                                  'Ký quỹ (1/4 tiền sân)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: AppColors.textMain,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
-                                Text('${_formatCurrency((widget.totalAmount / 4).round())} đ', style: const TextStyle(fontSize: 11, color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
+                                Text(
+                                  '${_formatCurrency((widget.totalAmount / 4).round())} đ',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.primaryGreen,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -425,6 +537,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                       ),
                     ],
                   ),
+                  if (widget.hold != null) ...[const SizedBox(height: 10), _buildSplitOption()],
                 ],
               ),
             ),
@@ -443,7 +556,12 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                 children: [
                   const Text(
                     'PHƯƠNG THỨC THANH TOÁN',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B), letterSpacing: 0.5),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF64748B),
+                      letterSpacing: 0.5,
+                    ),
                   ),
                   const SizedBox(height: 12),
 
@@ -481,8 +599,18 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Ví Escrow SportNexus', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textMain)),
-                                Text('Số dư: ${_formatCurrency(_walletBalance)} ₫', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                                const Text(
+                                  'Ví Escrow SportNexus',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: AppColors.textMain,
+                                  ),
+                                ),
+                                Text(
+                                  'Số dư: ${_formatCurrency(_walletBalance)} ₫',
+                                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                ),
                               ],
                             ),
                           ),
@@ -526,8 +654,18 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Quét mã VietQR / Napas 24/7', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textMain)),
-                                Text('Tự động xác nhận giao dịch', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                                Text(
+                                  'Quét mã VietQR / Napas 24/7',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: AppColors.textMain,
+                                  ),
+                                ),
+                                Text(
+                                  'Tự động xác nhận giao dịch',
+                                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                ),
                               ],
                             ),
                           ),
@@ -548,13 +686,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
         padding: const EdgeInsets.all(16),
         decoration: const BoxDecoration(
           color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 10,
-              offset: Offset(0, -3),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -3))],
         ),
         child: SafeArea(
           child: Column(
@@ -577,22 +709,14 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                         ),
                       ),
                       Text(
-                        _paymentTypeIndex == 0 ? 'Thanh toán 100% tiền sân' : 'Ký quỹ 1 phần (1/4) tiền sân',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF15803D),
-                        ),
+                        _payLabel,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
                       ),
                     ],
                   ),
                   Text(
                     '${_formatCurrency(payAmount)} đ',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF15803D),
-                    ),
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
                   ),
                 ],
               ),
@@ -639,6 +763,86 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSplitOption() {
+    final selected = _paymentTypeIndex == 2;
+    return GestureDetector(
+      onTap: () => setState(() => _paymentTypeIndex = 2),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFE8F5E9) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? AppColors.primaryGreen : AppColors.cardBorder,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.groups_outlined, size: 20, color: AppColors.primaryGreen),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    SplitPaymentStrings.option,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textMain),
+                  ),
+                ),
+                if (selected)
+                  Text(
+                    '${_formatCurrency(_payAmount)} đ',
+                    style: const TextStyle(fontSize: 11, color: AppColors.primaryGreen, fontWeight: FontWeight.bold),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(SplitPaymentStrings.optionHint, style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+            if (selected) ...[
+              const SizedBox(height: 10),
+              const Text(
+                SplitPaymentStrings.partsTitle,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMain),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final parts in SplitPaymentRules.allowedParts)
+                    ChoiceChip(
+                      label: Text(SplitPaymentStrings.partsLabel(parts)),
+                      selected: parts == _splitParts,
+                      showCheckmark: false,
+                      onSelected: (_) => setState(() => _splitParts = parts),
+                      selectedColor: AppColors.primaryGreen,
+                      backgroundColor: AppColors.white,
+                      labelStyle: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: parts == _splitParts ? Colors.white : AppColors.textMain,
+                      ),
+                      side: BorderSide(color: parts == _splitParts ? AppColors.primaryGreen : AppColors.cardBorder),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                SplitPaymentStrings.explain(
+                  _splitParts,
+                  _payAmount,
+                  SplitPaymentRules.shareAmount(widget.totalAmount, _splitParts),
+                ),
+                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
+              ),
+            ],
+          ],
         ),
       ),
     );

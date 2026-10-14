@@ -4,6 +4,7 @@ import 'package:test1/core/utils/formatters.dart';
 import 'package:test1/data/mock/mock_facility_data.dart';
 import 'package:test1/data/mock/mock_facility_repository.dart';
 import 'package:test1/data/repositories/facility_repository.dart';
+import 'package:test1/models/court_type.dart';
 import 'package:test1/models/facility.dart';
 import 'package:test1/models/facility_search.dart';
 import 'package:test1/models/geo_point.dart';
@@ -114,6 +115,22 @@ void main() {
       final b = await MockFacilityRepository(latency: Duration.zero, now: () => clock)
           .getTimeSlots('f-hcm-hoalu', Sport.football, tomorrow);
       expect(a.map((s) => s.availableCourts), b.map((s) => s.availableCourts));
+    });
+
+    test('loại sân: mỗi loại có số sân và giá riêng; bỏ trống thì lấy loại rẻ nhất', () async {
+      final hoalu = MockFacilityData.facilities.firstWhere((f) => f.id == 'f-hcm-hoalu');
+      expect(hoalu.sports.where((s) => s == Sport.football), hasLength(1));
+      expect(hoalu.offeringsFor(Sport.football).map((o) => o.courtType),
+          [CourtType.football5, CourtType.football7, CourtType.football11]);
+
+      final five = await repo.getTimeSlots('f-hcm-hoalu', Sport.football, tomorrow);
+      final seven = await repo.getTimeSlots('f-hcm-hoalu', Sport.football, tomorrow, courtType: CourtType.football7);
+      expect(five.every((s) => s.courtType == CourtType.football5 && s.totalCourts == 3), isTrue);
+      expect(seven.every((s) => s.courtType == CourtType.football7 && s.totalCourts == 2), isTrue);
+      expect(seven.first.price, greaterThan(five.first.price));
+      expect(seven.first.id, isNot(five.first.id));
+
+      expect(await repo.getTimeSlots('f-hcm-govap', Sport.football, tomorrow, courtType: CourtType.football7), isEmpty);
     });
 
     test('môn cơ sở không có thì trả về rỗng', () async {

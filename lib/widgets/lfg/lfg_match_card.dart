@@ -10,14 +10,17 @@ String lfgStatusLabel(LfgMatch match, DateTime now) {
   switch (match.status(now)) {
     case LfgStatus.open:
       return LfgStrings.statusOpen;
-    case LfgStatus.full:
-      return LfgStrings.statusFull;
     case LfgStatus.confirmed:
       return LfgStrings.statusConfirmed;
     case LfgStatus.cancelled:
-      return match.cancelReason == LfgCancelReason.hostCancelled
-          ? LfgStrings.statusCancelledByHost
-          : LfgStrings.statusCancelledNotEnough;
+      switch (match.cancelReason!) {
+        case LfgCancelReason.notEnoughPlayers:
+          return LfgStrings.statusCancelledNotEnough;
+        case LfgCancelReason.mutualAgreement:
+          return LfgStrings.statusCancelledMutual;
+        case LfgCancelReason.everyoneLeft:
+          return LfgStrings.statusCancelledEveryoneLeft;
+      }
     case LfgStatus.completed:
       return LfgStrings.statusCompleted;
   }
@@ -27,7 +30,6 @@ String lfgStatusLabel(LfgMatch match, DateTime now) {
   switch (status) {
     case LfgStatus.open:
       return (bg: AppColors.tagOrangeBg, fg: AppColors.tagOrangeText);
-    case LfgStatus.full:
     case LfgStatus.confirmed:
       return (bg: AppColors.tagGreenBg, fg: AppColors.tagGreenText);
     case LfgStatus.cancelled:
@@ -188,7 +190,7 @@ class LfgMatchCard extends StatelessWidget {
                 ),
                 const Divider(height: 20, color: AppColors.divider),
                 Text(
-                  match.format.label,
+                  match.formatLabel,
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textMain),
                 ),
                 const SizedBox(height: 6),
@@ -252,6 +254,21 @@ class LfgMatchCard extends StatelessWidget {
                 if ((isMine || joined) && status != LfgStatus.open) ...[
                   const SizedBox(height: 8),
                   LfgStatusChip(match: match, now: now),
+                ],
+                if ((isMine || joined) && match.activeCancelRequest(now) != null) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.how_to_vote_outlined, size: 16, color: AppColors.tagOrangeText),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          LfgStrings.cancelRequestBy(match.cancelRequest!.requestedByName),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ],
             ),

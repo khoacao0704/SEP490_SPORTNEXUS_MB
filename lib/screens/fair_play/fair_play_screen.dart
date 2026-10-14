@@ -96,18 +96,59 @@ class _FairPlayScreenState extends State<FairPlayScreen> {
     return _card(
       title: ReviewStrings.howItWorks,
       child: Column(
-        children: ReviewStrings.rules
-            .map((r) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('•  ', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
-                      Expanded(child: Text(r, style: const TextStyle(fontSize: 13, height: 1.4))),
-                    ],
+        children: [
+          for (var i = 0; i < ReviewStrings.rules.length; i++) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('•  ', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
+                  Expanded(child: Text(ReviewStrings.rules[i], style: const TextStyle(fontSize: 13, height: 1.4))),
+                ],
+              ),
+            ),
+            if (i == ReviewStrings.reviewTableAfterRule) _buildReviewTable(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewTable() {
+    return Container(
+      margin: const EdgeInsets.only(left: 18, bottom: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.cardBorder),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < ReviewStrings.reviewTable.length; i++)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                border: i == 0 ? null : const Border(top: BorderSide(color: AppColors.divider)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(child: Text(ReviewStrings.reviewTable[i].$1, style: const TextStyle(fontSize: 13))),
+                  Text(
+                    ReviewStrings.reviewTable[i].$2,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: ReviewStrings.reviewTable[i].$2.startsWith('+')
+                          ? AppColors.primaryGreen
+                          : ReviewStrings.reviewTable[i].$2 == '0'
+                              ? AppColors.textSecondary
+                              : Colors.red,
+                    ),
                   ),
-                ))
-            .toList(),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

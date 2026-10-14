@@ -4,10 +4,12 @@ import '../../core/utils/formatters.dart';
 import '../../core/utils/geo_utils.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/facility_repository.dart';
+import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/sport.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/facility/court_type_selector.dart';
 import '../../widgets/facility/facility_card.dart';
 import '../../widgets/facility/facility_map.dart';
 import '../../widgets/facility/slot_picker.dart';
@@ -29,6 +31,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
   static const int _bookableDays = 7;
 
   late Sport _sport;
+  late CourtType _courtType;
   late final List<DateTime> _dates;
   late DateTime _date;
 
@@ -57,6 +60,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
     super.initState();
     final initial = widget.initialSport;
     _sport = initial != null && _facility.offeringFor(initial) != null ? initial : _facility.sports.first;
+    _courtType = _facility.offeringFor(_sport)!.courtType;
 
     final today = DateTime(_now.year, _now.month, _now.day);
     _dates = List.generate(_bookableDays, (i) => today.add(Duration(days: i)));
@@ -71,7 +75,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
       _slotsError = null;
     });
     try {
-      final slots = await AppRepositories.facility.getTimeSlots(_facility.id, _sport, _date);
+      final slots = await AppRepositories.facility.getTimeSlots(_facility.id, _sport, _date, courtType: _courtType);
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _slots = slots;
@@ -123,12 +127,13 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => BookingCheckoutScreen(
-          sport: _sport.label,
+          sport: _courtType.isStandard ? _sport.label : '${_sport.label} • ${_courtType.label}',
           courtName: _facility.name,
           location: '${_facility.district}, ${_facility.city}',
           dateTime: describeSlotSchedule(hold.slots),
           totalAmount: hold.totalPrice,
           initialSecondsRemaining: hold.secondsRemaining(DateTime.now()),
+          hold: hold,
         ),
       ),
     );
@@ -328,17 +333,19 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _facility.offerings.map((o) {
-            final selected = o.sport == _sport;
+          children: _facility.sports.map((sport) {
+            final selected = sport == _sport;
+            final courts = _facility.offeringsFor(sport).fold(0, (sum, o) => sum + o.courtCount);
             return ChoiceChip(
-              avatar: Icon(sportIcon(o.sport), size: 16, color: selected ? Colors.white : AppColors.primaryGreen),
-              label: Text('${o.sport.label} • ${FacilityStrings.courtCount(o.courtCount)}'),
+              avatar: Icon(sportIcon(sport), size: 16, color: selected ? Colors.white : AppColors.primaryGreen),
+              label: Text('${sport.label} • ${FacilityStrings.courtCount(courts)}'),
               selected: selected,
               showCheckmark: false,
               onSelected: (_) {
                 if (selected) return;
                 setState(() {
-                  _sport = o.sport;
+                  _sport = sport;
+                  _courtType = _facility.offeringFor(sport)!.courtType;
                   _selected.clear(); // khung giờ của môn khác không dùng được
                 });
                 _loadSlots();
@@ -355,6 +362,26 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
             );
           }).toList(),
         ),
+        if (!_courtType.isStandard) ...[
+          const SizedBox(height: 12),
+          const Text(
+            FacilityStrings.chooseCourtType,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textMain),
+          ),
+          const SizedBox(height: 8),
+          CourtTypeSelector(
+            offerings: _facility.offeringsFor(_sport),
+            selected: _courtType,
+            onSelected: (type) {
+              if (type == _courtType) return;
+              setState(() {
+                _courtType = type;
+                _selected.clear(); // khung giờ của loại sân khác không dùng được
+              });
+              _loadSlots();
+            },
+          ),
+        ],
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.all(10),

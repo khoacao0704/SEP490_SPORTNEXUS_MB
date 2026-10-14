@@ -155,8 +155,8 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
           n('nt-007', NotificationType.lfgCancelled, 'Kèo đã bị hủy do không đủ người',
               'Kèo Bóng Đá tại Sân Bóng Hoa Lư chưa đủ người trước 48 giờ. Đã hoàn 100% tiền cọc 75.000 đ về ví.',
               3 * day, read: true),
-          n('nt-008', NotificationType.fairPlayChanged, 'Fair Play +2',
-              'Bạn được đánh giá tốt sau trận Pickleball tại Thảo Điền. Điểm hiện tại: 92.', 5 * day, read: true),
+          n('nt-008', NotificationType.fairPlayChanged, 'Fair Play +3',
+              'Bạn được đánh giá trung bình 4.3 sao sau trận Pickleball tại Thảo Điền. Điểm hiện tại: 93.', 5 * day, read: true),
           n('nt-009', NotificationType.fairPlayChanged, 'Fair Play −10',
               'Bạn vắng mặt trận Cầu Lông tại Eco Sport Quận 7 và bị mất cọc.', 12 * day, read: true),
         ];
@@ -169,7 +169,7 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
                   'Bạn vẫn đặt sân bình thường.',
               8 * day),
           n('nt-103', NotificationType.refunded, 'Đã hoàn tiền',
-              'Hoàn 150.000 đ do bạn hủy đặt sân trước 48 giờ.', 10 * day, read: true),
+              'Hoàn 150.000 đ do bạn hủy đặt sân trước 24 giờ.', 10 * day, read: true),
         ];
       default:
         return [];

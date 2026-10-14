@@ -39,15 +39,23 @@ abstract class LfgRepository {
     String note = '',
   });
 
-  /// Người tham gia (không phải host) rời kèo: mất cọc. Trước T−48h chỗ mở lại cho người khác.
-  /// Trả về số tiền cọc bị mất.
+  /// Rời kèo chưa đủ người: hoàn 100% cọc, chỗ mở lại, kèo vẫn ở lại để ghép tiếp.
+  /// Host rời thì quyền host chuyển cho người vào sớm nhất; host là người cuối cùng thì kèo bị hủy.
+  /// Kèo đã chốt (đủ người) không rời được — dùng [requestCancel]. Trả về số tiền được hoàn.
   Future<int> leaveMatch(String matchId);
 
-  /// Host hủy kèo: host mất cọc, những người khác được hoàn 100%.
-  Future<void> cancelMatch(String matchId);
+  /// Gửi yêu cầu hủy kèo đã chốt (bất kỳ thành viên nào, trước T−24h). Người gửi tính là đã đồng ý.
+  Future<LfgMatch> requestCancel(String matchId);
+
+  /// Trả lời yêu cầu hủy. Một người từ chối là bác yêu cầu; tất cả đồng ý thì hủy kèo,
+  /// hoàn 100% cho mọi người và không trừ Fair Play.
+  Future<LfgMatch> respondCancel(String matchId, {required bool approve});
 }
 
-/// Chỉ bản giả lập cài đặt: dùng cho nút "Giả lập có người vào kèo" khi demo.
+/// Chỉ bản giả lập cài đặt: các nút giả lập hành động của người chơi khác khi demo.
 abstract class SandboxLfgSimulator {
   Future<LfgMatch> simulatePlayerJoined(String matchId);
+
+  /// Các thành viên khác (chưa trả lời) cùng đồng ý, hoặc một người từ chối yêu cầu hủy.
+  Future<LfgMatch> simulateOthersRespond(String matchId, {required bool approve});
 }

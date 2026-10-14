@@ -32,14 +32,25 @@ void main() {
       expect(FairPlayRules.isRecovering(39), isTrue);
       expect(FairPlayRules.isRecovering(40), isFalse);
     });
+
+    test('bảng điểm theo sao trung bình: dưới 2.5 trừ 5, 2.5–3.9 giữ nguyên, 4–4.5 cộng 3, trên 4.5 cộng 5', () {
+      expect(FairPlayRules.reviewDelta(1), -5);
+      expect(FairPlayRules.reviewDelta(2.4), -5);
+      expect(FairPlayRules.reviewDelta(2.5), 0);
+      expect(FairPlayRules.reviewDelta(3.9), 0);
+      expect(FairPlayRules.reviewDelta(4), 3);
+      expect(FairPlayRules.reviewDelta(4.5), 3);
+      expect(FairPlayRules.reviewDelta(4.6), 5);
+      expect(FairPlayRules.noShowPenalty, -10);
+    });
   });
 
   group('Fair Play', () {
     test('điểm = tổng lịch sử, lịch sử mới nhất trước', () async {
       final fp = await repo.getFairPlay();
-      expect(fp.score, 92);
+      expect(fp.score, 93);
       expect(fp.canJoinLfg, isTrue);
-      expect(fp.history.first.delta, 2);
+      expect(fp.history.first.delta, 3);
       expect(fp.history.last.type, FairPlayEventType.initial);
     });
 

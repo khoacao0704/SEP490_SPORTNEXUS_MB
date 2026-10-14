@@ -115,20 +115,20 @@ class FacilityCard extends StatelessWidget {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        ...facility.offerings.map((o) => Padding(
+                        ...facility.sports.map((s) => Padding(
                               padding: const EdgeInsets.only(right: 4),
                               child: Tooltip(
-                                message: '${o.sport.label} • ${FacilityStrings.courtCount(o.courtCount)}',
+                                message: '${s.label} • ${FacilityStrings.courtCount(facility.offeringsFor(s).fold(0, (n, o) => n + o.courtCount))}',
                                 child: Container(
                                   padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(
-                                    color: o.sport == sport ? AppColors.primaryGreen : AppColors.lightGreen,
+                                    color: s == sport ? AppColors.primaryGreen : AppColors.lightGreen,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Icon(
-                                    sportIcon(o.sport),
+                                    sportIcon(s),
                                     size: 14,
-                                    color: o.sport == sport ? Colors.white : AppColors.primaryGreen,
+                                    color: s == sport ? Colors.white : AppColors.primaryGreen,
                                   ),
                                 ),
                               ),

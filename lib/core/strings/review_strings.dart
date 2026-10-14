@@ -42,10 +42,21 @@ class ReviewStrings {
   static const String howItWorks = 'Cách tính điểm';
   static const List<String> rules = [
     'Mỗi tài khoản bắt đầu với 100 điểm (tối đa 100).',
-    'Sau mỗi trận LFG, người chơi cùng trận đánh giá lẫn nhau; điểm được cộng/trừ theo đánh giá.',
-    'Hủy kèo LFG hoặc vắng mặt (không check-in) sẽ bị trừ điểm.',
+    'Vắng mặt không check-in hoặc đến trễ quá 15 phút: −10 điểm.',
+    'Sau mỗi trận LFG, người chơi cùng trận chấm sao cho nhau. Theo số sao trung bình bạn nhận được:',
+    'Team vs Team: người đại diện ghép kèo nhận cộng/trừ thay cả đội.',
+    'Hủy kèo đã đủ người khi tất cả cùng đồng ý (trước giờ chơi 24 giờ) thì không bị trừ điểm.',
     'Dưới 30 điểm: không thể tạo kèo hoặc Flash Claim LFG. Đặt sân thường vẫn bình thường.',
-    'Dưới 30 điểm sẽ tự hồi phục dần theo thời gian, tối đa đến 40 điểm.',
+    'Dưới 30 điểm sẽ tự hồi phục dần theo thời gian tới 40 điểm. Trên 40 chỉ tăng nhờ được đánh giá tốt.',
+  ];
+
+  /// Bảng điểm theo sao trung bình, hiện ngay dưới dòng thứ 3 của [rules].
+  static const int reviewTableAfterRule = 2;
+  static const List<(String, String)> reviewTable = [
+    ('Dưới 2.5 sao', '−5'),
+    ('2.5 – dưới 4 sao', '0'),
+    ('4 – 4.5 sao', '+3'),
+    ('Trên 4.5 sao', '+5'),
   ];
   static const String history = 'Lịch sử thay đổi';
   static const String noHistory = 'Chưa có thay đổi nào';

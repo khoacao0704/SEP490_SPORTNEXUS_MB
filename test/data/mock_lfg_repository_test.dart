@@ -8,6 +8,7 @@ import 'package:test1/data/mock/mock_lfg_repository.dart';
 import 'package:test1/data/mock/mock_review_repository.dart';
 import 'package:test1/data/mock/mock_wallet_repository.dart';
 import 'package:test1/data/repositories/lfg_repository.dart';
+import 'package:test1/models/court_type.dart';
 import 'package:test1/models/lfg_match.dart';
 import 'package:test1/models/sport.dart';
 import 'package:test1/models/time_slot.dart';
@@ -72,7 +73,7 @@ void main() {
 
     test('kèo mình đang tham gia có trong "Kèo của tôi"', () async {
       final mine = await repo.getMyMatches();
-      expect(mine.map((m) => m.id), [seedId(3)]);
+      expect(mine.map((m) => m.id), [seedId(10), seedId(3), seedId(9)]);
     });
   });
 
@@ -136,54 +137,94 @@ void main() {
       expect(await wallet.getBalance(), afterPay + claim.amount);
     });
 
-    test('đủ người thì chốt; sau đó có người rời thì chỗ để trống', () async {
-      // Kèo 3 (Khoa Cao đang ở trong, 3/4) có thêm 1 người => đủ 4/4.
-      await repo.simulatePlayerJoined(seedId(3));
-
-      // Kèo 3 bắt đầu 20:00 sau 3 ngày => hạn chốt 20:00 sau 1 ngày.
-      clock = clock.add(const Duration(days: 1, hours: 1));
-      final locked = await repo.getMatch(seedId(3));
-      expect(locked.status(clock), LfgStatus.confirmed);
-
-      expect(await repo.leaveMatch(seedId(3)), locked.depositPerSlot);
-      final after = await repo.getMatch(seedId(3));
-      expect(after.members, hasLength(3));
-      expect(after.status(clock), LfgStatus.confirmed);
-      expect(after.isClaimable(clock), isFalse);
+    test('yêu cầu hủy đang chờ tới T−24h thì hết hạn, kèo vẫn diễn ra', () async {
+      await repo.requestCancel(seedId(9));
+      // Kèo 9 bắt đầu 18:00 sau 4 ngày => T−24h là 18:00 sau 3 ngày.
+      clock = DateTime(2026, 10, 17, 19);
+      final match = await repo.getMatch(seedId(9));
+      expect(match.cancelRequest, isNull);
+      expect(match.status(clock), LfgStatus.confirmed);
+      expect(() => repo.requestCancel(seedId(9)), lfgError(LfgStrings.tooLateToCancel));
     });
   });
 
-  group('rời / hủy kèo', () {
-    test('người tham gia rời trước hạn: mất cọc, chỗ mở lại', () async {
+  group('rời kèo chưa đủ người', () {
+    test('được hoàn 100%, chỗ mở lại', () async {
       final claim = await repo.claimSlot(seedId(1));
       await repo.confirmClaim(claim.claimId);
       final balance = await wallet.getBalance();
 
       expect(await repo.leaveMatch(seedId(1)), claim.amount);
-      expect(await wallet.getBalance(), balance);
+      expect(await wallet.getBalance(), balance + claim.amount);
       final match = await repo.getMatch(seedId(1));
       expect(match.isMember('u-player-001'), isFalse);
       expect(match.isClaimable(clock), isTrue);
     });
 
-    test('host không rời được mà phải hủy; người khác hoàn 100%, host mất cọc', () async {
+    test('host rời thì chuyển host cho người vào sớm nhất; người cuối cùng rời thì kèo hủy', () async {
       final created = await _createMatch(repo, clock);
-      expect(() => repo.leaveMatch(created.id), lfgError(LfgStrings.hostCannotLeave));
-
-      await loginAs('restricted@sportnexus.vn');
-      expect(() => repo.cancelMatch(created.id), lfgError(LfgStrings.notHost));
-
-      // Một người khác vào kèo (ví giả lập dùng chung trên máy).
       await MockAuthRepository(latency: Duration.zero).login('owner@sportnexus.vn', 'Owner@123');
       final claim = await repo.claimSlot(created.id);
       await repo.confirmClaim(claim.claimId);
 
       await loginAs('player@sportnexus.vn');
       final balance = await wallet.getBalance();
-      await repo.cancelMatch(created.id);
-      final match = await repo.getMatch(created.id);
-      expect(match.cancelReason, LfgCancelReason.hostCancelled);
-      expect(await wallet.getBalance(), balance + claim.amount, reason: 'chỉ người tham gia được hoàn, host mất cọc');
+      expect(await repo.leaveMatch(created.id), created.depositPerSlot);
+      expect(await wallet.getBalance(), balance + created.depositPerSlot);
+      var match = await repo.getMatch(created.id);
+      expect(match.host.userId, 'u-owner-001');
+      expect(match.status(clock), LfgStatus.open);
+
+      await MockAuthRepository(latency: Duration.zero).login('owner@sportnexus.vn', 'Owner@123');
+      await repo.leaveMatch(created.id);
+      match = await repo.getMatch(created.id);
+      expect(match.cancelReason, LfgCancelReason.everyoneLeft);
+    });
+  });
+
+  group('kèo đã chốt (đủ người)', () {
+    test('đủ người là chốt ngay: không rời được, hết nhận người', () async {
+      final full = await repo.simulatePlayerJoined(seedId(3));
+      expect(full.status(clock), LfgStatus.confirmed);
+      expect(full.isClaimable(clock), isFalse);
+      expect(() => repo.leaveMatch(seedId(3)), lfgError(LfgStrings.cannotLeaveConfirmed));
+    });
+
+    test('kèo chưa đủ người thì không gửi yêu cầu hủy (rời kèo là được hoàn)', () async {
+      expect(() => repo.requestCancel(seedId(3)), lfgError(LfgStrings.cancelOnlyConfirmed));
+    });
+
+    test('một người từ chối là bác yêu cầu; gửi lại và tất cả đồng ý thì hủy, hoàn 100%', () async {
+      var match = await repo.requestCancel(seedId(9));
+      expect(match.cancelRequest!.approvals, ['u-player-001']);
+      expect(() => repo.respondCancel(seedId(9), approve: true), lfgError(LfgStrings.alreadyResponded));
+      expect(() => repo.requestCancel(seedId(9)), lfgError(LfgStrings.cancelRequestExists));
+
+      match = await repo.simulateOthersRespond(seedId(9), approve: false);
+      expect(match.cancelRequest, isNull);
+      expect(match.status(clock), LfgStatus.confirmed);
+
+      final balance = await wallet.getBalance();
+      await repo.requestCancel(seedId(9));
+      match = await repo.simulateOthersRespond(seedId(9), approve: true);
+      expect(match.cancelReason, LfgCancelReason.mutualAgreement);
+      expect(await wallet.getBalance(), balance + match.depositPerSlot);
+    });
+
+    test('người khác gửi yêu cầu, mình là người đồng ý cuối cùng thì kèo hủy', () async {
+      final before = await repo.getMatch(seedId(10));
+      expect(before.cancelRequest!.requestedByName, 'Thu Trang');
+
+      final balance = await wallet.getBalance();
+      final match = await repo.respondCancel(seedId(10), approve: true);
+      expect(match.status(clock), LfgStatus.cancelled);
+      expect(await wallet.getBalance(), balance + match.depositPerSlot);
+    });
+
+    test('mình từ chối thì kèo vẫn diễn ra', () async {
+      final match = await repo.respondCancel(seedId(10), approve: false);
+      expect(match.cancelRequest, isNull);
+      expect(match.status(clock), LfgStatus.confirmed);
     });
   });
 
@@ -201,6 +242,36 @@ void main() {
         () => _createMatch(repo, clock, startIn: const Duration(hours: 30)),
         lfgError(LfgStrings.createWindow),
       );
+    });
+
+    test('Team vs Team: kèo mang loại sân của khung giờ, lọc được theo số người mỗi đội', () async {
+      await SharedPreferences.getInstance().then((p) => p.setInt(MockWalletRepository.keyBalance, 2000000));
+      final facility = MockFacilityData.facilities.firstWhere((f) => f.id == 'f-hcm-hoalu');
+      final start = DateTime(clock.year, clock.month, clock.day, 18).add(const Duration(days: 3));
+      final slot = TimeSlot(
+        id: 'slot-football7',
+        facilityId: facility.id,
+        sport: Sport.football,
+        courtType: CourtType.football7,
+        start: start,
+        end: start.add(const Duration(minutes: 90)),
+        price: 1120000,
+        totalCourts: 2,
+        availableCourts: 1,
+      );
+      final match = await repo.createMatch(
+        hold: SlotHold(holdId: 'h', slots: [slot], expiresAt: clock.add(const Duration(minutes: 10))),
+        facility: facility,
+        format: LfgFormat.teamVsTeam,
+      );
+      expect(match.courtType, CourtType.football7);
+      expect(match.formatLabel, 'Team vs Team • 7 vs 7');
+      expect(match.depositPerSlot, 560000);
+
+      final seven = await repo.getFeed(const LfgFeedQuery(city: 'Hồ Chí Minh', courtType: CourtType.football7));
+      expect(seven.map((i) => i.match.id), containsAll([seedId(4), match.id]));
+      final five = await repo.getFeed(const LfgFeedQuery(city: 'Hồ Chí Minh', courtType: CourtType.football5));
+      expect(five, isEmpty);
     });
 
     test('hình thức phải hợp với môn', () async {

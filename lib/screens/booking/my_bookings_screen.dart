@@ -1,411 +1,401 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import '../../core/strings/booking_strings.dart';
+import '../../core/utils/formatters.dart';
+import '../../data/app_repositories.dart';
+import '../../data/repositories/booking_repository.dart';
+import '../../models/booking.dart';
+import '../../models/split_payment.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/main_drawer.dart';
 import '../../widgets/review/pending_review_banner.dart';
+import '../lfg/lfg_screen.dart';
+import 'split_payment_screen.dart';
 
+/// Tab "Lịch Đặt & QR": sân đã đặt (vé QR, hủy đặt) và kèo LFG của tôi (rời / yêu cầu hủy trong chi tiết kèo).
 class MyBookingsScreen extends StatefulWidget {
-  const MyBookingsScreen({super.key});
+  final int initialTab;
+
+  const MyBookingsScreen({super.key, this.initialTab = 0});
 
   @override
   State<MyBookingsScreen> createState() => _MyBookingsScreenState();
 }
 
-class _MyBookingsScreenState extends State<MyBookingsScreen> {
-  int _selectedFilterTab = 0; // 0: Tất cả, 1: Đặt Sân, 2: Kèo LFG
-
-  List<Map<String, dynamic>> _bookings = [];
-
-  // Default Mock Bookings
-  final List<Map<String, dynamic>> _defaultBookings = [
-    {
-      'id': 'SPN-BK-849201',
-      'type': 'Booking', // Booking or LFG
-      'sport': 'Cầu Lông',
-      'courtName': 'Sân Eco Quận 7',
-      'location': 'Quận 7 • P. Tân Thuận Đông',
-      'dateTime': '19:30 - 20:30 (Hôm nay)',
-      'price': '140.000 đ',
-      'paymentStatus': 'Đã thanh toán 100%',
-      'qrCode': 'SPN-BK-849201-KHOA',
-      'createdDate': '12/10/2026',
-    },
-    {
-      'id': 'SPN-LFG-938210',
-      'type': 'LFG',
-      'sport': 'Bóng Đá Sân 7',
-      'courtName': 'Sân Vận Động Thống Nhất',
-      'location': 'Quận 10 • P. 14',
-      'dateTime': '20:00 - 21:30 (Hôm nay)',
-      'price': '250.000 đ',
-      'paymentStatus': 'Flash Claim (1 Slot)',
-      'qrCode': 'SPN-LFG-938210-GUEST',
-      'createdDate': '12/10/2026',
-    },
-    {
-      'id': 'SPN-LFG-551029',
-      'type': 'LFG',
-      'sport': 'Pickleball Đôi',
-      'courtName': 'Sân Pickleball Kỳ Hòa',
-      'location': 'Quận 10 • P. 12',
-      'dateTime': '18:00 - 19:30 (Ngày mai)',
-      'price': '40.000 đ',
-      'paymentStatus': 'Host Đã Cọc 1/4',
-      'qrCode': 'SPN-LFG-551029-HOST',
-      'createdDate': '11/10/2026',
-    },
-  ];
+class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+  int _revision = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadBookings();
-  }
-
-  Future<void> _loadBookings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String>? savedList = prefs.getStringList('my_bookings_data');
-
-    List<Map<String, dynamic>> loadedList = List.from(_defaultBookings);
-
-    if (savedList != null && savedList.isNotEmpty) {
-      for (var str in savedList) {
-        try {
-          loadedList.insert(0, jsonDecode(str) as Map<String, dynamic>);
-        } catch (_) {}
-      }
-    }
-
-    setState(() {
-      _bookings = loadedList;
+    _tabs.addListener(() {
+      if (!_tabs.indexIsChanging) setState(() => _revision++);
     });
   }
 
-  List<Map<String, dynamic>> get _filteredBookings {
-    if (_selectedFilterTab == 1) {
-      return _bookings.where((b) => b['type'] == 'Booking').toList();
-    } else if (_selectedFilterTab == 2) {
-      return _bookings.where((b) => b['type'] == 'LFG').toList();
-    }
-    return _bookings;
-  }
-
-  void _showQrTicketModal(Map<String, dynamic> booking) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: const EdgeInsets.all(20),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Green Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.qr_code_scanner, color: AppColors.primaryGreen, size: 24),
-                const SizedBox(width: 8),
-                Text(
-                  'VÉ QR CHECK-IN CÁ NHÂN',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Large QR Code Representation
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.primaryGreen, width: 2),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4)),
-                ],
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.qr_code_2, size: 160, color: AppColors.textMain),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.lightGreen,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      booking['qrCode'] as String,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primaryGreen,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Match Info Summary
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.cardBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(booking['courtName'] as String, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textMain)),
-                  const SizedBox(height: 2),
-                  Text('Môn: ${booking['sport']} • ${booking['location']}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.access_time, size: 12, color: AppColors.tagOrangeText),
-                      const SizedBox(width: 4),
-                      Text(booking['dateTime'] as String, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Scanner Notice
-            const Text(
-              '📌 Mỗi người chơi có 1 mã QR duy nhất. Vui lòng xuất trình mã này cho Chủ sân quét khi Check-in / Check-out.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-
-            // Close Button
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1D5238),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                child: const Text('Đóng Vé', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatCurrency(int amount) {
-    String str = amount.toString();
-    RegExp reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
-    return str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final list = _filteredBookings;
-
     return Scaffold(
       backgroundColor: AppColors.background,
+      drawer: const MainDrawer(selectedIndex: 3),
       appBar: AppBar(
         backgroundColor: AppColors.white,
         elevation: 0.5,
-        leading: Builder(
-          builder: (context) {
-            return IconButton(
-              icon: const Icon(Icons.menu, color: AppColors.textMain),
-              onPressed: () {
-                Scaffold.of(context).openDrawer();
-              },
-            );
-          }
+        iconTheme: const IconThemeData(color: AppColors.textMain),
+        title: const Text(
+          BookingStrings.title,
+          style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 18),
         ),
-        title: const Text('Lịch Đặt Sân & Mã QR', style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 18)),
+        bottom: TabBar(
+          controller: _tabs,
+          labelColor: AppColors.primaryGreen,
+          unselectedLabelColor: AppColors.textSecondary,
+          indicatorColor: AppColors.primaryGreen,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          tabs: const [Tab(text: BookingStrings.tabBookings), Tab(text: BookingStrings.tabLfg)],
+        ),
       ),
-      drawer: const MainDrawer(selectedIndex: 3),
       body: Column(
         children: [
-          // Filter Tabs (Tất cả, Đặt Sân, Kèo LFG)
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
+          const PendingReviewBanner(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
               children: [
-                _buildFilterTab(0, 'Tất cả (${_bookings.length})'),
-                const SizedBox(width: 8),
-                _buildFilterTab(1, 'Sân đã đặt'),
-                const SizedBox(width: 8),
-                _buildFilterTab(2, 'Kèo LFG'),
+                _BookingsView(revision: _revision),
+                MyLfgMatchesView(revision: _revision, onChanged: () => setState(() => _revision++)),
               ],
             ),
           ),
-          const Divider(height: 1, color: AppColors.divider),
-          const PendingReviewBanner(),
+        ],
+      ),
+    );
+  }
+}
 
-          // Bookings List
-          Expanded(
-            child: list.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.calendar_today, size: 60, color: Colors.grey.shade300),
-                        const SizedBox(height: 12),
-                        const Text('Chưa có lịch đặt sân nào', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textMain)),
-                        const SizedBox(height: 4),
-                        const Text('Hãy đặt sân hoặc tham gia LFG để nhận vé QR nhé!', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: list.length,
-                    itemBuilder: (context, index) {
-                      final item = list[index];
-                      return _buildBookingCard(item);
-                    },
-                  ),
+class _BookingsView extends StatefulWidget {
+  final int revision;
+
+  const _BookingsView({required this.revision});
+
+  @override
+  State<_BookingsView> createState() => _BookingsViewState();
+}
+
+class _BookingsViewState extends State<_BookingsView> {
+  List<Booking> _bookings = [];
+  List<SplitPayment> _pendingSplits = [];
+  String? _myId;
+  bool _isLoading = true;
+  String? _error;
+  String? _cancellingId;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_BookingsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.revision != widget.revision) _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final bookings = await AppRepositories.booking.getMyBookings();
+      final splits = await AppRepositories.split.getMine();
+      final user = await AppRepositories.auth.getCurrentUser();
+      if (!mounted) return;
+      final now = DateTime.now();
+      setState(() {
+        _bookings = bookings;
+        _pendingSplits = splits.where((s) => s.status(now) == SplitStatus.pending).toList();
+        _myId = user?.id;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = BookingStrings.loadError;
+      });
+    }
+  }
+
+  Future<void> _cancel(Booking b) async {
+    final now = DateTime.now();
+    final refund = b.refundIfCancelled(now);
+    final message = (b.isFreeCancel(now)
+            ? BookingStrings.confirmCancelFree(refund)
+            : BookingStrings.confirmCancelLate(b.cancelFee(now), refund)) +
+        (b.paymentType == BookingPaymentType.split ? BookingStrings.splitCancelNote : '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(BookingStrings.confirmCancelTitle),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(BookingStrings.keep)),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text(BookingStrings.cancel),
           ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _cancellingId = b.id);
+    try {
+      final cancelled = await AppRepositories.booking.cancelBooking(b.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(BookingStrings.cancelledMessage(cancelled.refunded))),
+        );
+      }
+    } on BookingException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _cancellingId = null);
+    }
+    _load();
+  }
+
+  void _showTicket(Booking b) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(BookingStrings.ticketTitle, textAlign: TextAlign.center),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            QrImageView(data: b.ticketCode, size: 200, backgroundColor: Colors.white),
+            const SizedBox(height: 8),
+            SelectableText(b.ticketCode, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen)),
+            const SizedBox(height: 8),
+            Text('${b.facilityName}\n${b.schedule}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 8),
+            const Text(
+              BookingStrings.ticketNote,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text(BookingStrings.close)),
         ],
       ),
     );
   }
 
-  Widget _buildFilterTab(int index, String label) {
-    final bool isSelected = _selectedFilterTab == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedFilterTab = index;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF1D5238) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: isSelected ? const Color(0xFF1D5238) : AppColors.cardBorder),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : AppColors.textMain,
-              ),
-            ),
-          ),
+  Future<void> _openSplit(SplitPayment s) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => SplitPaymentScreen(splitId: s.id, initial: s)),
+    );
+    _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading && _bookings.isEmpty && _pendingSplits.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.primaryGreen));
+    }
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_error!, style: const TextStyle(color: AppColors.textSecondary)),
+            TextButton(onPressed: _load, child: const Text(BookingStrings.retry)),
+          ],
         ),
+      );
+    }
+    final now = DateTime.now();
+    return RefreshIndicator(
+      color: AppColors.primaryGreen,
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (_pendingSplits.isNotEmpty) ...[
+            const Text(
+              BookingStrings.pendingSplitsTitle,
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
+            ),
+            const SizedBox(height: 8),
+            for (final s in _pendingSplits)
+              Card(
+                elevation: 0,
+                color: AppColors.tagOrangeBg,
+                margin: const EdgeInsets.only(bottom: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: AppColors.tagOrangeText),
+                ),
+                child: ListTile(
+                  onTap: () => _openSplit(s),
+                  leading: const Icon(Icons.call_split, color: AppColors.tagOrangeText),
+                  title: Text(
+                    BookingStrings.pendingSplit(s.paidCount, s.parts, s.facilityName),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  subtitle: Text(s.schedule, style: const TextStyle(fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right),
+                ),
+              ),
+            const SizedBox(height: 8),
+          ],
+          if (_bookings.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 60),
+              child: Column(
+                children: [
+                  Icon(Icons.calendar_today, size: 60, color: AppColors.cardBorder),
+                  SizedBox(height: 12),
+                  Text(BookingStrings.empty, style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain)),
+                  SizedBox(height: 4),
+                  Text(BookingStrings.emptyHint, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+              ),
+            )
+          else
+            for (final b in _bookings) _buildCard(b, now),
+        ],
       ),
     );
   }
 
-  Widget _buildBookingCard(Map<String, dynamic> booking) {
-    final bool isLfg = booking['type'] == 'LFG';
+  Widget _buildCard(Booking b, DateTime now) {
+    final status = b.status(now);
+    final isBooker = b.bookerId == _myId;
+    final (label, bg, fg) = switch (status) {
+      BookingStatus.upcoming => (BookingStrings.statusUpcoming, AppColors.tagGreenBg, AppColors.tagGreenText),
+      BookingStatus.cancelled => (BookingStrings.statusCancelled, const Color(0xFFFFEBEE), const Color(0xFFC62828)),
+      BookingStatus.completed => (BookingStrings.statusCompleted, AppColors.divider, AppColors.textSecondary),
+    };
+    final deadline = '${Formatters.time(b.freeCancelDeadline)} ${Formatters.weekdayDayMonth(b.freeCancelDeadline)}';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.cardBorder),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Row (Badge & Status)
           Row(
             children: [
+              Expanded(
+                child: Text(
+                  b.sportLabel,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                ),
+              ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isLfg ? const Color(0xFFFFF3E0) : AppColors.lightGreen,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(isLfg ? Icons.groups : Icons.sports_tennis, size: 14, color: isLfg ? const Color(0xFFEF6C00) : AppColors.primaryGreen),
-                    const SizedBox(width: 4),
-                    Text(
-                      isLfg ? 'KÈO LFG' : 'SÂN ĐÃ ĐẶT',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isLfg ? const Color(0xFFEF6C00) : AppColors.primaryGreen,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              Text(
-                booking['paymentStatus'] as String,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+                child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: fg)),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          Text(b.facilityName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
+          Text(b.location, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          const SizedBox(height: 4),
+          Text(
+            b.schedule,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
           ),
           const Divider(height: 20, color: AppColors.divider),
-
-          // Court Name & Sport
-          Text(booking['courtName'] as String, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textMain)),
-          const SizedBox(height: 4),
-          Text('Môn: ${booking['sport']} • ${booking['location']}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(Icons.access_time, size: 14, color: AppColors.tagOrangeText),
-              const SizedBox(width: 4),
-              Text(booking['dateTime'] as String, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText)),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Action Button: Open QR Code Ticket
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('TỔNG TIỀN', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
-                  Text(
-                    booking['price'] as String,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+          _row(BookingStrings.total, Formatters.vnd(b.totalPrice)),
+          _row(BookingStrings.paid, '${Formatters.vnd(b.amountPaid)} • ${b.paymentType.label}'),
+          if (b.remainingAtCourt > 0 && status == BookingStatus.upcoming)
+            _row('', BookingStrings.remainingAtCourt(b.remainingAtCourt), color: AppColors.tagOrangeText),
+          if (status == BookingStatus.cancelled && b.refunded > 0)
+            _row('', BookingStrings.refunded(b.refunded), color: AppColors.primaryGreen),
+          if (!isBooker) _row('', BookingStrings.contributor, color: AppColors.textSecondary),
+          if (status == BookingStatus.upcoming) ...[
+            const SizedBox(height: 8),
+            if (isBooker)
+              Text(
+                b.isFreeCancel(now) ? BookingStrings.freeCancelUntil(deadline) : BookingStrings.lateCancelNote,
+                style: TextStyle(fontSize: 12, color: b.isFreeCancel(now) ? AppColors.textSecondary : Colors.red),
+              ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (b.canCancel(now, _myId ?? '')) ...[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _cancellingId == null ? () => _cancel(b) : null,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: _cancellingId == b.id
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text(BookingStrings.cancel),
+                    ),
                   ),
+                  const SizedBox(width: 10),
                 ],
-              ),
-              ElevatedButton.icon(
-                onPressed: () => _showQrTicketModal(booking),
-                icon: const Icon(Icons.qr_code_2, size: 18, color: Colors.white),
-                label: const Text('MỞ VÉ QR CHECK-IN', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1D5238),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showTicket(b),
+                    icon: const Icon(Icons.qr_code_2, size: 18),
+                    label: const Text(BookingStrings.ticket),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryGreen,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
+
+  Widget _row(String label, String value, {Color? color}) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+            const Spacer(),
+            Flexible(
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color ?? AppColors.textMain),
+              ),
+            ),
+          ],
+        ),
+      );
 }

@@ -68,7 +68,7 @@ void main() {
 
   testWidgets('Fair Play: hiện điểm, trạng thái và lịch sử', (tester) async {
     await pump(tester, const FairPlayScreen());
-    expect(find.text('92'), findsOneWidget);
+    expect(find.text('93'), findsOneWidget);
     expect(find.text(ReviewStrings.eligible), findsOneWidget);
     expect(find.text('Vắng mặt trận Cầu Lông • Eco Sport Quận 7'), findsOneWidget);
     expect(find.text('-10'), findsOneWidget);

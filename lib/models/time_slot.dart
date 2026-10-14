@@ -1,3 +1,4 @@
+import 'court_type.dart';
 import 'sport.dart';
 
 /// Khung giờ do chủ sân cấu hình sẵn; người chơi chỉ chọn trong danh sách này.
@@ -5,6 +6,7 @@ class TimeSlot {
   final String id;
   final String facilityId;
   final Sport sport;
+  final CourtType courtType;
   final DateTime start;
   final DateTime end;
   final int price;
@@ -17,6 +19,7 @@ class TimeSlot {
     required this.id,
     required this.facilityId,
     required this.sport,
+    this.courtType = CourtType.standard,
     required this.start,
     required this.end,
     required this.price,

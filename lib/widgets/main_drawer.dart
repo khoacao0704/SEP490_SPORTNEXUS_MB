@@ -4,6 +4,8 @@ import '../theme/app_colors.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/profile/top_up_wallet_screen.dart';
 import '../screens/facility/facility_search_screen.dart';
+import '../core/strings/split_payment_strings.dart';
+import '../screens/booking/split_payments_screen.dart';
 import '../screens/main/main_navigation_screen.dart';
 import '../screens/tournament/tournaments_screen.dart';
 
@@ -130,6 +132,22 @@ class MainDrawer extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const TournamentsScreen()),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Chia tiền sân: nhập mã bạn bè gửi
+                  _buildDrawerItem(
+                    context: context,
+                    icon: Icons.call_split,
+                    title: SplitPaymentStrings.listTitle,
+                    index: 6,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SplitPaymentsScreen()),
                       );
                     },
                   ),

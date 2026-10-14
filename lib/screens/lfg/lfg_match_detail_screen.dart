@@ -78,37 +78,62 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
 
   Future<void> _leave() async {
     final m = _match!;
-    final reopens = !m.locked;
-    if (!await _confirm(LfgStrings.confirmLeaveTitle, LfgStrings.confirmLeaveMessage(m.depositPerSlot, reopens), LfgStrings.leave)) {
-      return;
-    }
-    await _run(() async {
-      final lost = await AppRepositories.lfg.leaveMatch(m.id);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(LfgStrings.leftMessage(lost))));
-    });
-  }
-
-  Future<void> _cancel() async {
-    final m = _match!;
-    final others = m.members.where((x) => !x.isHost).length;
+    final isHost = m.isHostedBy(_myId!);
+    final others = m.members.where((x) => x.userId != _myId).toList()..sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
+    final message = LfgStrings.confirmLeaveMessage(
+      m.depositPerSlot,
+      isHost: isHost,
+      nextHost: others.firstOrNull?.name,
+    );
+    final alone = others.isEmpty;
     if (!await _confirm(
-      LfgStrings.confirmCancelTitle,
-      LfgStrings.confirmCancelMessage(m.depositPerSlot, others),
-      LfgStrings.cancelMatch,
+      alone ? LfgStrings.confirmCancelTitle : LfgStrings.confirmLeaveTitle,
+      message,
+      alone ? LfgStrings.cancelMatch : LfgStrings.leave,
     )) {
       return;
     }
     await _run(() async {
-      await AppRepositories.lfg.cancelMatch(m.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(LfgStrings.cancelledMessage)));
-      }
+      final refund = await AppRepositories.lfg.leaveMatch(m.id);
+      _snack(LfgStrings.leftMessage(refund));
     });
   }
+
+  Future<void> _requestCancel() async {
+    final m = _match!;
+    final deadline = '${Formatters.time(m.cancelRequestDeadline)} ${Formatters.weekdayDayMonth(m.cancelRequestDeadline)}';
+    final ok = await _confirm(
+      LfgStrings.confirmRequestTitle,
+      LfgStrings.confirmRequestMessage(m.members.length - 1, deadline),
+      LfgStrings.sendRequest,
+    );
+    if (!ok) return;
+    await _run(() async {
+      await AppRepositories.lfg.requestCancel(m.id);
+      _snack(LfgStrings.requestSent);
+    });
+  }
+
+  Future<void> _respond(bool approve) => _run(() async {
+        final updated = await AppRepositories.lfg.respondCancel(_match!.id, approve: approve);
+        _snack(approve
+            ? (updated.cancelReason != null ? LfgStrings.mutualCancelledMessage : LfgStrings.waitingOthers)
+            : LfgStrings.rejectedMessage);
+      });
+
+  Future<void> _simulateRespond(bool approve) => _run(() async {
+        final updated =
+            await (AppRepositories.lfg as SandboxLfgSimulator).simulateOthersRespond(_match!.id, approve: approve);
+        if (updated.cancelReason != null) _snack(LfgStrings.mutualCancelledMessage);
+      });
 
   Future<void> _simulateJoin() => _run(() async {
         await (AppRepositories.lfg as SandboxLfgSimulator).simulatePlayerJoined(_match!.id);
       });
+
+  void _snack(String message) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     setState(() => _isBusy = true);
@@ -171,6 +196,10 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                   _buildHeader(m, now),
                   const SizedBox(height: 14),
                   _buildMembers(m),
+                  if (_myId != null && m.isMember(_myId!) && m.activeCancelRequest(now) != null) ...[
+                    const SizedBox(height: 14),
+                    _buildCancelRequest(m, m.activeCancelRequest(now)!),
+                  ],
                   if (_myId != null && m.isMember(_myId!) && _hasActiveTicket(m, now)) ...[
                     const SizedBox(height: 14),
                     _buildTicket(m),
@@ -186,7 +215,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                 ],
               ),
             ),
-      bottomNavigationBar: m == null ? null : _buildBottomBar(m, now, isHost),
+      bottomNavigationBar: m == null ? null : _buildBottomBar(m, now),
     );
   }
 
@@ -224,7 +253,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
 
   Widget _buildHeader(LfgMatch m, DateTime now) {
     return _section(
-      '${m.sport.label} • ${m.format.label}',
+      '${m.sport.label} • ${m.formatLabel}',
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -335,9 +364,125 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     );
   }
 
-  Widget? _buildBottomBar(LfgMatch m, DateTime now, bool isHost) {
+  Widget _buildCancelRequest(LfgMatch m, LfgCancelRequest request) {
+    final iApproved = request.hasApproved(_myId!);
+    final approvedCount = m.members.where((x) => request.hasApproved(x.userId)).length;
+    final deadline = '${Formatters.time(m.cancelRequestDeadline)} ${Formatters.weekdayDayMonth(m.cancelRequestDeadline)}';
+    final isSandbox = AppRepositories.lfg is SandboxLfgSimulator;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.tagOrangeBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.tagOrangeText),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.how_to_vote_outlined, color: AppColors.tagOrangeText),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  LfgStrings.cancelRequestBy(
+                    request.requestedBy == _myId ? '${request.requestedByName} ${LfgStrings.you}' : request.requestedByName,
+                  ),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
+                ),
+              ),
+              Text(
+                LfgStrings.approvalsCount(approvedCount, m.members.length),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final member in m.members)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    request.hasApproved(member.userId) ? Icons.check_circle : Icons.schedule,
+                    size: 16,
+                    color: request.hasApproved(member.userId) ? AppColors.primaryGreen : AppColors.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${member.name}${member.userId == _myId ? ' ${LfgStrings.you}' : ''}',
+                      style: const TextStyle(fontSize: 13, color: AppColors.textMain),
+                    ),
+                  ),
+                  Text(
+                    request.hasApproved(member.userId) ? LfgStrings.approved : LfgStrings.notAnswered,
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 4),
+          Text(
+            LfgStrings.cancelRequestDeadline(deadline),
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 10),
+          if (iApproved)
+            const Text(
+              LfgStrings.waitingOthers,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textMain),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isBusy ? null : () => _respond(false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textMain,
+                      side: const BorderSide(color: AppColors.cardBorder),
+                      backgroundColor: AppColors.white,
+                    ),
+                    child: const Text(LfgStrings.reject),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isBusy ? null : () => _respond(true),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                    child: const Text(LfgStrings.approve),
+                  ),
+                ),
+              ],
+            ),
+          if (isSandbox) ...[
+            const Divider(height: 20),
+            Wrap(
+              spacing: 4,
+              children: [
+                TextButton(
+                  onPressed: _isBusy ? null : () => _simulateRespond(true),
+                  child: const Text(LfgStrings.simulateApprove, style: TextStyle(fontSize: 12)),
+                ),
+                TextButton(
+                  onPressed: _isBusy ? null : () => _simulateRespond(false),
+                  child: const Text(LfgStrings.simulateReject, style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget? _buildBottomBar(LfgMatch m, DateTime now) {
     final isMember = _myId != null && m.isMember(_myId!);
-    final active = _hasActiveTicket(m, now);
+    final status = m.status(now);
 
     Widget? button;
     if (!isMember && m.isClaimable(now)) {
@@ -353,16 +498,26 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
-    } else if (isMember && active) {
-      button = OutlinedButton(
-        onPressed: _isBusy ? null : (isHost ? _cancel : _leave),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.red,
-          side: const BorderSide(color: Colors.red),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-        child: Text(isHost ? LfgStrings.cancelMatch : LfgStrings.leave, style: const TextStyle(fontWeight: FontWeight.bold)),
+    } else if (isMember && status == LfgStatus.open) {
+      // Host còn một mình: rời cũng là hủy kèo.
+      final alone = m.members.length == 1;
+      button = _redButton(alone ? LfgStrings.cancelMatch : LfgStrings.leave, _leave);
+    } else if (isMember && status == LfgStatus.confirmed) {
+      final canRequest = now.isBefore(m.cancelRequestDeadline);
+      final hasRequest = m.activeCancelRequest(now) != null;
+      button = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            canRequest ? LfgStrings.confirmedNote : LfgStrings.tooLateNote,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          if (canRequest && !hasRequest) ...[
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, child: _redButton(LfgStrings.requestCancel, _requestCancel)),
+          ],
+        ],
       );
     }
     if (button == null) return null;
@@ -374,4 +529,15 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
       ),
     );
   }
+
+  Widget _redButton(String label, VoidCallback onPressed) => OutlinedButton(
+        onPressed: _isBusy ? null : onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.red,
+          side: const BorderSide(color: Colors.red),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+      );
 }

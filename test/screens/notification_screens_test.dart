@@ -64,7 +64,7 @@ void main() {
 
   testWidgets('bấm thông báo Fair Play: đánh dấu đã đọc và mở màn Fair Play', (tester) async {
     await pump(tester, const NotificationsScreen());
-    await tester.tap(find.text('Fair Play +2'));
+    await tester.tap(find.text('Fair Play +3'));
     await tester.pumpAndSettle();
     expect(find.byType(FairPlayScreen), findsOneWidget);
 

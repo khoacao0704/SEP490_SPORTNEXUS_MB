@@ -1,3 +1,4 @@
+import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/geo_point.dart';
 import '../../models/sport.dart';
@@ -16,7 +17,7 @@ class MockFacilityData {
   static const List<String> _commonRules = [
     'Có mặt trước giờ chơi 10 phút để check-in bằng mã QR.',
     'Mang giày chuyên dụng, không mang giày đế đen vào sân.',
-    'Hủy trước 48 giờ được hoàn 100%. Hủy trong vòng 48 giờ mất 1/4 tiền sân.',
+    'Hủy trước 24 giờ được hoàn 100%. Hủy trong vòng 24 giờ mất 1/4 tiền sân.',
     'Không mang đồ ăn, nước có ga vào khu vực sân.',
   ];
 
@@ -73,7 +74,8 @@ class MockFacilityData {
       location: GeoPoint(10.8045, 106.7030),
       offerings: [
         SportOffering(sport: Sport.badminton, courtCount: 4, priceFrom: 160000),
-        SportOffering(sport: Sport.basketball, courtCount: 1, priceFrom: 300000),
+        SportOffering(sport: Sport.basketball, courtType: CourtType.basketballFull, courtCount: 1, priceFrom: 300000),
+        SportOffering(sport: Sport.basketball, courtType: CourtType.basketballHalf, courtCount: 2, priceFrom: 160000),
       ],
       rating: 4.8,
       reviewCount: 64,
@@ -93,7 +95,8 @@ class MockFacilityData {
       district: 'Quận 10',
       location: GeoPoint(10.7735, 106.6680),
       offerings: [
-        SportOffering(sport: Sport.football, courtCount: 3, priceFrom: 450000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football5, courtCount: 2, priceFrom: 450000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football7, courtCount: 1, priceFrom: 700000),
         SportOffering(sport: Sport.tennis, courtCount: 4, priceFrom: 200000),
       ],
       rating: 4.4,
@@ -114,8 +117,11 @@ class MockFacilityData {
       district: 'Quận 1',
       location: GeoPoint(10.7880, 106.7010),
       offerings: [
-        SportOffering(sport: Sport.football, courtCount: 5, priceFrom: 500000),
-        SportOffering(sport: Sport.basketball, courtCount: 2, priceFrom: 250000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football5, courtCount: 3, priceFrom: 500000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football7, courtCount: 2, priceFrom: 800000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football11, courtCount: 1, priceFrom: 1800000),
+        SportOffering(sport: Sport.basketball, courtType: CourtType.basketballFull, courtCount: 1, priceFrom: 250000),
+        SportOffering(sport: Sport.basketball, courtType: CourtType.basketballHalf, courtCount: 2, priceFrom: 150000),
       ],
       rating: 4.6,
       reviewCount: 175,
@@ -157,7 +163,7 @@ class MockFacilityData {
       location: GeoPoint(10.8340, 106.6680),
       offerings: [
         SportOffering(sport: Sport.badminton, courtCount: 10, priceFrom: 90000),
-        SportOffering(sport: Sport.football, courtCount: 2, priceFrom: 400000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football5, courtCount: 2, priceFrom: 400000),
       ],
       rating: 4.3,
       reviewCount: 98,
@@ -177,9 +183,10 @@ class MockFacilityData {
       district: 'Thủ Đức',
       location: GeoPoint(10.8411, 106.8099),
       offerings: [
-        SportOffering(sport: Sport.football, courtCount: 2, priceFrom: 350000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football5, courtCount: 1, priceFrom: 350000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football7, courtCount: 1, priceFrom: 600000),
         SportOffering(sport: Sport.badminton, courtCount: 4, priceFrom: 80000),
-        SportOffering(sport: Sport.basketball, courtCount: 1, priceFrom: 200000),
+        SportOffering(sport: Sport.basketball, courtType: CourtType.basketballFull, courtCount: 1, priceFrom: 200000),
       ],
       rating: 4.5,
       reviewCount: 143,
@@ -244,7 +251,8 @@ class MockFacilityData {
       location: GeoPoint(16.0470, 108.2150),
       offerings: [
         SportOffering(sport: Sport.badminton, courtCount: 5, priceFrom: 90000),
-        SportOffering(sport: Sport.football, courtCount: 2, priceFrom: 380000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football5, courtCount: 2, priceFrom: 380000),
+        SportOffering(sport: Sport.football, courtType: CourtType.football7, courtCount: 1, priceFrom: 650000),
       ],
       rating: 4.5,
       reviewCount: 61,
