@@ -211,9 +211,8 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Go back to CourtBookingScreen
-                  Navigator.pop(context); // Go back to Home
+                  // Close dialog + checkout + booking flow screens, back to Home
+                  Navigator.popUntil(context, (route) => route.isFirst);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryGreen,
