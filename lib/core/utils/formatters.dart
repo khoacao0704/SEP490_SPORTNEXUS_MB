@@ -29,4 +29,16 @@ class Formatters {
 
   /// "Thứ 4, 15/10"
   static String weekdayDayMonth(DateTime dt) => '${weekday(dt)}, ${dayMonth(dt)}';
+
+  /// "Thứ 4, 15/10 • 18:00 - 19:00"
+  static String slotLabel(DateTime start, DateTime end) => '${weekdayDayMonth(start)} • ${timeRange(start, end)}';
+
+  /// "Vừa xong", "5 phút trước", "3 giờ trước"; từ 1 ngày trở lên thì "Thứ 4, 15/10 • 18:30".
+  static String timeAgo(DateTime dt, DateTime now) {
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'Vừa xong';
+    if (diff.inHours < 1) return '${diff.inMinutes} phút trước';
+    if (diff.inDays < 1) return '${diff.inHours} giờ trước';
+    return '${weekdayDayMonth(dt)} • ${time(dt)}';
+  }
 }

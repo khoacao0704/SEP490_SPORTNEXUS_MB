@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/main_drawer.dart';
+import '../../widgets/review/pending_review_banner.dart';
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
@@ -250,6 +251,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             ),
           ),
           const Divider(height: 1, color: AppColors.divider),
+          const PendingReviewBanner(),
 
           // Bookings List
           Expanded(

@@ -10,8 +10,9 @@ import '../repositories/auth_repository.dart';
 /// Bản giả lập [AuthRepository] khi chưa nối API.
 ///
 /// Tài khoản demo (Admin chỉ dùng Web Portal nên không có ở đây):
-/// - player@sportnexus.vn / 0901234567 / Player@123
-/// - owner@sportnexus.vn  / 0907654321 / Owner@123
+/// - player@sportnexus.vn     / 0901234567 / Player@123
+/// - restricted@sportnexus.vn / 0908888888 / Player@123  (Fair Play 25: bị chặn LFG)
+/// - owner@sportnexus.vn      / 0907654321 / Owner@123
 ///
 /// Mã OTP luôn là [mockOtp]. Tài khoản đăng ký mới được lưu vào SharedPreferences.
 class MockAuthRepository implements AuthRepository {
@@ -33,6 +34,9 @@ class MockAuthRepository implements AuthRepository {
   final Map<String, String> _resetTokens = {};
   List<_MockAccount>? _accounts;
 
+  /// Tài khoản demo có Fair Play dưới 30 để thử chặn LFG.
+  static const String restrictedPlayerId = 'u-player-002';
+
   static final List<_MockAccount> _seedAccounts = [
     _MockAccount(
       user: const AppUser(
@@ -41,6 +45,19 @@ class MockAuthRepository implements AuthRepository {
         email: 'player@sportnexus.vn',
         phone: '0901234567',
         role: UserRole.player,
+        fairPlayScore: 92,
+      ),
+      password: 'Player@123',
+      verified: true,
+    ),
+    _MockAccount(
+      user: const AppUser(
+        id: restrictedPlayerId,
+        fullName: 'Trần Văn Bình',
+        email: 'restricted@sportnexus.vn',
+        phone: '0908888888',
+        role: UserRole.player,
+        fairPlayScore: 25,
       ),
       password: 'Player@123',
       verified: true,
@@ -185,6 +202,9 @@ class MockAuthRepository implements AuthRepository {
     await prefs.remove(keyRememberMe);
   }
 
+  /// Tra cứu tài khoản theo email / số điện thoại (giả lập tìm đồng đội khi đăng ký giải).
+  Future<AppUser?> findUser(String identifier) async => _findByIdentifier(await _loadAccounts(), identifier)?.user;
+
   Future<void> _delay() => latency == Duration.zero ? Future.value() : Future.delayed(latency);
 
   Future<List<_MockAccount>> _loadAccounts() async {
@@ -197,6 +217,9 @@ class MockAuthRepository implements AuthRepository {
       _accounts = (jsonDecode(raw) as List)
           .map((e) => _MockAccount.fromJson(e as Map<String, dynamic>))
           .toList();
+      // Bổ sung tài khoản demo mới thêm sau lần chạy trước.
+      final ids = _accounts!.map((a) => a.user.id).toSet();
+      _accounts!.addAll(_seedAccounts.where((s) => !ids.contains(s.user.id)).map((s) => s.copy()));
     }
     return _accounts!;
   }

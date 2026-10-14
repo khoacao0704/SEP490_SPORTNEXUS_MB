@@ -4,13 +4,33 @@ import '../../core/utils/formatters.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
 
+/// Mô tả lịch của nhiều khung giờ, gom theo ngày, mỗi ngày một dòng:
+/// "Thứ 4, 15/10: 18:00 - 19:00, 20:00 - 21:00\nThứ 6, 17/10: 07:00 - 08:00"
+String describeSlotSchedule(Iterable<TimeSlot> slots) {
+  final sorted = slots.toList()..sort((a, b) => a.start.compareTo(b.start));
+  final byDay = <String, List<String>>{};
+  for (final s in sorted) {
+    byDay.putIfAbsent(Formatters.weekdayDayMonth(s.start), () => []).add(Formatters.timeRange(s.start, s.end));
+  }
+  return byDay.entries.map((e) => '${e.key}: ${e.value.join(', ')}').join('\n');
+}
+
 /// Thanh chọn ngày ngang (mặc định 7 ngày kể từ hôm nay).
 class DateSelectorBar extends StatelessWidget {
   final List<DateTime> dates;
   final DateTime selected;
+
+  /// Các ngày đang có khung giờ được chọn: hiện chấm nhỏ dưới ngày.
+  final Set<DateTime> markedDates;
   final ValueChanged<DateTime> onSelected;
 
-  const DateSelectorBar({super.key, required this.dates, required this.selected, required this.onSelected});
+  const DateSelectorBar({
+    super.key,
+    required this.dates,
+    required this.selected,
+    required this.onSelected,
+    this.markedDates = const {},
+  });
 
   static bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
@@ -64,6 +84,19 @@ class DateSelectorBar extends StatelessWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 3),
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: !markedDates.any((d) => _sameDay(d, date))
+                          ? Colors.transparent
+                          : isSelected
+                              ? Colors.white
+                              : AppColors.tagOrangeText,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -77,14 +110,14 @@ class DateSelectorBar extends StatelessWidget {
 /// Lưới khung giờ: hiển thị giờ, giá, số sân còn trống; khung đã qua hoặc hết sân thì khóa.
 class TimeSlotGrid extends StatelessWidget {
   final List<TimeSlot> slots;
-  final String? selectedSlotId;
+  final Set<String> selectedSlotIds;
   final DateTime now;
   final ValueChanged<TimeSlot> onSelected;
 
   const TimeSlotGrid({
     super.key,
     required this.slots,
-    required this.selectedSlotId,
+    required this.selectedSlotIds,
     required this.now,
     required this.onSelected,
   });
@@ -114,7 +147,7 @@ class TimeSlotGrid extends StatelessWidget {
         final slot = slots[index];
         return _TimeSlotTile(
           slot: slot,
-          isSelected: slot.id == selectedSlotId,
+          isSelected: selectedSlotIds.contains(slot.id),
           isPassed: slot.hasStarted(now),
           onTap: () => onSelected(slot),
         );

@@ -54,11 +54,17 @@ class FacilityStrings {
       'Các sân cùng môn là như nhau. Chủ sân sẽ chỉ sân cho bạn khi check-in.';
   static const String totalLabel = 'TỔNG TIỀN TẠM TÍNH';
   static const String selectSlotFirst = 'Chọn khung giờ để đặt sân';
+  static const String multiSlotHint = 'Có thể chọn nhiều khung giờ, kể cả ở các ngày khác nhau.';
+  static String selectedSlotCount(int n) => 'Đã chọn $n khung giờ';
+  static const String viewSelected = 'Xem';
+  static const String selectedSlotsTitle = 'Khung giờ đã chọn';
+  static const String clearSelection = 'Bỏ chọn tất cả';
   static const String bookNow = 'ĐẶT SÂN';
 
   // Lỗi
   static const String facilityNotFound = 'Không tìm thấy cơ sở';
-  static const String slotJustFull = 'Khung giờ này vừa hết sân. Vui lòng chọn khung giờ khác.';
-  static const String slotStarted = 'Khung giờ này đã bắt đầu, vui lòng chọn khung giờ khác.';
+  static String slotJustFull(String slot) => 'Khung giờ $slot vừa hết sân. Vui lòng bỏ chọn khung này.';
+  static String slotStarted(String slot) => 'Khung giờ $slot đã bắt đầu. Vui lòng bỏ chọn khung này.';
+  static const String noSlotSelected = 'Vui lòng chọn ít nhất 1 khung giờ';
   static const String loadError = 'Không tải được dữ liệu. Vui lòng thử lại.';
 }
