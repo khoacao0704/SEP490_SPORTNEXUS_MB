@@ -45,7 +45,7 @@ class MockAuthRepository implements AuthRepository {
         email: 'player@sportnexus.vn',
         phone: '0901234567',
         role: UserRole.player,
-        fairPlayScore: 92,
+        fairPlayScore: 93,
       ),
       password: 'Player@123',
       verified: true,

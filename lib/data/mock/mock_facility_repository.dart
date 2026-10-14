@@ -2,6 +2,7 @@ import '../../core/strings/facility_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/geo_utils.dart';
 import '../../core/utils/text_utils.dart';
+import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/facility_search.dart';
 import '../../models/sport.dart';
@@ -80,10 +81,10 @@ class MockFacilityRepository implements FacilityRepository {
   }
 
   @override
-  Future<List<TimeSlot>> getTimeSlots(String facilityId, Sport sport, DateTime date) async {
+  Future<List<TimeSlot>> getTimeSlots(String facilityId, Sport sport, DateTime date, {CourtType? courtType}) async {
     await _delay();
     final facility = _findFacility(facilityId);
-    final offering = facility.offeringFor(sport);
+    final offering = facility.offeringFor(sport, courtType: courtType);
     if (offering == null) return [];
 
     _purgeExpiredHolds();
@@ -96,7 +97,8 @@ class MockFacilityRepository implements FacilityRepository {
     for (var m = _roundUpToHour(open); m + slotMinutes <= close; m += slotMinutes) {
       final start = day.add(Duration(minutes: m));
       final end = start.add(Duration(minutes: slotMinutes));
-      final id = '${facility.id}|${sport.apiValue}|${start.toIso8601String()}';
+      final type = offering.courtType.isStandard ? '' : '${offering.courtType.apiValue}|';
+      final id = '${facility.id}|${sport.apiValue}|$type${start.toIso8601String()}';
       final isPeak = start.hour >= 17;
       final booked = _bookedCourts(id, offering.courtCount, isPeak);
       final held = _holds.where((h) => h.slotIds.contains(id)).length;
@@ -105,6 +107,7 @@ class MockFacilityRepository implements FacilityRepository {
         id: id,
         facilityId: facility.id,
         sport: sport,
+        courtType: offering.courtType,
         start: start,
         end: end,
         price: isPeak ? _roundTo10k(offering.priceFrom * 1.4) : offering.priceFrom,
@@ -131,14 +134,14 @@ class MockFacilityRepository implements FacilityRepository {
       if (slot.hasStarted(now)) throw FacilityException(FacilityStrings.slotStarted(label));
 
       // Đọc lại số sân trống mới nhất, tránh giữ trùng khi nhiều người cùng bấm.
-      final latest = (await getTimeSlots(slot.facilityId, slot.sport, slot.start))
+      final latest = (await getTimeSlots(slot.facilityId, slot.sport, slot.start, courtType: slot.courtType))
           .where((s) => s.id == slot.id)
           .firstOrNull;
       if (latest == null || latest.isFull) throw FacilityException(FacilityStrings.slotJustFull(label));
       fresh.add(latest);
     }
 
-    final hold = _Hold('hold-${++_holdCounter}', fresh.map((s) => s.id).toList(), now.add(holdDuration));
+    final hold = _Hold('hold-${++_holdCounter}', fresh, now.add(holdDuration));
     _holds.add(hold);
     return SlotHold(holdId: hold.id, slots: fresh, expiresAt: hold.expiresAt);
   }
@@ -146,6 +149,25 @@ class MockFacilityRepository implements FacilityRepository {
   @override
   Future<void> releaseHold(String holdId) async {
     _holds.removeWhere((h) => h.id == holdId);
+  }
+
+  @override
+  Future<SlotHold> transferHold(String holdId, {required DateTime until, List<String>? slotIds}) async {
+    _purgeExpiredHolds();
+    final old = _holds.where((h) => h.id == holdId).firstOrNull;
+    final moving = old == null
+        ? const <TimeSlot>[]
+        : slotIds == null
+            ? old.slots
+            : old.slots.where((s) => slotIds.contains(s.id)).toList();
+    if (old == null || moving.isEmpty) throw const FacilityException(FacilityStrings.holdExpired);
+
+    _holds.remove(old);
+    final rest = old.slots.where((s) => !moving.contains(s)).toList();
+    if (rest.isNotEmpty) _holds.add(_Hold(old.id, rest, old.expiresAt));
+    final hold = _Hold('hold-${++_holdCounter}', moving, until);
+    _holds.add(hold);
+    return SlotHold(holdId: hold.id, slots: moving, expiresAt: until);
   }
 
   Facility _findFacility(String id) {
@@ -187,8 +209,10 @@ class MockFacilityRepository implements FacilityRepository {
 
 class _Hold {
   final String id;
-  final List<String> slotIds;
+  final List<TimeSlot> slots;
   final DateTime expiresAt;
 
-  _Hold(this.id, this.slotIds, this.expiresAt);
+  _Hold(this.id, this.slots, this.expiresAt);
+
+  List<String> get slotIds => slots.map((s) => s.id).toList();
 }

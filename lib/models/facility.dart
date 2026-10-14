@@ -1,20 +1,28 @@
+import 'court_type.dart';
 import 'geo_point.dart';
 import 'sport.dart';
 
-/// Một môn thể thao mà cơ sở cung cấp.
-/// Các sân con của cùng một môn là như nhau: người chơi không chọn sân cụ thể,
+/// Một loại sân của một môn mà cơ sở cung cấp (vd. Bóng đá • Sân 7 người).
+/// Các sân con cùng loại là như nhau: người chơi không chọn sân cụ thể,
 /// hệ thống trừ dần [courtCount] và chủ sân chỉ sân khi check-in.
 class SportOffering {
   final Sport sport;
+  final CourtType courtType;
   final int courtCount;
 
   /// Giá thấp nhất trong các khung giờ chủ sân cấu hình cho môn này.
   final int priceFrom;
 
-  const SportOffering({required this.sport, required this.courtCount, required this.priceFrom});
+  const SportOffering({
+    required this.sport,
+    required this.courtCount,
+    required this.priceFrom,
+    this.courtType = CourtType.standard,
+  });
 
   factory SportOffering.fromJson(Map<String, dynamic> json) => SportOffering(
         sport: Sport.fromApi(json['sport'] as String),
+        courtType: CourtType.fromApi(json['courtType'] as String?),
         courtCount: (json['courtCount'] as num).toInt(),
         priceFrom: (json['priceFrom'] as num).toInt(),
       );
@@ -58,15 +66,19 @@ class Facility {
     this.description = '',
   });
 
-  List<Sport> get sports => offerings.map((o) => o.sport).toList();
+  List<Sport> get sports => offerings.map((o) => o.sport).toSet().toList();
 
   int get priceFrom => offerings.map((o) => o.priceFrom).reduce((a, b) => a < b ? a : b);
 
-  SportOffering? offeringFor(Sport sport) {
-    for (final o in offerings) {
-      if (o.sport == sport) return o;
-    }
-    return null;
+  /// Các loại sân của [sport] tại cơ sở, rẻ nhất trước.
+  List<SportOffering> offeringsFor(Sport sport) =>
+      offerings.where((o) => o.sport == sport).toList()..sort((a, b) => a.priceFrom.compareTo(b.priceFrom));
+
+  /// Loại sân [courtType] của [sport]; bỏ trống [courtType] thì lấy loại rẻ nhất (dùng cho "giá từ").
+  SportOffering? offeringFor(Sport sport, {CourtType? courtType}) {
+    final list = offeringsFor(sport);
+    if (courtType == null) return list.firstOrNull;
+    return list.where((o) => o.courtType == courtType).firstOrNull;
   }
 
   factory Facility.fromJson(Map<String, dynamic> json) => Facility(

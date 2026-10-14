@@ -5,12 +5,14 @@ import '../../core/strings/lfg_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/facility_repository.dart';
+import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/facility_search.dart';
 import '../../models/lfg_match.dart';
 import '../../models/sport.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/facility/court_type_selector.dart';
 import '../../widgets/facility/slot_picker.dart';
 import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/lfg/lfg_actions.dart';
@@ -29,6 +31,7 @@ class CreateLfgMatchScreen extends StatefulWidget {
 class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
   Sport _sport = Sport.badminton;
   late LfgFormat _format = LfgFormat.forSport(_sport).last;
+  late CourtType _courtType = CourtType.forSport(_sport).first;
   String _city = VietnamCities.hoChiMinh.name;
   String? _district;
   List<String> _districts = [];
@@ -87,7 +90,11 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
           .searchFacilities(FacilitySearchQuery(city: _city, district: _district, sport: _sport, sort: FacilitySort.rating));
       if (!mounted) return;
       setState(() {
-        _facilities = results.map((r) => r.facility).toList();
+        // Team vs Team: chỉ những cơ sở có loại sân đúng số người mỗi đội.
+        _facilities = results
+            .map((r) => r.facility)
+            .where((f) => f.offeringFor(_sport, courtType: _courtType) != null)
+            .toList();
         _loadingFacilities = false;
       });
     } catch (_) {
@@ -103,7 +110,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
       _slot = null;
     });
     try {
-      final slots = await AppRepositories.facility.getTimeSlots(facility.id, _sport, _date);
+      final slots = await AppRepositories.facility.getTimeSlots(facility.id, _sport, _date, courtType: _courtType);
       if (!mounted) return;
       final now = DateTime.now();
       setState(() {
@@ -119,6 +126,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     setState(() {
       _sport = sport;
       _format = LfgFormat.forSport(sport).last;
+      _courtType = CourtType.forSport(sport).first;
     });
     _loadFacilities();
   }
@@ -181,6 +189,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             heading: LfgStrings.createTitle,
             sport: _sport,
             format: _format,
+            courtType: slot.courtType,
             facilityName: facility.name,
             district: facility.district,
             start: slot.start,
@@ -257,6 +266,28 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             LfgStrings.depositExplain(_format.label, _format.totalSlots, _format.isTeam),
             style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
+          if (!_courtType.isStandard) ...[
+            const SizedBox(height: 18),
+            _title(LfgStrings.stepTeamSize),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final t in CourtType.forSport(_sport))
+                  CourtTypeChip(
+                    type: t,
+                    selected: t == _courtType,
+                    onTap: () {
+                      if (t == _courtType) return;
+                      setState(() => _courtType = t);
+                      _loadFacilities();
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(LfgStrings.teamRepresentativeNote, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          ],
           const SizedBox(height: 18),
           _title(LfgStrings.stepFacility),
           SingleChildScrollView(
@@ -386,7 +417,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                         ),
                       ),
                       Text(
-                        Formatters.vnd(f.offeringFor(_sport)?.priceFrom ?? f.priceFrom),
+                        Formatters.vnd(f.offeringFor(_sport, courtType: _courtType)?.priceFrom ?? f.priceFrom),
                         style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
                       ),
                     ],

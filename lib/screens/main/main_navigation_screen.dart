@@ -21,13 +21,16 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   late int _currentIndex;
 
-  final List<Widget> _pages = [
-    const HomeScreen(),
-    const LfgScreen(),
-    const AiChatScreen(),
-    const MyBookingsScreen(),
-    const ProfileScreen(),
-  ];
+  /// Tăng mỗi lần mở tab "Lịch Đặt & QR" để màn đó tải lại (IndexedStack giữ nguyên màn đã dựng).
+  int _bookingsVisit = 0;
+
+  List<Widget> get _pages => [
+        const HomeScreen(),
+        const LfgScreen(),
+        const AiChatScreen(),
+        MyBookingsScreen(key: ValueKey(_bookingsVisit)),
+        const ProfileScreen(),
+      ];
 
   @override
   void initState() {
@@ -56,6 +59,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           currentIndex: _currentIndex,
           onTap: (index) {
             setState(() {
+              if (index == 3 && _currentIndex != 3) _bookingsVisit++;
               _currentIndex = index;
             });
           },

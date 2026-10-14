@@ -36,6 +36,8 @@ class FacilityStrings {
   // Chi tiết cơ sở
   static const String reviews = 'đánh giá';
   static const String chooseSport = 'Chọn môn';
+  static const String chooseCourtType = 'Loại sân';
+  static const String holdExpired = 'Đã hết thời gian giữ chỗ. Vui lòng chọn lại khung giờ.';
   static String courtCount(int n) => '$n sân';
   static const String chooseDate = 'Chọn ngày';
   static const String chooseSlot = 'Chọn khung giờ';

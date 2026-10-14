@@ -6,6 +6,7 @@ import '../../core/constants/fair_play_rules.dart';
 import '../../core/constants/lfg_rules.dart';
 import '../../core/strings/lfg_strings.dart';
 import '../../core/utils/geo_utils.dart';
+import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/lfg_match.dart';
 import '../../models/sport.dart';
@@ -27,7 +28,8 @@ import 'mock_wallet_repository.dart';
 ///   được làm lúc đọc dữ liệu.
 /// - Tiền cọc trừ/hoàn qua ví giả lập; giữ chỗ Flash Claim lưu trong bộ nhớ, hết hạn sau 10 phút.
 class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
-  static const String keyMatches = 'lfg_matches';
+  /// Đổi tên key khi đổi cấu trúc dữ liệu (bỏ cờ locked / lý do HostCancelled) để bỏ dữ liệu cũ.
+  static const String keyMatches = 'lfg_matches_v2';
 
   /// matchId -> {userId: số tiền cọc đã trả qua ví} để biết cần hoàn bao nhiêu cho ai.
   static const String keyPayments = 'lfg_payments';
@@ -59,6 +61,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
         .where((m) => query.district == null || m.district == query.district)
         .where((m) => query.sport == null || m.sport == query.sport)
         .where((m) => query.format == null || m.format == query.format)
+        .where((m) => query.courtType == null || m.courtType == query.courtType)
         .map((m) => LfgFeedItem(
               match: m,
               distanceKm: query.userLocation == null ? null : GeoUtils.distanceKm(query.userLocation!, m.location),
@@ -101,8 +104,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
       return LfgClaim(claimId: existing.id, match: match, amount: match.depositPerSlot, expiresAt: existing.expiresAt);
     }
     if (match.isMember(me.id)) throw const LfgException(LfgStrings.alreadyJoined);
-    if ((match.status(now) != LfgStatus.open && match.status(now) != LfgStatus.full) ||
-        !now.isBefore(match.fillDeadline)) {
+    if (match.status(now) != LfgStatus.open || !now.isBefore(match.fillDeadline)) {
       throw const LfgException(LfgStrings.closed);
     }
     if (match.slotsLeft <= 0) throw const LfgException(LfgStrings.full);
@@ -186,6 +188,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
       location: facility.location,
       sport: slot.sport,
       format: format,
+      courtType: slot.courtType,
       start: slot.start,
       end: slot.end,
       courtPrice: slot.price,
@@ -204,37 +207,100 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     final me = await _requireUser();
     final match = await _find(matchId, me.id);
     if (!match.isMember(me.id)) throw const LfgException(LfgStrings.notMember);
-    if (match.isHostedBy(me.id)) throw const LfgException(LfgStrings.hostCannotLeave);
     _ensureNotEnded(match);
+    if (match.status(_now()) == LfgStatus.confirmed) throw const LfgException(LfgStrings.cannotLeaveConfirmed);
 
     final payments = await _payments();
-    final forfeited = payments[matchId]?.remove(me.id) ?? match.depositPerSlot;
+    final refund = payments[matchId]?.remove(me.id) ?? match.depositPerSlot;
     await _savePayments(payments);
-    // Đã chốt (locked) thì giữ nguyên trạng thái chốt: chỗ để trống, không mở lại.
-    await _saveMatch(match.copyWith(members: match.members.where((m) => m.userId != me.id).toList()));
-    return forfeited;
+    await _wallet.creditRefund(
+      amount: refund,
+      description: 'Hoàn 100% cọc • rời kèo ${match.sport.label} • ${match.facilityName}',
+      reference: matchId,
+    );
+
+    final rest = match.members.where((m) => m.userId != me.id).toList();
+    if (rest.isEmpty) {
+      // Người cuối cùng rời: kèo bị hủy (giữ danh sách để còn hiện trong "Kèo của tôi").
+      await _saveMatch(match.copyWith(cancelReason: LfgCancelReason.everyoneLeft));
+    } else if (match.isHostedBy(me.id)) {
+      // Chuyển quyền host cho người vào sớm nhất.
+      rest.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
+      final members = [
+        for (var i = 0; i < rest.length; i++)
+          LfgMember(
+            userId: rest[i].userId,
+            name: rest[i].name,
+            fairPlayScore: rest[i].fairPlayScore,
+            joinedAt: rest[i].joinedAt,
+            isHost: i == 0,
+          ),
+      ];
+      await _saveMatch(match.copyWith(members: members));
+    } else {
+      await _saveMatch(match.copyWith(members: rest));
+    }
+    return refund;
   }
 
   @override
-  Future<void> cancelMatch(String matchId) async {
+  Future<LfgMatch> requestCancel(String matchId) async {
+    await _delay();
+    final me = await _requireUser();
+    final now = _now();
+    final match = await _find(matchId, me.id);
+    if (!match.isMember(me.id)) throw const LfgException(LfgStrings.notMember);
+    _ensureNotEnded(match);
+    if (match.status(now) != LfgStatus.confirmed) throw const LfgException(LfgStrings.cancelOnlyConfirmed);
+    if (!now.isBefore(match.cancelRequestDeadline)) throw const LfgException(LfgStrings.tooLateToCancel);
+    if (match.cancelRequest != null) throw const LfgException(LfgStrings.cancelRequestExists);
+
+    final updated = match.copyWith(
+      cancelRequest: LfgCancelRequest(requestedBy: me.id, requestedByName: me.name, createdAt: now, approvals: [me.id]),
+    );
+    return _finishIfAllApproved(updated, me.id);
+  }
+
+  @override
+  Future<LfgMatch> respondCancel(String matchId, {required bool approve}) async {
     await _delay();
     final me = await _requireUser();
     final match = await _find(matchId, me.id);
-    if (!match.isHostedBy(me.id)) throw const LfgException(LfgStrings.notHost);
-    _ensureNotEnded(match);
+    if (!match.isMember(me.id)) throw const LfgException(LfgStrings.notMember);
+    final request = match.activeCancelRequest(_now());
+    if (request == null) throw const LfgException(LfgStrings.noCancelRequest);
+    if (request.hasApproved(me.id)) throw const LfgException(LfgStrings.alreadyResponded);
 
+    if (!approve) {
+      final rejected = match.copyWith(clearCancelRequest: true);
+      await _saveMatch(rejected);
+      return _withHeldSlots(rejected, me.id);
+    }
+    return _finishIfAllApproved(match.copyWith(cancelRequest: request.approve(me.id)), me.id);
+  }
+
+  /// Lưu yêu cầu hủy; nếu mọi thành viên đã đồng ý thì hủy kèo và hoàn 100% cho tất cả.
+  Future<LfgMatch> _finishIfAllApproved(LfgMatch match, String? myId) async {
+    final request = match.cancelRequest!;
+    if (!match.members.every((m) => request.hasApproved(m.userId))) {
+      await _saveMatch(match);
+      return _withHeldSlots(match, myId);
+    }
     final payments = await _payments();
-    final paid = payments.remove(matchId) ?? {};
-    for (final entry in paid.entries) {
-      if (entry.key == me.id) continue; // host mất cọc
+    final paid = payments.remove(match.id) ?? {};
+    // Kèo mẫu không có bản ghi thanh toán: vẫn hoàn phần của người dùng hiện tại.
+    if (myId != null && match.isMember(myId)) paid.putIfAbsent(myId, () => match.depositPerSlot);
+    for (final amount in paid.values) {
       await _wallet.creditRefund(
-        amount: entry.value,
-        description: 'Hoàn cọc • host hủy kèo ${match.sport.label} • ${match.facilityName}',
-        reference: matchId,
+        amount: amount,
+        description: 'Hoàn 100% cọc • cả kèo đồng ý hủy ${match.sport.label} • ${match.facilityName}',
+        reference: match.id,
       );
     }
     await _savePayments(payments);
-    await _saveMatch(match.copyWith(cancelReason: LfgCancelReason.hostCancelled));
+    final cancelled = match.copyWith(cancelReason: LfgCancelReason.mutualAgreement, clearCancelRequest: true);
+    await _saveMatch(cancelled);
+    return _withHeldSlots(cancelled, myId);
   }
 
   @override
@@ -256,6 +322,24 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     ]);
     await _saveMatch(updated);
     return _withHeldSlots(updated, me?.id);
+  }
+
+  @override
+  Future<LfgMatch> simulateOthersRespond(String matchId, {required bool approve}) async {
+    final me = await _currentUser();
+    final match = await _find(matchId, me?.id);
+    final request = match.activeCancelRequest(_now());
+    if (request == null) throw const LfgException(LfgStrings.noCancelRequest);
+    if (!approve) {
+      final rejected = match.copyWith(clearCancelRequest: true);
+      await _saveMatch(rejected);
+      return _withHeldSlots(rejected, me?.id);
+    }
+    var approved = request;
+    for (final m in match.members) {
+      if (m.userId != me?.id) approved = approved.approve(m.userId);
+    }
+    return _finishIfAllApproved(match.copyWith(cancelRequest: approved), me?.id);
   }
 
   // ---------------- Nội bộ ----------------
@@ -326,8 +410,12 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
 
   /// Việc BE làm tại T−48h: đủ người thì chốt, thiếu người thì hủy và hoàn 100% cho tất cả.
   Future<LfgMatch> _settle(LfgMatch match) async {
-    if (match.cancelReason != null || match.locked || _now().isBefore(match.fillDeadline)) return match;
-    if (match.isFull) return match.copyWith(locked: true);
+    if (match.cancelReason != null) return match;
+    // Tới T−24h mà chưa đủ tất cả đồng ý: yêu cầu hủy hết hạn, kèo vẫn diễn ra.
+    if (match.cancelRequest != null && !_now().isBefore(match.cancelRequestDeadline)) {
+      return match.copyWith(clearCancelRequest: true);
+    }
+    if (match.isFull || _now().isBefore(match.fillDeadline)) return match;
 
     final payments = await _payments();
     final paid = payments.remove(match.id) ?? {};
@@ -398,10 +486,10 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
         LfgMember(userId: id, name: name, fairPlayScore: fp, joinedAt: createdAt, isHost: host);
 
     LfgMatch seed(int n, String facilityId, Sport sport, LfgFormat format, int dayOffset, int hour,
-        List<LfgMember> members, {String note = ''}) {
+        List<LfgMember> members, {String note = '', CourtType courtType = CourtType.standard}) {
       final f = facilities[facilityId]!;
       final start = today.add(Duration(days: dayOffset, hours: hour));
-      final base = f.offeringFor(sport)!.priceFrom;
+      final base = f.offeringFor(sport, courtType: courtType)!.priceFrom;
       return LfgMatch(
         id: 'lfg-$dayKey-$n',
         facilityId: f.id,
@@ -411,6 +499,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
         location: f.location,
         sport: sport,
         format: format,
+        courtType: courtType,
         start: start,
         end: start.add(Duration(minutes: sport == Sport.football ? 90 : 60)),
         // Giờ cao điểm (từ 17:00) giá x1.4, giống bản giả lập khung giờ.
@@ -431,15 +520,15 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
       ]),
       seed(3, 'f-hcm-govap', Sport.badminton, LfgFormat.doubles, 3, 20, [
         member('u-ductri', 'Đức Trí', 72, host: true),
-        member('u-player-001', 'Khoa Cao', 92),
+        member('u-player-001', 'Khoa Cao', 93),
         member('u-lananh', 'Lan Anh', 85),
       ]),
       seed(4, 'f-hcm-hoalu', Sport.football, LfgFormat.teamVsTeam, 4, 19, [
         member('u-fcsaigon', 'FC Sài Gòn', 98, host: true),
-      ], note: 'Sân 7 người, cần 1 đội giao lưu. Mặc áo tối màu.'),
+      ], note: 'Cần 1 đội giao lưu. Mặc áo tối màu.', courtType: CourtType.football7),
       seed(5, 'f-hcm-chuvanan', Sport.basketball, LfgFormat.teamVsTeam, 4, 17, [
         member('u-ballers', 'Ballers Bình Thạnh', 90, host: true),
-      ]),
+      ], courtType: CourtType.basketballFull),
       seed(6, 'f-hcm-kyhoa', Sport.tennis, LfgFormat.singles, 5, 6, [
         member('u-thutrang', 'Thu Trang', 100, host: true),
       ], note: 'Đánh đơn tập luyện, trình độ khá.'),
@@ -450,6 +539,25 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
         member('u-ngocha', 'Ngọc Hà', 94, host: true),
         member('u-vietanh', 'Việt Anh', 90),
       ]),
+      // Kèo đã chốt (đủ người) có Khoa Cao: thử gửi yêu cầu hủy.
+      seed(9, 'f-hcm-thaodien', Sport.pickleball, LfgFormat.doubles, 4, 18, [
+        member('u-hoangnam', 'Hoàng Nam', 100, host: true),
+        member('u-player-001', 'Khoa Cao', 93),
+        member('u-lananh', 'Lan Anh', 85),
+        member('u-quocbao', 'Quốc Bảo', 88),
+      ]),
+      // Kèo đã chốt, host đã gửi yêu cầu hủy: Khoa Cao cần đồng ý / từ chối.
+      seed(10, 'f-hcm-kyhoa', Sport.tennis, LfgFormat.singles, 3, 7, [
+        member('u-thutrang', 'Thu Trang', 100, host: true),
+        member('u-player-001', 'Khoa Cao', 93),
+      ]).copyWith(
+        cancelRequest: LfgCancelRequest(
+          requestedBy: 'u-thutrang',
+          requestedByName: 'Thu Trang',
+          createdAt: createdAt.add(const Duration(hours: 1)),
+          approvals: const ['u-thutrang'],
+        ),
+      ),
     ];
   }
 }

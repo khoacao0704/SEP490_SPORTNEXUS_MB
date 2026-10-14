@@ -168,17 +168,26 @@ class MockReviewRepository implements ReviewRepository {
       case 'u-player-001':
         return [
           initial,
-          e('fp-1', FairPlayEventType.noShow, -10, 'Vắng mặt trận Cầu Lông • Eco Sport Quận 7', 12),
-          e('fp-2', FairPlayEventType.review, 2, 'Được đánh giá tốt sau trận Pickleball • Thảo Điền', 5),
+          e('fp-1', FairPlayEventType.noShow, FairPlayRules.noShowPenalty, 'Vắng mặt trận Cầu Lông • Eco Sport Quận 7', 12),
+          e('fp-2', FairPlayEventType.review, FairPlayRules.reviewDelta(4.3),
+              'Được đánh giá trung bình 4.3 sao sau trận Pickleball • Thảo Điền', 5),
         ];
       case MockAuthRepository.restrictedPlayerId:
+        const noShow = FairPlayRules.noShowPenalty;
         return [
           initial,
-          e('fp-1', FairPlayEventType.noShow, -30, 'Vắng mặt trận Bóng Đá • Sân Bóng Hoa Lư', 20),
-          e('fp-2', FairPlayEventType.cancellation, -20, 'Hủy kèo LFG sát giờ • Gò Vấp Arena', 15),
-          e('fp-3', FairPlayEventType.review, -15, 'Bị đánh giá "Chơi xấu" sau trận Bóng Đá', 12),
-          e('fp-4', FairPlayEventType.noShow, -15, 'Vắng mặt trận Cầu Lông • Thiên Triều', 8),
-          e('fp-5', FairPlayEventType.recovery, 5, 'Hồi phục theo thời gian', 1),
+          e('fp-1', FairPlayEventType.noShow, noShow, 'Vắng mặt trận Bóng Đá • Sân Bóng Hoa Lư', 40),
+          e('fp-2', FairPlayEventType.noShow, noShow, 'Trễ quá 15 phút trận Cầu Lông • Gò Vấp Arena', 36),
+          e('fp-3', FairPlayEventType.review, FairPlayRules.reviewDelta(1.8),
+              'Bị đánh giá trung bình 1.8 sao sau trận Bóng Đá', 33),
+          e('fp-4', FairPlayEventType.noShow, noShow, 'Vắng mặt trận Pickleball • Eco Sport Quận 7', 30),
+          e('fp-5', FairPlayEventType.noShow, noShow, 'Vắng mặt trận Cầu Lông • Thiên Triều', 26),
+          e('fp-6', FairPlayEventType.noShow, noShow, 'Trễ quá 15 phút trận Tennis • Kỳ Hòa', 22),
+          e('fp-7', FairPlayEventType.review, FairPlayRules.reviewDelta(2.1),
+              'Bị đánh giá trung bình 2.1 sao sau trận Cầu Lông', 20),
+          e('fp-8', FairPlayEventType.noShow, noShow, 'Vắng mặt trận Bóng Rổ • Sân Chu Văn An', 15),
+          e('fp-9', FairPlayEventType.noShow, noShow, 'Vắng mặt trận Cầu Lông • Thiên Triều', 8),
+          e('fp-10', FairPlayEventType.recovery, 5, 'Hồi phục theo thời gian', 1),
         ];
       default:
         return [initial];

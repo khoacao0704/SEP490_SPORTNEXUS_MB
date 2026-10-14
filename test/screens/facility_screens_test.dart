@@ -174,4 +174,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(FacilityStrings.selectSlotFirst), findsOneWidget);
   });
+
+  testWidgets('Chi tiết: bóng đá chọn loại sân, mỗi loại số sân và giá riêng; đổi loại thì bỏ chọn khung giờ', (tester) async {
+    final facility = MockFacilityData.facilities.firstWhere((f) => f.id == 'f-hcm-hoalu');
+    await pumpScreen(tester, FacilityDetailScreen(facility: facility, initialSport: Sport.football));
+    expect(find.text(FacilityStrings.chooseCourtType), findsOneWidget);
+    expect(find.text('Sân 5 người (5 vs 5)'), findsOneWidget);
+    expect(find.text('3 sân • Từ 500.000 đ'), findsOneWidget);
+    expect(find.text('Sân 11 người (11 vs 11)'), findsOneWidget);
+
+    final now = DateTime.now();
+    await tester.ensureVisible(find.text(Formatters.dayMonth(DateTime(now.year, now.month, now.day + 1))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(Formatters.dayMonth(DateTime(now.year, now.month, now.day + 1))));
+    await tester.pumpAndSettle();
+    final available = find.textContaining('Còn ');
+    await tester.ensureVisible(available.first);
+    await tester.pumpAndSettle();
+    await tester.tap(available.hitTestable().first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining(FacilityStrings.selectedSlotCount(1)), findsOneWidget);
+
+    // Cuộn về đầu trang để chip loại sân không bị thanh ảnh đang ghim che.
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 3000));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sân 7 người (7 vs 7)'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(FacilityStrings.selectedSlotCount(1)), findsNothing);
+    expect(find.textContaining('/2 sân'), findsWidgets);
+  });
 }

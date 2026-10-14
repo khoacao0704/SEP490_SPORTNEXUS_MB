@@ -11,6 +11,7 @@ class LfgStrings {
   static const String createButton = 'Tạo Kèo';
   static const String allSports = 'Tất cả';
   static const String allFormats = 'Mọi hình thức';
+  static const String allCourtTypes = 'Mọi loại sân';
   static const String allDistricts = 'Tất cả quận';
   static const String chooseCity = 'Chọn thành phố';
   static const String chooseDistrict = 'Chọn quận / huyện';
@@ -37,10 +38,10 @@ class LfgStrings {
 
   // Trạng thái
   static const String statusOpen = 'Đang tìm người';
-  static const String statusFull = 'Đủ người • chờ chốt';
-  static const String statusConfirmed = 'Đã chốt';
+  static const String statusConfirmed = 'Đã chốt • đủ người';
   static const String statusCancelledNotEnough = 'Đã hủy • không đủ người, hoàn 100%';
-  static const String statusCancelledByHost = 'Host đã hủy kèo';
+  static const String statusCancelledMutual = 'Đã hủy • cả kèo đồng ý, hoàn 100%';
+  static const String statusCancelledEveryoneLeft = 'Đã hủy • mọi người đã rời kèo';
   static const String statusCompleted = 'Đã kết thúc';
 
   // Chi tiết kèo
@@ -57,24 +58,47 @@ class LfgStrings {
   static const String rulesTitle = 'Quy định cọc & hủy';
   static String rules(int deposit, bool isTeam) => [
         'Mỗi ${isTeam ? 'đội' : 'người'} cọc ${Formatters.vnd(deposit)} (chia đều tiền sân).',
+        if (isTeam) 'Team vs Team: người đại diện mỗi đội trả cọc, nhận hoàn tiền và chịu cộng/trừ Fair Play thay cả đội.',
         'Tiền được giữ tới khi chủ sân check-out mới chuyển cho chủ sân.',
         'Kèo phải đủ người trước giờ chơi 48 giờ, nếu không sẽ tự hủy và hoàn 100% cho tất cả.',
-        'Rời kèo hoặc host hủy kèo: người rời/host mất cọc. Host hủy thì người khác được hoàn 100%.',
-        'Vắng mặt không check-in sẽ mất cọc và bị trừ điểm Fair Play.',
+        'Kèo chưa đủ người: ai rời cũng được hoàn 100%, chỗ mở lại cho người khác. Host rời thì quyền host chuyển cho người vào sớm nhất.',
+        'Kèo đã đủ người (đã chốt): không thể rời. Bất kỳ ai cũng có thể gửi yêu cầu hủy; nếu tất cả đồng ý trước giờ chơi 24 giờ thì kèo hủy, hoàn 100% và không ai bị trừ Fair Play.',
+        'Vắng mặt hoặc trễ quá 15 phút sẽ mất cọc và bị trừ 10 điểm Fair Play.',
       ].join('\n');
   static const String leave = 'Rời kèo';
   static const String cancelMatch = 'Hủy kèo';
-  static const String confirmLeaveTitle = 'Rời kèo?';
-  static String confirmLeaveMessage(int deposit, bool reopens) =>
-      'Bạn sẽ mất ${Formatters.vnd(deposit)} tiền cọc. '
-      '${reopens ? 'Chỗ của bạn sẽ mở lại cho người khác.' : 'Kèo đã chốt nên chỗ của bạn sẽ để trống.'}';
   static const String confirmCancelTitle = 'Hủy kèo?';
-  static String confirmCancelMessage(int deposit, int others) =>
-      'Bạn sẽ mất ${Formatters.vnd(deposit)} tiền cọc'
-      '${others > 0 ? ' và $others người đã tham gia sẽ được hoàn 100%' : ''}. Hủy kèo cũng có thể bị trừ điểm Fair Play.';
+  static const String confirmLeaveTitle = 'Rời kèo?';
+  static String confirmLeaveMessage(int deposit, {bool isHost = false, String? nextHost}) =>
+      'Bạn được hoàn 100% tiền cọc (${Formatters.vnd(deposit)}) và chỗ của bạn mở lại cho người khác.'
+      '${!isHost ? '' : nextHost == null ? ' Bạn là người cuối cùng nên kèo sẽ bị hủy.' : ' Quyền host sẽ chuyển cho $nextHost.'}';
   static const String keep = 'Không';
-  static String leftMessage(int deposit) => 'Bạn đã rời kèo. ${Formatters.vnd(deposit)} tiền cọc không được hoàn.';
-  static const String cancelledMessage = 'Đã hủy kèo. Những người đã tham gia được hoàn 100%.';
+  static String leftMessage(int refund) => 'Đã rời kèo. ${Formatters.vnd(refund)} đã được hoàn vào ví.';
+
+  // Yêu cầu hủy kèo đã chốt
+  static const String requestCancel = 'Yêu cầu hủy kèo';
+  static const String confirmRequestTitle = 'Gửi yêu cầu hủy kèo?';
+  static String confirmRequestMessage(int others, String deadline) =>
+      'Kèo chỉ bị hủy khi cả $others người còn lại đồng ý trước $deadline. Khi đó mọi người được hoàn 100% '
+      'và không ai bị trừ Fair Play. Chỉ cần 1 người từ chối thì yêu cầu bị bác và kèo vẫn diễn ra.';
+  static const String sendRequest = 'Gửi yêu cầu';
+  static const String requestSent = 'Đã gửi yêu cầu hủy. Chờ mọi người đồng ý.';
+  static String cancelRequestBy(String name) => '$name đề nghị hủy kèo';
+  static String approvalsCount(int approved, int total) => 'Đã đồng ý $approved/$total';
+  static String cancelRequestDeadline(String t) => 'Hạn trả lời: $t. Chưa đủ tất cả đồng ý thì kèo vẫn diễn ra.';
+  static const String approve = 'Đồng ý hủy';
+  static const String reject = 'Từ chối';
+  static const String approved = 'Đã đồng ý';
+  static const String notAnswered = 'Chưa trả lời';
+  static const String waitingOthers = 'Bạn đã đồng ý. Đang chờ những người còn lại.';
+  static const String rejectedMessage = 'Bạn đã từ chối. Kèo vẫn diễn ra.';
+  static const String mutualCancelledMessage = 'Tất cả đã đồng ý, kèo đã hủy. Mọi người được hoàn 100%.';
+  static const String confirmedNote =
+      'Kèo đã đủ người nên không thể rời. Muốn hủy, hãy gửi yêu cầu – cần tất cả đồng ý trước giờ chơi 24 giờ.';
+  static const String tooLateNote =
+      'Đã vào 24 giờ trước giờ chơi nên kèo không thể hủy. Vắng mặt hoặc trễ quá 15 phút sẽ mất cọc và bị trừ 10 điểm Fair Play.';
+  static const String simulateApprove = 'Giả lập: mọi người đồng ý';
+  static const String simulateReject = 'Giả lập: có người từ chối';
   static const String simulateJoin = 'Giả lập có người vào kèo';
 
   // Thanh toán cọc
@@ -98,6 +122,9 @@ class LfgStrings {
   static const String createTitle = 'Tạo Kèo Mới';
   static const String stepSport = 'Môn thể thao';
   static const String stepFormat = 'Hình thức ghép';
+  static const String stepTeamSize = 'Số người mỗi đội (loại sân)';
+  static const String teamRepresentativeNote =
+      'Bạn là người đại diện đội: cọc, hoàn tiền và cộng/trừ Fair Play của cả đội đều tính cho bạn.';
   static const String stepFacility = 'Chọn sân';
   static const String stepTime = 'Chọn khung giờ';
   static const String stepNote = 'Ghi chú (không bắt buộc)';
@@ -121,8 +148,12 @@ class LfgStrings {
   static const String createWindow = 'Khung giờ phải bắt đầu sau 48 giờ và trong vòng 5 ngày tới.';
   static const String singleSlotOnly = 'Mỗi kèo chỉ chọn một khung giờ.';
   static const String invalidFormat = 'Hình thức ghép không phù hợp với môn này.';
-  static const String hostCannotLeave = 'Host không thể rời kèo. Hãy dùng "Hủy kèo".';
-  static const String notHost = 'Chỉ host mới hủy được kèo.';
+  static const String cannotLeaveConfirmed = 'Kèo đã đủ người nên không thể rời. Hãy gửi yêu cầu hủy kèo.';
+  static const String cancelOnlyConfirmed = 'Kèo chưa đủ người: bạn có thể rời kèo và được hoàn 100%.';
+  static const String tooLateToCancel = 'Đã quá hạn hủy kèo (24 giờ trước giờ chơi).';
+  static const String cancelRequestExists = 'Kèo đang có một yêu cầu hủy chờ trả lời.';
+  static const String noCancelRequest = 'Yêu cầu hủy không còn hiệu lực.';
+  static const String alreadyResponded = 'Bạn đã trả lời yêu cầu này rồi.';
   static const String notMember = 'Bạn không ở trong kèo này.';
   static const String alreadyEnded = 'Kèo đã kết thúc hoặc đã bị hủy.';
   static const String loadError = 'Không tải được dữ liệu kèo. Vui lòng thử lại.';

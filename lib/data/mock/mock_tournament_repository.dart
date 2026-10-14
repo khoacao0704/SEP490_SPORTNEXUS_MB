@@ -173,8 +173,15 @@ class MockTournamentRepository implements TournamentRepository, SandboxTournamen
   @override
   Future<Tournament> simulateOrganizerCancelled(String tournamentId) async {
     final t = await _find(tournamentId);
+    if (t.cancelled) return t;
     final payments = await _payments();
     final paid = payments.remove(t.id) ?? {};
+    // Đơn mẫu không có bản ghi thanh toán: vẫn hoàn cho đơn của người dùng hiện tại (nếu là đội trưởng).
+    final me = await _requireUser();
+    final myEntry = t.entryOf(me.id);
+    if (myEntry != null && myEntry.captainId == me.id && !myEntry.withdrawn) {
+      paid.putIfAbsent(myEntry.id, () => t.entryFee);
+    }
     for (final amount in paid.values) {
       await _wallet.creditRefund(amount: amount, description: 'Hoàn 100% lệ phí • BTC hủy ${t.name}', reference: t.id);
     }

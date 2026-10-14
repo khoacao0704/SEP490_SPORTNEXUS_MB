@@ -1,4 +1,5 @@
 import '../core/constants/lfg_rules.dart';
+import 'court_type.dart';
 import 'geo_point.dart';
 import 'sport.dart';
 
@@ -26,27 +27,71 @@ enum LfgFormat {
 }
 
 enum LfgStatus {
-  /// Còn chỗ, nhận Flash Claim tới T−48h.
+  /// Chưa đủ người, nhận Flash Claim tới T−48h. Ai rời cũng được hoàn 100%.
   open,
 
-  /// Đủ người, chờ tới T−48h để chốt.
-  full,
-
-  /// Đã qua T−48h với đủ người: kèo chắc chắn diễn ra.
+  /// Đã chốt (đủ người): không rời được, chỉ hủy được khi tất cả cùng đồng ý trước T−24h.
   confirmed,
   cancelled,
   completed,
 }
 
 enum LfgCancelReason {
+  /// Tới T−48h vẫn chưa đủ người: hoàn 100% cho tất cả.
   notEnoughPlayers('NotEnoughPlayers'),
-  hostCancelled('HostCancelled');
+
+  /// Kèo đã chốt, tất cả thành viên đồng ý hủy trước T−24h: hoàn 100%, không trừ Fair Play.
+  mutualAgreement('MutualAgreement'),
+
+  /// Người cuối cùng (host) rời kèo chưa đủ người.
+  everyoneLeft('EveryoneLeft');
 
   const LfgCancelReason(this.apiValue);
 
   final String apiValue;
 
   static LfgCancelReason fromApi(String value) => values.firstWhere((r) => r.apiValue == value);
+}
+
+/// Yêu cầu hủy một kèo đã chốt. Người gửi tự tính là đồng ý; một người từ chối là bác ngay.
+/// Hết hạn ở T−24h nếu chưa đủ tất cả đồng ý (kèo vẫn diễn ra).
+class LfgCancelRequest {
+  final String requestedBy;
+  final String requestedByName;
+  final DateTime createdAt;
+
+  /// userId các thành viên đã đồng ý (gồm người gửi).
+  final List<String> approvals;
+
+  const LfgCancelRequest({
+    required this.requestedBy,
+    required this.requestedByName,
+    required this.createdAt,
+    required this.approvals,
+  });
+
+  bool hasApproved(String userId) => approvals.contains(userId);
+
+  LfgCancelRequest approve(String userId) => LfgCancelRequest(
+        requestedBy: requestedBy,
+        requestedByName: requestedByName,
+        createdAt: createdAt,
+        approvals: [...approvals, if (!approvals.contains(userId)) userId],
+      );
+
+  factory LfgCancelRequest.fromJson(Map<String, dynamic> json) => LfgCancelRequest(
+        requestedBy: json['requestedBy'] as String,
+        requestedByName: json['requestedByName'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        approvals: (json['approvals'] as List).cast<String>(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'requestedBy': requestedBy,
+        'requestedByName': requestedByName,
+        'createdAt': createdAt.toIso8601String(),
+        'approvals': approvals,
+      };
 }
 
 class LfgMember {
@@ -93,6 +138,9 @@ class LfgMatch {
   final GeoPoint location;
   final Sport sport;
   final LfgFormat format;
+
+  /// Loại sân của khung giờ; Team vs Team quyết định số người mỗi đội (vd. sân 7 → 7 vs 7).
+  final CourtType courtType;
   final DateTime start;
   final DateTime end;
 
@@ -107,9 +155,10 @@ class LfgMatch {
   final String note;
   final DateTime createdAt;
 
-  /// Đã qua T−48h với đủ người; sau đó có người rời thì chỗ để trống, không mở lại.
-  final bool locked;
   final LfgCancelReason? cancelReason;
+
+  /// Yêu cầu hủy đang chờ mọi người đồng ý (chỉ có ở kèo đã chốt).
+  final LfgCancelRequest? cancelRequest;
 
   const LfgMatch({
     required this.id,
@@ -120,6 +169,7 @@ class LfgMatch {
     required this.location,
     required this.sport,
     required this.format,
+    this.courtType = CourtType.standard,
     required this.start,
     required this.end,
     required this.courtPrice,
@@ -127,13 +177,16 @@ class LfgMatch {
     required this.createdAt,
     this.heldSlots = 0,
     this.note = '',
-    this.locked = false,
     this.cancelReason,
+    this.cancelRequest,
   });
 
   LfgMember get host => members.firstWhere((m) => m.isHost, orElse: () => members.first);
 
   int get totalSlots => format.totalSlots;
+
+  /// "Ghép 4 (2 vs 2)" hoặc "Team vs Team • 7 vs 7".
+  String get formatLabel => courtType.isStandard ? format.label : '${format.label} • ${courtType.matchup}';
 
   /// Chỗ còn có thể Flash Claim (đã trừ chỗ đang được giữ).
   int get slotsLeft => (totalSlots - members.length - heldSlots).clamp(0, totalSlots);
@@ -151,9 +204,14 @@ class LfgMatch {
   LfgStatus status(DateTime now) {
     if (cancelReason != null) return LfgStatus.cancelled;
     if (!end.isAfter(now)) return LfgStatus.completed;
-    if (locked) return LfgStatus.confirmed;
-    return isFull ? LfgStatus.full : LfgStatus.open;
+    return isFull ? LfgStatus.confirmed : LfgStatus.open;
   }
+
+  /// Hạn chót gửi / đồng ý yêu cầu hủy kèo đã chốt.
+  DateTime get cancelRequestDeadline => start.subtract(LfgRules.mutualCancelBeforeStart);
+
+  /// Yêu cầu hủy còn hiệu lực (chưa tới T−24h).
+  LfgCancelRequest? activeCancelRequest(DateTime now) => now.isBefore(cancelRequestDeadline) ? cancelRequest : null;
 
   /// Còn nhận người: chưa hủy/chốt, chưa tới T−48h, còn chỗ trống.
   bool isClaimable(DateTime now) => status(now) == LfgStatus.open && now.isBefore(fillDeadline) && slotsLeft > 0;
@@ -161,7 +219,13 @@ class LfgMatch {
   /// Mã QR check-in riêng của từng người, dùng tới khi chủ sân check-out.
   String ticketCode(String userId) => 'SPN-LFG-$id-$userId';
 
-  LfgMatch copyWith({List<LfgMember>? members, int? heldSlots, bool? locked, LfgCancelReason? cancelReason}) =>
+  LfgMatch copyWith({
+    List<LfgMember>? members,
+    int? heldSlots,
+    LfgCancelReason? cancelReason,
+    LfgCancelRequest? cancelRequest,
+    bool clearCancelRequest = false,
+  }) =>
       LfgMatch(
         id: id,
         facilityId: facilityId,
@@ -171,6 +235,7 @@ class LfgMatch {
         location: location,
         sport: sport,
         format: format,
+        courtType: courtType,
         start: start,
         end: end,
         courtPrice: courtPrice,
@@ -178,8 +243,8 @@ class LfgMatch {
         createdAt: createdAt,
         heldSlots: heldSlots ?? this.heldSlots,
         note: note,
-        locked: locked ?? this.locked,
         cancelReason: cancelReason ?? this.cancelReason,
+        cancelRequest: clearCancelRequest ? null : (cancelRequest ?? this.cancelRequest),
       );
 
   factory LfgMatch.fromJson(Map<String, dynamic> json) => LfgMatch(
@@ -191,6 +256,7 @@ class LfgMatch {
         location: GeoPoint.fromJson(json['location'] as Map<String, dynamic>),
         sport: Sport.fromApi(json['sport'] as String),
         format: LfgFormat.fromApi(json['format'] as String),
+        courtType: CourtType.fromApi(json['courtType'] as String?),
         start: DateTime.parse(json['start'] as String),
         end: DateTime.parse(json['end'] as String),
         courtPrice: (json['courtPrice'] as num).toInt(),
@@ -198,8 +264,10 @@ class LfgMatch {
         createdAt: DateTime.parse(json['createdAt'] as String),
         heldSlots: (json['heldSlots'] as num?)?.toInt() ?? 0,
         note: json['note'] as String? ?? '',
-        locked: json['locked'] as bool? ?? false,
         cancelReason: json['cancelReason'] == null ? null : LfgCancelReason.fromApi(json['cancelReason'] as String),
+        cancelRequest: json['cancelRequest'] == null
+            ? null
+            : LfgCancelRequest.fromJson(json['cancelRequest'] as Map<String, dynamic>),
       );
 
   Map<String, dynamic> toJson() => {
@@ -211,6 +279,7 @@ class LfgMatch {
         'location': location.toJson(),
         'sport': sport.apiValue,
         'format': format.apiValue,
+        'courtType': courtType.apiValue,
         'start': start.toIso8601String(),
         'end': end.toIso8601String(),
         'courtPrice': courtPrice,
@@ -218,8 +287,8 @@ class LfgMatch {
         'createdAt': createdAt.toIso8601String(),
         'heldSlots': heldSlots,
         'note': note,
-        'locked': locked,
         if (cancelReason != null) 'cancelReason': cancelReason!.apiValue,
+        if (cancelRequest != null) 'cancelRequest': cancelRequest!.toJson(),
       };
 }
 
@@ -239,10 +308,13 @@ class LfgFeedQuery {
   final Sport? sport;
   final LfgFormat? format;
 
+  /// Lọc theo loại sân (số người mỗi đội) với bóng đá / bóng rổ.
+  final CourtType? courtType;
+
   /// Vị trí GPS để tính khoảng cách; `null` thì không tính.
   final GeoPoint? userLocation;
 
-  const LfgFeedQuery({required this.city, this.district, this.sport, this.format, this.userLocation});
+  const LfgFeedQuery({required this.city, this.district, this.sport, this.format, this.courtType, this.userLocation});
 }
 
 class LfgFeedItem {

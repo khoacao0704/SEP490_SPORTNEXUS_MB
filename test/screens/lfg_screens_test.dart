@@ -57,7 +57,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Sân Bóng Hoa Lư • Quận 1'), findsOneWidget);
     expect(find.text('Sân Cầu Lông Thiên Triều • Quận 7'), findsNothing);
-    expect(find.text(LfgFormat.teamVsTeam.label), findsWidgets);
+    expect(find.text('${LfgFormat.teamVsTeam.label} • 7 vs 7'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, '5 vs 5'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sân Bóng Hoa Lư • Quận 1'), findsNothing);
 
     await tester.tap(find.text(LfgStrings.tabMine));
     await tester.pumpAndSettle();
@@ -82,18 +86,18 @@ void main() {
     expect(find.text(LfgStrings.leave), findsOneWidget);
   });
 
-  testWidgets('rời kèo: hỏi xác nhận, báo mất cọc', (tester) async {
+  testWidgets('rời kèo chưa đủ người: hỏi xác nhận, được hoàn 100%', (tester) async {
     final match = await tester.runAsync(() => seed('Gò Vấp Arena'));
     await pump(tester, LfgMatchDetailScreen(matchId: match!.id));
 
     await tester.tap(find.text(LfgStrings.leave));
     await tester.pumpAndSettle();
     expect(find.text(LfgStrings.confirmLeaveTitle), findsOneWidget);
-    expect(find.textContaining('mở lại cho người khác'), findsOneWidget);
+    expect(find.textContaining('Bạn được hoàn 100%'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(ElevatedButton, LfgStrings.leave));
     await tester.pumpAndSettle();
-    expect(find.textContaining('không được hoàn'), findsOneWidget);
+    expect(find.textContaining('đã được hoàn vào ví'), findsOneWidget);
     expect(find.text(LfgStrings.yourTicket), findsNothing);
     expect(find.textContaining(LfgStrings.flashClaim), findsOneWidget);
   });
@@ -134,5 +138,38 @@ void main() {
     expect(find.byType(LfgMatchDetailScreen), findsOneWidget);
     expect(find.text(LfgStrings.cancelMatch), findsOneWidget);
     expect(find.text(LfgStrings.yourTicket), findsOneWidget);
+  });
+
+  testWidgets('kèo đã chốt: không có nút rời, gửi yêu cầu hủy rồi chờ người khác', (tester) async {
+    final match = await tester.runAsync(() => lfg.getMyMatches());
+    final full = match!.firstWhere((m) => m.facilityName == 'Pickleball Thảo Điền');
+    await pump(tester, LfgMatchDetailScreen(matchId: full.id));
+    expect(find.text(LfgStrings.leave), findsNothing);
+    expect(find.text(LfgStrings.confirmedNote), findsOneWidget);
+
+    await tester.tap(find.text(LfgStrings.requestCancel));
+    await tester.pumpAndSettle();
+    expect(find.text(LfgStrings.confirmRequestTitle), findsOneWidget);
+    await tester.tap(find.text(LfgStrings.sendRequest));
+    await tester.pumpAndSettle();
+    expect(find.text(LfgStrings.waitingOthers), findsOneWidget);
+    expect(find.text(LfgStrings.approvalsCount(1, 4)), findsOneWidget);
+
+    await tester.tap(find.text(LfgStrings.simulateApprove));
+    await tester.pumpAndSettle();
+    expect(find.text(LfgStrings.statusCancelledMutual), findsOneWidget);
+    expect(find.text(LfgStrings.yourTicket), findsNothing);
+  });
+
+  testWidgets('người khác xin hủy: mình đồng ý cuối cùng thì kèo hủy', (tester) async {
+    final mine = await tester.runAsync(() => lfg.getMyMatches());
+    final requested = mine!.firstWhere((m) => m.cancelRequest != null);
+    await pump(tester, LfgMatchDetailScreen(matchId: requested.id));
+    expect(find.text(LfgStrings.cancelRequestBy('Thu Trang')), findsOneWidget);
+
+    await tester.tap(find.text(LfgStrings.approve));
+    await tester.pumpAndSettle();
+    expect(find.text(LfgStrings.mutualCancelledMessage), findsOneWidget);
+    expect(find.text(LfgStrings.statusCancelledMutual), findsOneWidget);
   });
 }

@@ -6,6 +6,7 @@ import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/lfg_repository.dart';
 import '../../data/repositories/wallet_repository.dart';
+import '../../models/court_type.dart';
 import '../../models/lfg_match.dart';
 import '../../models/sport.dart';
 import '../../theme/app_colors.dart';
@@ -17,6 +18,7 @@ class LfgPaymentSummary {
   final String heading;
   final Sport sport;
   final LfgFormat format;
+  final CourtType courtType;
   final String facilityName;
   final String district;
   final DateTime start;
@@ -26,6 +28,7 @@ class LfgPaymentSummary {
     required this.heading,
     required this.sport,
     required this.format,
+    this.courtType = CourtType.standard,
     required this.facilityName,
     required this.district,
     required this.start,
@@ -226,7 +229,9 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${s.sport.label} • ${s.format.label}',
+                            s.courtType.isStandard
+                                ? '${s.sport.label} • ${s.format.label}'
+                                : '${s.sport.label} • ${s.format.label} • ${s.courtType.matchup}',
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textMain),
                           ),
                           Text(

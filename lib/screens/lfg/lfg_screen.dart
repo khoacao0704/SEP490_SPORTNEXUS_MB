@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/vietnam_cities.dart';
 import '../../core/strings/lfg_strings.dart';
 import '../../data/app_repositories.dart';
+import '../../models/court_type.dart';
 import '../../models/lfg_match.dart';
 import '../../models/sport.dart';
 import '../../theme/app_colors.dart';
@@ -125,6 +126,7 @@ class _LfgFeedViewState extends State<LfgFeedView> {
   String? _district;
   Sport? _sport;
   LfgFormat? _format;
+  CourtType? _courtType;
   List<LfgFeedItem> _items = [];
   String? _myId;
   bool _isLoading = true;
@@ -149,7 +151,7 @@ class _LfgFeedViewState extends State<LfgFeedView> {
     });
     try {
       final items = await AppRepositories.lfg.getFeed(
-        LfgFeedQuery(city: _city, district: _district, sport: _sport, format: _format),
+        LfgFeedQuery(city: _city, district: _district, sport: _sport, format: _format, courtType: _courtType),
       );
       final user = await AppRepositories.auth.getCurrentUser();
       if (!mounted) return;
@@ -189,6 +191,7 @@ class _LfgFeedViewState extends State<LfgFeedView> {
   @override
   Widget build(BuildContext context) {
     final formats = _sport == null ? LfgFormat.values : LfgFormat.forSport(_sport!);
+    final courtTypes = _sport == null ? const <CourtType>[] : CourtType.forSport(_sport!).where((t) => !t.isStandard).toList();
     return Column(
       children: [
         Container(
@@ -209,24 +212,47 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                       onTap: _pickLocation,
                     ),
                     const SizedBox(width: 8),
-                    _chip(
-                      label: LfgStrings.allFormats,
-                      selected: _format == null,
-                      onTap: () {
-                        setState(() => _format = null);
-                        _load();
-                      },
-                    ),
-                    for (final f in formats) ...[
-                      const SizedBox(width: 8),
+                    if (courtTypes.isNotEmpty) ...[
+                      // Bóng đá / bóng rổ: chỉ có Team vs Team, lọc theo số người mỗi đội.
                       _chip(
-                        label: f.label,
-                        selected: f == _format,
+                        label: LfgStrings.allCourtTypes,
+                        selected: _courtType == null,
                         onTap: () {
-                          setState(() => _format = f);
+                          setState(() => _courtType = null);
                           _load();
                         },
                       ),
+                      for (final t in courtTypes) ...[
+                        const SizedBox(width: 8),
+                        _chip(
+                          label: t.matchup,
+                          selected: t == _courtType,
+                          onTap: () {
+                            setState(() => _courtType = t);
+                            _load();
+                          },
+                        ),
+                      ],
+                    ] else ...[
+                      _chip(
+                        label: LfgStrings.allFormats,
+                        selected: _format == null,
+                        onTap: () {
+                          setState(() => _format = null);
+                          _load();
+                        },
+                      ),
+                      for (final f in formats) ...[
+                        const SizedBox(width: 8),
+                        _chip(
+                          label: f.label,
+                          selected: f == _format,
+                          onTap: () {
+                            setState(() => _format = f);
+                            _load();
+                          },
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -243,7 +269,10 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                       icon: Icons.sports,
                       selected: _sport == null,
                       onTap: () {
-                        setState(() => _sport = null);
+                        setState(() {
+                          _sport = null;
+                          _courtType = null;
+                        });
                         _load();
                       },
                     ),
@@ -256,6 +285,7 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                         onTap: () {
                           setState(() {
                             _sport = s;
+                            _courtType = null;
                             if (_format != null && !LfgFormat.forSport(s).contains(_format)) _format = null;
                           });
                           _load();

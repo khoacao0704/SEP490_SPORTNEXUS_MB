@@ -200,4 +200,12 @@ void main() {
     expect(await wallet.getBalance(), before + 300000);
     expect(repo.withdraw(pairCup), error(TournamentStrings.alreadyStarted));
   });
+
+  test('BTC hủy giải có đơn mẫu của mình: vẫn hoàn lệ phí, hủy lần 2 không hoàn thêm', () async {
+    final before = await wallet.getBalance();
+    await repo.simulateOrganizerCancelled(basketball);
+    expect(await wallet.getBalance(), before + 600000);
+    await repo.simulateOrganizerCancelled(basketball);
+    expect(await wallet.getBalance(), before + 600000);
+  });
 }

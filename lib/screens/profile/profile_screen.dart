@@ -4,9 +4,11 @@ import '../../theme/app_colors.dart';
 import '../../widgets/main_drawer.dart';
 import '../../core/constants/fair_play_rules.dart';
 import '../../core/strings/review_strings.dart';
+import '../../core/strings/split_payment_strings.dart';
 import '../../core/strings/wallet_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
+import '../booking/split_payments_screen.dart';
 import '../fair_play/fair_play_screen.dart';
 import '../review/pending_reviews_screen.dart';
 import '../wallet/transaction_history_screen.dart';
@@ -81,6 +83,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.receipt_long_outlined,
               title: WalletStrings.historyLink,
               screen: const TransactionHistoryScreen(),
+            ),
+            _menuTile(
+              icon: Icons.call_split,
+              title: SplitPaymentStrings.listTitle,
+              screen: const SplitPaymentsScreen(),
             ),
             _menuTile(
               icon: Icons.rate_review_outlined,

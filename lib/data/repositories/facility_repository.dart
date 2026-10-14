@@ -1,3 +1,4 @@
+import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/facility_search.dart';
 import '../../models/sport.dart';
@@ -21,8 +22,9 @@ abstract class FacilityRepository {
 
   Future<Facility> getFacility(String facilityId);
 
-  /// Các khung giờ chủ sân đã cấu hình cho [sport] trong ngày [date], kèm số sân còn trống.
-  Future<List<TimeSlot>> getTimeSlots(String facilityId, Sport sport, DateTime date);
+  /// Các khung giờ chủ sân đã cấu hình cho loại sân [courtType] của [sport] trong ngày [date],
+  /// kèm số sân còn trống. Bỏ trống [courtType] thì dùng loại sân rẻ nhất của môn.
+  Future<List<TimeSlot>> getTimeSlots(String facilityId, Sport sport, DateTime date, {CourtType? courtType});
 
   /// Giữ 1 sân ở mỗi khung giờ trong [slots] tối đa 10 phút để thanh toán.
   /// Giữ theo kiểu "tất cả hoặc không": chỉ cần 1 khung vừa hết sân / đã bắt đầu
@@ -31,4 +33,9 @@ abstract class FacilityRepository {
 
   /// Nhả toàn bộ chỗ đang giữ của [holdId] (người dùng quay lại hoặc hết giờ).
   Future<void> releaseHold(String holdId);
+
+  /// Chuyển chỗ đang giữ sang một lượt giữ mới tới [until] (vd. chờ nhóm chia tiền 30 phút,
+  /// hoặc giữ hẳn khi đặt thành công). Có [slotIds] thì chỉ chuyển các khung đó (mỗi khung một lượt đặt),
+  /// các khung còn lại vẫn ở lượt giữ cũ. Các khung đã chuyển không bị ảnh hưởng khi nhả [holdId].
+  Future<SlotHold> transferHold(String holdId, {required DateTime until, List<String>? slotIds});
 }

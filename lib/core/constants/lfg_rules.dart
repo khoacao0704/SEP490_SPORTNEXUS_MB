@@ -2,8 +2,11 @@
 class LfgRules {
   LfgRules._();
 
-  /// Kèo phải đủ người trước giờ bắt đầu ít nhất chừng này; quá mốc mà thiếu người thì hủy và hoàn 100%.
+  /// Kèo phải đủ người (chốt) trước giờ bắt đầu ít nhất chừng này; quá mốc mà thiếu người thì hủy và hoàn 100%.
   static const Duration fillDeadlineBeforeStart = Duration(hours: 48);
+
+  /// Kèo đã chốt chỉ hủy được (khi tất cả đồng ý) trước giờ chơi ít nhất chừng này.
+  static const Duration mutualCancelBeforeStart = Duration(hours: 24);
 
   /// Chỉ được tạo kèo cho khung giờ bắt đầu trong vòng chừng này kể từ bây giờ.
   static const Duration maxCreateAhead = Duration(days: 5);
