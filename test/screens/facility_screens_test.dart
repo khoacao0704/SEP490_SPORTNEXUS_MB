@@ -115,9 +115,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(BookingCheckoutScreen), findsOneWidget);
 
-    // Quay lại chưa thanh toán: về màn chi tiết (chỗ giữ được nhả).
+    // Quay lại chưa thanh toán: về màn chi tiết (chỗ giữ được nhả, vẫn giữ lựa chọn).
     await tester.tap(find.descendant(of: find.byType(BookingCheckoutScreen), matching: find.byIcon(Icons.arrow_back)));
     await tester.pumpAndSettle();
     expect(find.byType(FacilityDetailScreen), findsOneWidget);
+    expect(find.textContaining(FacilityStrings.selectedSlotCount(1)), findsOneWidget);
+  });
+
+  testWidgets('Chi tiết: chọn nhiều khung ở 2 ngày, bỏ chọn được, tổng tiền cộng dồn', (tester) async {
+    final facility = MockFacilityData.facilities.firstWhere((f) => f.id == 'f-hcm-eco-q7');
+    await pumpScreen(tester, FacilityDetailScreen(facility: facility, initialSport: Sport.badminton));
+
+    final now = DateTime.now();
+    final day1 = DateTime(now.year, now.month, now.day + 1);
+    final day2 = DateTime(now.year, now.month, now.day + 2);
+    final repo = AppRepositories.facility;
+    final open1 = (await repo.getTimeSlots(facility.id, Sport.badminton, day1)).where((s) => !s.isFull).toList();
+    final open2 = (await repo.getTimeSlots(facility.id, Sport.badminton, day2)).where((s) => !s.isFull).toList();
+
+    Future<void> tapSlot(DateTime start) async {
+      final finder = find.text(Formatters.timeRange(start, start.add(const Duration(hours: 1))));
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      await tester.tap(finder.hitTestable());
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openDay(DateTime day) async {
+      // Cuộn về đầu trang: nếu dùng ensureVisible, thanh chọn ngày sẽ nằm dưới thanh ảnh đang ghim.
+      await tester.fling(find.byType(CustomScrollView), const Offset(0, 2000), 3000);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(Formatters.dayMonth(day)).hitTestable());
+      await tester.pumpAndSettle();
+    }
+
+    // Ngày 1: chọn 2 khung.
+    await openDay(day1);
+    await tapSlot(open1[0].start);
+    await tapSlot(open1[1].start);
+    expect(find.textContaining(FacilityStrings.selectedSlotCount(2)), findsOneWidget);
+
+    // Sang ngày 2 chọn thêm 1 khung: lựa chọn ngày 1 vẫn còn.
+    await openDay(day2);
+    await tapSlot(open2[0].start);
+    expect(find.textContaining(FacilityStrings.selectedSlotCount(3)), findsOneWidget);
+    expect(find.text(Formatters.vnd(open1[0].price + open1[1].price + open2[0].price)), findsOneWidget);
+
+    // Bấm lại để bỏ chọn.
+    await tapSlot(open2[0].start);
+    expect(find.textContaining(FacilityStrings.selectedSlotCount(2)), findsOneWidget);
+    expect(find.text(Formatters.vnd(open1[0].price + open1[1].price)), findsOneWidget);
+
+    // Xem danh sách đã chọn rồi bỏ chọn tất cả.
+    await tester.tap(find.textContaining(FacilityStrings.selectedSlotCount(2)));
+    await tester.pumpAndSettle();
+    expect(find.text(FacilityStrings.selectedSlotsTitle), findsOneWidget);
+    await tester.tap(find.text(FacilityStrings.clearSelection));
+    await tester.pumpAndSettle();
+    expect(find.text(FacilityStrings.selectSlotFirst), findsOneWidget);
   });
 }

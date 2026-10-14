@@ -2,10 +2,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
+import '../core/constants/vietnam_cities.dart';
+import '../core/strings/lfg_strings.dart';
+import '../data/app_repositories.dart';
+import '../models/lfg_match.dart';
+import '../widgets/lfg/lfg_actions.dart';
+import '../widgets/lfg/lfg_match_card.dart';
 import '../widgets/main_drawer.dart';
+import '../widgets/notification/notification_bell.dart';
 import 'auth/login_screen.dart';
 import 'booking/court_booking_screen.dart';
-import 'community/flash_claim_checkout_screen.dart';
+import 'lfg/lfg_match_detail_screen.dart';
 import 'main/main_navigation_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -30,38 +37,15 @@ class _HomeScreenState extends State<HomeScreen> {
     'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=1000',
   ];
 
-  // Recommended LFG Matches
-  final List<Map<String, dynamic>> _nearbyLfgPosts = [
-    {
-      'id': '1',
-      'hostName': 'Chính Ngô',
-      'hostAvatar': 'C',
-      'sportName': 'Cầu Lông (Đôi)',
-      'format': 'Ghép 2 vs 2 • Cần 1 người',
-      'courtName': 'Sân Eco Quận 7',
-      'location': 'Quận 7 • P. Tân Thuận Đông',
-      'distance': '1.2 km',
-      'time': '19:30 - 20:30 (Tối nay)',
-      'slotPrice': 35000,
-    },
-    {
-      'id': '3',
-      'hostName': 'Minh Tuấn',
-      'hostAvatar': 'M',
-      'sportName': 'Pickleball (1v3)',
-      'format': 'Ghép 1 vs 3 • Cần 3 người đủ 4',
-      'courtName': 'Sân Pickleball Kỳ Hòa',
-      'location': 'Quận 10 • P. 12',
-      'distance': '2.5 km',
-      'time': '18:00 - 19:30 (Ngày mai)',
-      'slotPrice': 40000,
-    },
-  ];
+  // Gợi ý kèo LFG đang thiếu người (2 kèo sớm nhất trên bảng tin)
+  List<LfgMatch> _lfgSuggestions = [];
+  String? _myUserId;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadLfgSuggestions();
     _startBannerAutoScroll();
   }
 
@@ -86,10 +70,31 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  String _formatCurrency(int amount) {
-    String str = amount.toString();
-    RegExp reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
-    return str.replaceAllMapped(reg, (Match m) => '${m[1]}.');
+  Future<void> _loadLfgSuggestions() async {
+    try {
+      final feed = await AppRepositories.lfg.getFeed(LfgFeedQuery(city: VietnamCities.hoChiMinh.name));
+      final user = await AppRepositories.auth.getCurrentUser();
+      if (!mounted) return;
+      setState(() {
+        _myUserId = user?.id;
+        _lfgSuggestions = feed.map((i) => i.match).where((m) => m.isClaimable(DateTime.now())).take(2).toList();
+      });
+    } catch (_) {
+      // Mục gợi ý không bắt buộc: lỗi thì để trống.
+    }
+  }
+
+  Future<void> _openLfgMatch(LfgMatch match) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LfgMatchDetailScreen(matchId: match.id, initial: match)),
+    );
+    _loadLfgSuggestions();
+  }
+
+  Future<void> _claimLfg(LfgMatch match) async {
+    final joined = await flashClaimMatch(context, match);
+    if (joined != null) _loadLfgSuggestions();
   }
 
   @override
@@ -151,6 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       actions: [
+        if (_isLoggedIn) const NotificationBell(),
         Padding(
           padding: const EdgeInsets.only(right: 16.0),
           child: _isLoggedIn
@@ -433,87 +439,19 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 12),
 
-          ..._nearbyLfgPosts.map((post) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.cardBorder),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: AppColors.primaryGreen,
-                        child: Text(post['hostAvatar'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(post['hostName'] as String, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textMain)),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.lightGreen,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(post['sportName'] as String, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryGreen)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(post['format'] as String, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textMain)),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textSecondary),
-                      const SizedBox(width: 4),
-                      Expanded(child: Text('${post['courtName']} • cách ${post['distance']}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('${_formatCurrency(post['slotPrice'] as int)} đ / slot', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.primaryGreen)),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => FlashClaimCheckoutScreen(
-                                sportName: post['sportName'] as String,
-                                hostName: post['hostName'] as String,
-                                courtName: post['courtName'] as String,
-                                location: post['location'] as String,
-                                time: post['time'] as String,
-                                slotPrice: post['slotPrice'] as int,
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.flash_on, size: 14, color: Colors.white),
-                        label: const Text('FLASH CLAIM', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1D5238),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
+          if (_lfgSuggestions.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(LfgStrings.noSuggestions, style: TextStyle(color: AppColors.textSecondary)),
+            ),
+          for (final match in _lfgSuggestions)
+            LfgMatchCard(
+              match: match,
+              now: DateTime.now(),
+              myUserId: _myUserId,
+              onTap: () => _openLfgMatch(match),
+              onClaim: () => _claimLfg(match),
+            ),
         ],
       ),
     );

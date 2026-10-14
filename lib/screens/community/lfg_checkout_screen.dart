@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../data/app_repositories.dart';
+import '../../data/repositories/wallet_repository.dart';
+import '../../models/wallet_transaction.dart';
 import '../../theme/app_colors.dart';
 
 class LfgCheckoutScreen extends StatefulWidget {
@@ -49,10 +52,9 @@ class _LfgCheckoutScreenState extends State<LfgCheckoutScreen> {
   }
 
   Future<void> _loadWalletBalance() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _walletBalance = prefs.getInt('wallet_balance') ?? 500000;
-    });
+    final balance = await AppRepositories.wallet.getBalance();
+    if (!mounted) return;
+    setState(() => _walletBalance = balance);
   }
 
   void _startTimer() {
@@ -129,9 +131,18 @@ class _LfgCheckoutScreenState extends State<LfgCheckoutScreen> {
     await Future.delayed(const Duration(seconds: 1));
 
     if (_selectedPaymentMethod == 0) {
-      final prefs = await SharedPreferences.getInstance();
-      int newBalance = _walletBalance - widget.hostDepositAmount;
-      await prefs.setInt('wallet_balance', newBalance);
+      try {
+        await AppRepositories.wallet.pay(
+          amount: widget.hostDepositAmount,
+          type: TransactionType.lfgDeposit,
+          description: 'Cọc tạo kèo ${widget.sport} • ${widget.courtName}',
+        );
+      } on WalletException catch (e) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+        return;
+      }
     }
 
     // Save LFG Booking Data for MyBookingsScreen

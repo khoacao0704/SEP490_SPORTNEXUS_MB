@@ -1,4 +1,5 @@
 import '../../core/strings/facility_strings.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/utils/geo_utils.dart';
 import '../../core/utils/text_utils.dart';
 import '../../models/facility.dart';
@@ -98,7 +99,7 @@ class MockFacilityRepository implements FacilityRepository {
       final id = '${facility.id}|${sport.apiValue}|${start.toIso8601String()}';
       final isPeak = start.hour >= 17;
       final booked = _bookedCourts(id, offering.courtCount, isPeak);
-      final held = _holds.where((h) => h.slotId == id).length;
+      final held = _holds.where((h) => h.slotIds.contains(id)).length;
 
       slots.add(TimeSlot(
         id: id,
@@ -115,19 +116,31 @@ class MockFacilityRepository implements FacilityRepository {
   }
 
   @override
-  Future<SlotHold> holdSlot(TimeSlot slot) async {
+  Future<SlotHold> holdSlots(List<TimeSlot> slots) async {
     await _delay();
+    if (slots.isEmpty) throw const FacilityException(FacilityStrings.noSlotSelected);
     final now = _now();
-    if (slot.hasStarted(now)) throw const FacilityException(FacilityStrings.slotStarted);
 
-    // Đọc lại số sân trống mới nhất trước khi giữ, tránh giữ trùng khi 2 người cùng bấm.
-    final fresh = (await getTimeSlots(slot.facilityId, slot.sport, slot.start))
-        .firstWhere((s) => s.id == slot.id, orElse: () => throw const FacilityException(FacilityStrings.slotJustFull));
-    if (fresh.isFull) throw const FacilityException(FacilityStrings.slotJustFull);
+    // Bỏ khung trùng, sắp theo giờ bắt đầu.
+    final unique = {for (final s in slots) s.id: s}.values.toList()..sort((a, b) => a.start.compareTo(b.start));
 
-    final hold = _Hold('hold-${++_holdCounter}', slot.id, now.add(holdDuration));
+    // Kiểm tra hết rồi mới giữ: một khung lỗi thì không giữ khung nào.
+    final fresh = <TimeSlot>[];
+    for (final slot in unique) {
+      final label = Formatters.slotLabel(slot.start, slot.end);
+      if (slot.hasStarted(now)) throw FacilityException(FacilityStrings.slotStarted(label));
+
+      // Đọc lại số sân trống mới nhất, tránh giữ trùng khi nhiều người cùng bấm.
+      final latest = (await getTimeSlots(slot.facilityId, slot.sport, slot.start))
+          .where((s) => s.id == slot.id)
+          .firstOrNull;
+      if (latest == null || latest.isFull) throw FacilityException(FacilityStrings.slotJustFull(label));
+      fresh.add(latest);
+    }
+
+    final hold = _Hold('hold-${++_holdCounter}', fresh.map((s) => s.id).toList(), now.add(holdDuration));
     _holds.add(hold);
-    return SlotHold(holdId: hold.id, slot: fresh, expiresAt: hold.expiresAt);
+    return SlotHold(holdId: hold.id, slots: fresh, expiresAt: hold.expiresAt);
   }
 
   @override
@@ -174,8 +187,8 @@ class MockFacilityRepository implements FacilityRepository {
 
 class _Hold {
   final String id;
-  final String slotId;
+  final List<String> slotIds;
   final DateTime expiresAt;
 
-  _Hold(this.id, this.slotId, this.expiresAt);
+  _Hold(this.id, this.slotIds, this.expiresAt);
 }

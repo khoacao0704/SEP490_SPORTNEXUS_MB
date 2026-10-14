@@ -5,6 +5,7 @@ import '../screens/auth/login_screen.dart';
 import '../screens/profile/top_up_wallet_screen.dart';
 import '../screens/facility/facility_search_screen.dart';
 import '../screens/main/main_navigation_screen.dart';
+import '../screens/tournament/tournaments_screen.dart';
 
 class MainDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -126,11 +127,9 @@ class MainDrawer extends StatelessWidget {
                     index: 4,
                     onTapCustom: () {
                       Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Tính năng Giải Đấu sắp ra mắt!'),
-                          backgroundColor: AppColors.primaryGreen,
-                        ),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TournamentsScreen()),
                       );
                     },
                   ),

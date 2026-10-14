@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/strings/wallet_strings.dart';
+import '../../data/app_repositories.dart';
+import '../../data/repositories/wallet_repository.dart';
+import '../../models/bank_account.dart';
 import '../../theme/app_colors.dart';
+import '../wallet/vietqr_payment_screen.dart';
 
 class TopUpWalletScreen extends StatefulWidget {
   const TopUpWalletScreen({super.key});
@@ -11,7 +15,8 @@ class TopUpWalletScreen extends StatefulWidget {
 
 class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
   int _selectedAmount = 100000;
-  int _selectedPaymentMethod = 2; // 0: VietQR, 1: MoMo, 2: VNPAY
+  static const int _vietQrMethodId = 0;
+  int _selectedPaymentMethod = _vietQrMethodId; // 0: VietQR, 1: MoMo, 2: VNPAY
   bool _isLoading = false;
 
   final TextEditingController _amountController = TextEditingController(text: '100.000');
@@ -61,74 +66,38 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
     });
   }
 
+  /// Chỉ hỗ trợ VietQR (theo đặc tả: VietQR sandbox); MoMo / VNPAY hiển thị nhưng chưa dùng được.
+  void _selectPaymentMethod(int id) {
+    if (id != _vietQrMethodId) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text(WalletStrings.onlyVietQr)));
+      return;
+    }
+    setState(() => _selectedPaymentMethod = id);
+  }
+
+  /// Tạo lệnh nạp rồi chuyển sang màn VietQR; ví chỉ được cộng khi BE xác nhận đã nhận tiền.
   Future<void> _handleConfirmTopUp() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    await Future.delayed(const Duration(seconds: 1)); // Simulate payment processing
-
-    // Update balance in SharedPreferences
-    final prefs = await SharedPreferences.getInstance();
-    int currentBalance = prefs.getInt('wallet_balance') ?? 500000;
-    int newBalance = currentBalance + _selectedAmount;
-    await prefs.setInt('wallet_balance', newBalance);
-
+    setState(() => _isLoading = true);
+    TopUpOrder order;
+    try {
+      order = await AppRepositories.wallet.createTopUp(_selectedAmount);
+    } on WalletException catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+      return;
+    }
     if (!mounted) return;
+    setState(() => _isLoading = false);
 
-    setState(() {
-      _isLoading = false;
-    });
-
-    // Show Success Dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: AppColors.lightGreen,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.check, color: AppColors.primaryGreen, size: 40),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Nạp tiền thành công!',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Đã cộng ${_formatCurrency(_selectedAmount)} đ vào ví SportNexus của bạn.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context); // Close dialog
-                  Navigator.pop(context); // Go back to profile/previous screen
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryGreen,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                child: const Text('Hoàn tất', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ),
-      ),
+    final paid = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order)),
     );
+    // Nạp thành công thì quay về màn trước (Hồ sơ tự tải lại số dư).
+    if (paid == true && mounted) Navigator.pop(context, true);
   }
 
   @override
@@ -341,11 +310,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                   ..._paymentMethods.map((method) {
                     final bool isSelected = _selectedPaymentMethod == method['id'];
                     return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedPaymentMethod = method['id'] as int;
-                        });
-                      },
+                      onTap: () => _selectPaymentMethod(method['id'] as int),
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
@@ -364,11 +329,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                               groupValue: _selectedPaymentMethod,
                               activeColor: AppColors.primaryGreen,
                               onChanged: (val) {
-                                if (val != null) {
-                                  setState(() {
-                                    _selectedPaymentMethod = val;
-                                  });
-                                }
+                                if (val != null) _selectPaymentMethod(val);
                               },
                             ),
                             Container(

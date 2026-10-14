@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/main_drawer.dart';
+import '../../widgets/review/fair_play_guard.dart';
 import 'create_lfg_screen.dart';
 import 'flash_claim_checkout_screen.dart';
 
@@ -413,7 +414,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ElevatedButton.icon(
-              onPressed: () {
+              onPressed: () async {
+                if (!await ensureCanJoinLfg(context) || !context.mounted) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const CreateLfgScreen()),
@@ -736,7 +738,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 ],
               ),
               ElevatedButton.icon(
-                onPressed: () {
+                onPressed: () async {
+                  if (!await ensureCanJoinLfg(context) || !mounted) return;
                   Navigator.push(
                     context,
                     MaterialPageRoute(

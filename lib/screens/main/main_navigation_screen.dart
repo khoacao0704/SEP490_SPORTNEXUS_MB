@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../home_screen.dart'; // Tab 0: Home
-import '../community/community_screen.dart'; // Tab 1: LFG
+import '../lfg/lfg_screen.dart'; // Tab 1: LFG
 import '../ai_chat/ai_chat_screen.dart'; // Tab 2: AI Chat
 import '../booking/my_bookings_screen.dart'; // Tab 3: Bookings & QR
 import '../profile/profile_screen.dart'; // Tab 4: Profile
@@ -23,7 +23,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   final List<Widget> _pages = [
     const HomeScreen(),
-    const CommunityScreen(),
+    const LfgScreen(),
     const AiChatScreen(),
     const MyBookingsScreen(),
     const ProfileScreen(),

@@ -35,8 +35,14 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
   List<TimeSlot> _slots = [];
   bool _isLoadingSlots = true;
   String? _slotsError;
-  TimeSlot? _selectedSlot;
   DateTime _now = DateTime.now();
+
+  /// Khung giờ đã chọn (theo id), có thể thuộc nhiều ngày. Giữ nguyên khi đổi ngày, xóa khi đổi môn.
+  final Map<String, TimeSlot> _selected = {};
+
+  List<TimeSlot> get _selectedSorted => _selected.values.toList()..sort((a, b) => a.start.compareTo(b.start));
+
+  int get _selectedTotal => _selected.values.fold(0, (sum, s) => sum + s.price);
 
   bool _isHolding = false;
   int _imageIndex = 0;
@@ -63,7 +69,6 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
     setState(() {
       _isLoadingSlots = true;
       _slotsError = null;
-      _selectedSlot = null;
     });
     try {
       final slots = await AppRepositories.facility.getTimeSlots(_facility.id, _sport, _date);
@@ -72,6 +77,15 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
         _slots = slots;
         _now = DateTime.now();
         _isLoadingSlots = false;
+        // Cập nhật khung đã chọn của ngày này theo dữ liệu mới; khung vừa hết sân / đã qua thì bỏ chọn.
+        for (final slot in slots) {
+          if (!_selected.containsKey(slot.id)) continue;
+          if (slot.isBookable(_now)) {
+            _selected[slot.id] = slot;
+          } else {
+            _selected.remove(slot.id);
+          }
+        }
       });
     } catch (_) {
       if (!mounted || generation != _loadGeneration) return;
@@ -82,14 +96,19 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
     }
   }
 
+  void _toggleSlot(TimeSlot slot) {
+    setState(() {
+      if (_selected.remove(slot.id) == null) _selected[slot.id] = slot;
+    });
+  }
+
   Future<void> _handleBook() async {
-    final slot = _selectedSlot;
-    if (slot == null) return;
+    if (_selected.isEmpty) return;
 
     setState(() => _isHolding = true);
     SlotHold hold;
     try {
-      hold = await AppRepositories.facility.holdSlot(slot);
+      hold = await AppRepositories.facility.holdSlots(_selectedSorted);
     } on FacilityException catch (e) {
       if (!mounted) return;
       setState(() => _isHolding = false);
@@ -107,15 +126,16 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
           sport: _sport.label,
           courtName: _facility.name,
           location: '${_facility.district}, ${_facility.city}',
-          dateTime: '${Formatters.weekdayDayMonth(slot.start)} • ${Formatters.timeRange(slot.start, slot.end)}',
-          totalAmount: hold.slot.price,
+          dateTime: describeSlotSchedule(hold.slots),
+          totalAmount: hold.totalPrice,
           initialSecondsRemaining: hold.secondsRemaining(DateTime.now()),
         ),
       ),
     );
 
     // Thanh toán thành công thì màn Thanh toán đưa người dùng về Trang chủ (màn này đã bị đóng).
-    // Còn mounted nghĩa là người dùng quay lại hoặc hết giờ giữ chỗ: nhả chỗ và tải lại số sân trống.
+    // Còn mounted nghĩa là người dùng quay lại hoặc hết giờ giữ chỗ: nhả chỗ và tải lại số sân trống
+    // (vẫn giữ các khung đã chọn để người dùng đặt lại nhanh).
     if (!mounted) return;
     await AppRepositories.facility.releaseHold(hold.holdId);
     _loadSlots();
@@ -142,6 +162,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                   child: DateSelectorBar(
                     dates: _dates,
                     selected: _date,
+                    markedDates: _selected.values.map((s) => s.start).toSet(),
                     onSelected: (d) {
                       setState(() => _date = d);
                       _loadSlots();
@@ -316,7 +337,10 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
               showCheckmark: false,
               onSelected: (_) {
                 if (selected) return;
-                setState(() => _sport = o.sport);
+                setState(() {
+                  _sport = o.sport;
+                  _selected.clear(); // khung giờ của môn khác không dùng được
+                });
                 _loadSlots();
               },
               selectedColor: AppColors.primaryGreen,
@@ -372,11 +396,23 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
         ),
       );
     }
-    return TimeSlotGrid(
-      slots: _slots,
-      selectedSlotId: _selectedSlot?.id,
-      now: _now,
-      onSelected: (slot) => setState(() => _selectedSlot = slot),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 10),
+          child: Text(
+            FacilityStrings.multiSlotHint,
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ),
+        TimeSlotGrid(
+          slots: _slots,
+          selectedSlotIds: _selected.keys.toSet(),
+          now: _now,
+          onSelected: _toggleSlot,
+        ),
+      ],
     );
   }
 
@@ -457,8 +493,77 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
     );
   }
 
+  void _showSelectedSlotsSheet() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.white,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final slots = _selectedSorted;
+          // Bỏ hết khung trong sheet thì đóng sheet.
+          if (slots.isEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (Navigator.canPop(sheetContext)) Navigator.pop(sheetContext);
+            });
+          }
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 8, 4),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          FacilityStrings.selectedSlotsTitle,
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(_selected.clear);
+                          Navigator.pop(sheetContext);
+                        },
+                        child: const Text(FacilityStrings.clearSelection, style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: slots
+                        .map((s) => ListTile(
+                              leading: const Icon(Icons.schedule, color: AppColors.primaryGreen),
+                              title: Text(
+                                Formatters.slotLabel(s.start, s.end),
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(Formatters.vnd(s.price)),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                                onPressed: () {
+                                  setState(() => _selected.remove(s.id));
+                                  setSheetState(() {});
+                                },
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildBottomBar() {
-    final slot = _selectedSlot;
+    final count = _selected.length;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
@@ -479,17 +584,35 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    slot == null ? FacilityStrings.selectSlotFirst : Formatters.vnd(slot.price),
+                    count == 0 ? FacilityStrings.selectSlotFirst : Formatters.vnd(_selectedTotal),
                     style: TextStyle(
-                      fontSize: slot == null ? 13 : 20,
+                      fontSize: count == 0 ? 13 : 20,
                       fontWeight: FontWeight.bold,
-                      color: slot == null ? AppColors.textSecondary : AppColors.primaryGreen,
+                      color: count == 0 ? AppColors.textSecondary : AppColors.primaryGreen,
                     ),
                   ),
-                  if (slot != null)
-                    Text(
-                      '${Formatters.weekdayDayMonth(slot.start)} • ${Formatters.timeRange(slot.start, slot.end)}',
-                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                  if (count > 0)
+                    InkWell(
+                      onTap: _showSelectedSlotsSheet,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text.rich(
+                          TextSpan(
+                            text: '${FacilityStrings.selectedSlotCount(count)} • ',
+                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            children: const [
+                              TextSpan(
+                                text: FacilityStrings.viewSelected,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primaryGreen,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -498,7 +621,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
             SizedBox(
               height: 48,
               child: ElevatedButton(
-                onPressed: slot == null || _isHolding ? null : _handleBook,
+                onPressed: count == 0 || _isHolding ? null : _handleBook,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.authPrimary,
                   foregroundColor: Colors.white,

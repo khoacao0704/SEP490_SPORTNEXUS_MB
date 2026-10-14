@@ -31,13 +31,17 @@ class TimeSlot {
   bool isBookable(DateTime now) => !isFull && !hasStarted(now);
 }
 
-/// Kết quả giữ chỗ 10 phút trong lúc người chơi thanh toán.
+/// Kết quả giữ chỗ 10 phút cho một hoặc nhiều khung giờ trong lúc người chơi thanh toán.
 class SlotHold {
   final String holdId;
-  final TimeSlot slot;
+
+  /// Các khung giờ đã giữ, sắp theo thời gian bắt đầu.
+  final List<TimeSlot> slots;
   final DateTime expiresAt;
 
-  const SlotHold({required this.holdId, required this.slot, required this.expiresAt});
+  const SlotHold({required this.holdId, required this.slots, required this.expiresAt});
+
+  int get totalPrice => slots.fold(0, (sum, s) => sum + s.price);
 
   int secondsRemaining(DateTime now) {
     final seconds = expiresAt.difference(now).inSeconds;
