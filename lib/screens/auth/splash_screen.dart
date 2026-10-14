@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../data/app_repositories.dart';
 import '../../theme/app_colors.dart';
-import '../main/main_navigation_screen.dart';
 import 'login_screen.dart';
+import 'role_router.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -20,16 +20,16 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _checkLoginStatus() async {
     await Future.delayed(const Duration(seconds: 1)); // Short delay for splash
-    final prefs = await SharedPreferences.getInstance();
-    final bool isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+    var user = await AppRepositories.auth.getCurrentUser();
+    if (user != null && !isRoleAllowedOnMobile(user.role)) {
+      await AppRepositories.auth.logout();
+      user = null;
+    }
 
     if (!mounted) return;
 
-    if (isLoggedIn) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-      );
+    if (user != null) {
+      goToHome(context, user);
     } else {
       Navigator.pushReplacement(
         context,
