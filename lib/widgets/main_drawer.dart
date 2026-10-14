@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../data/app_repositories.dart';
 import '../theme/app_colors.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/profile/top_up_wallet_screen.dart';
@@ -17,8 +17,7 @@ class MainDrawer extends StatelessWidget {
   });
 
   Future<void> _handleLogout(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await AppRepositories.auth.logout();
 
     if (!context.mounted) return;
 

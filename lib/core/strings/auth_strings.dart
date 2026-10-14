@@ -1,0 +1,84 @@
+/// Chuỗi hiển thị cho các màn hình xác thực (đăng nhập, đăng ký, OTP, quên mật khẩu).
+class AuthStrings {
+  AuthStrings._();
+
+  // Đăng nhập
+  static const String loginTitle = 'Đăng Nhập SportNexus';
+  static const String loginSubtitle = 'Chào mừng bạn trở lại với nền tảng quản lý & đặt sân thể thao';
+  static const String identifierLabel = 'Email hoặc Số điện thoại';
+  static const String identifierHint = 'Nhập email hoặc số điện thoại';
+  static const String rememberMe = 'Ghi nhớ đăng nhập';
+  static const String forgotPasswordLink = 'Quên mật khẩu?';
+  static const String loginButton = 'ĐĂNG NHẬP';
+  static const String orLoginWith = 'HOẶC ĐĂNG NHẬP BẰNG';
+  static const String noAccount = 'Chưa có tài khoản? ';
+  static const String registerNow = 'Đăng ký ngay';
+  static const String socialComingSoon = 'Đăng nhập bằng mạng xã hội sẽ sớm được hỗ trợ';
+
+  // Đăng ký
+  static const String registerTitle = 'Tạo Tài Khoản';
+  static const String registerSubtitle = 'Đăng ký để đặt sân, ghép trận và kết nối cộng đồng thể thao';
+  static const String fullNameLabel = 'Họ và tên';
+  static const String fullNameHint = 'Nhập họ và tên';
+  static const String emailLabel = 'Email';
+  static const String emailHint = 'Nhập email';
+  static const String phoneLabel = 'Số điện thoại';
+  static const String phoneHint = 'Nhập số điện thoại';
+  static const String confirmPasswordLabel = 'Xác nhận mật khẩu';
+  static const String confirmPasswordHint = 'Nhập lại mật khẩu';
+  static const String agreeTermsPrefix = 'Tôi đồng ý với ';
+  static const String termsOfService = 'Điều khoản sử dụng';
+  static const String agreeTermsRequired = 'Vui lòng đồng ý với Điều khoản sử dụng';
+  static const String registerButton = 'ĐĂNG KÝ';
+  static const String haveAccount = 'Đã có tài khoản? ';
+  static const String loginNow = 'Đăng nhập';
+  static const String registerSuccess = 'Xác thực thành công! Vui lòng đăng nhập để tiếp tục.';
+
+  // Mật khẩu
+  static const String passwordLabel = 'Mật khẩu';
+  static const String passwordHint = 'Nhập mật khẩu';
+  static const String newPasswordLabel = 'Mật khẩu mới';
+  static const String newPasswordHint = 'Nhập mật khẩu mới';
+  static const String passwordRule = 'Tối thiểu 8 ký tự, gồm cả chữ và số';
+
+  // OTP
+  static const String otpTitle = 'Xác Thực OTP';
+  static String otpSubtitle(String email) => 'Mã xác thực gồm 6 chữ số đã được gửi đến\n$email';
+  static const String otpVerifyButton = 'XÁC THỰC';
+  static const String otpNotReceived = 'Chưa nhận được mã? ';
+  static const String otpResend = 'Gửi lại mã';
+  static String otpResendIn(int seconds) => 'Gửi lại sau ${seconds}s';
+  static const String otpResent = 'Đã gửi lại mã OTP';
+  static const String otpIncomplete = 'Vui lòng nhập đủ 6 chữ số';
+
+  // Quên / đặt lại mật khẩu
+  static const String forgotTitle = 'Quên Mật Khẩu';
+  static const String forgotSubtitle = 'Nhập email đã đăng ký, chúng tôi sẽ gửi mã OTP để đặt lại mật khẩu';
+  static const String sendOtpButton = 'GỬI MÃ OTP';
+  static const String resetTitle = 'Đặt Lại Mật Khẩu';
+  static const String resetSubtitle = 'Tạo mật khẩu mới cho tài khoản của bạn';
+  static const String resetButton = 'ĐẶT LẠI MẬT KHẨU';
+  static const String resetSuccess = 'Đặt lại mật khẩu thành công! Vui lòng đăng nhập lại.';
+
+  // Kiểm tra dữ liệu nhập
+  static const String requiredField = 'Vui lòng không để trống';
+  static const String invalidEmail = 'Email không hợp lệ';
+  static const String invalidPhone = 'Số điện thoại không hợp lệ';
+  static const String invalidIdentifier = 'Email hoặc số điện thoại không hợp lệ';
+  static const String invalidPassword = 'Mật khẩu tối thiểu 8 ký tự, gồm cả chữ và số';
+  static const String passwordMismatch = 'Mật khẩu xác nhận không khớp';
+
+  // Lỗi từ máy chủ
+  static const String wrongCredentials = 'Sai tài khoản hoặc mật khẩu';
+  static const String accountNotVerified = 'Tài khoản chưa xác thực. Vui lòng nhập mã OTP.';
+  static const String emailTaken = 'Email đã được sử dụng';
+  static const String phoneTaken = 'Số điện thoại đã được sử dụng';
+  static const String emailNotFound = 'Không tìm thấy tài khoản với email này';
+  static const String wrongOtp = 'Mã OTP không đúng';
+  static const String sessionExpired = 'Phiên đặt lại mật khẩu đã hết hạn. Vui lòng thử lại.';
+
+  // Phân luồng theo vai trò
+  static const String ownerPendingTitle = 'Giao diện Chủ sân';
+  static const String ownerPendingMessage = 'Giao diện dành cho Chủ sân trên ứng dụng di động đang được phát triển.';
+  static const String roleNotAllowed = 'Tài khoản Quản trị viên không sử dụng ứng dụng di động. Vui lòng đăng nhập trên Web Portal.';
+}

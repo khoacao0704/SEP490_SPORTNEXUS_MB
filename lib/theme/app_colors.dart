@@ -23,4 +23,14 @@ class AppColors {
   
   static const Color tagPurpleBg = Color(0xFFF3E5F5);
   static const Color tagPurpleText = Color(0xFF7B1FA2);
+
+  // Auth screens (Đăng nhập / Đăng ký / OTP)
+  static const Color authPrimary = Color(0xFF1D5238);
+  static const Color authTitle = Color(0xFF1E293B);
+  static const Color authLabel = Color(0xFF334155);
+  static const Color authBody = Color(0xFF475569);
+  static const Color authSubtle = Color(0xFF64748B);
+  static const Color authHint = Color(0xFF94A3B8);
+  static const Color authBorder = Color(0xFFCBD5E1);
+  static const Color authDivider = Color(0xFFE2E8F0);
 }
