@@ -65,7 +65,8 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
     final userId = await _currentUserId();
     final prefs = await SharedPreferences.getInstance();
     final extras = prefs.getStringList(keyExtra(userId)) ?? [];
-    final template = _incomingTemplates[extras.length % _incomingTemplates.length];
+    final templates = userId == MockAuthRepository.ownerId ? _ownerIncomingTemplates : _incomingTemplates;
+    final template = templates[extras.length % templates.length];
     final notification = AppNotification(
       id: 'nt-sim-${_now().microsecondsSinceEpoch}',
       type: template.type,
@@ -171,10 +172,57 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
           n('nt-103', NotificationType.refunded, 'Đã hoàn tiền',
               'Hoàn 150.000 đ do bạn hủy đặt sân trước 24 giờ.', 10 * day, read: true),
         ];
+      case MockAuthRepository.ownerId:
+        return [
+          n('nt-201', NotificationType.newBooking, 'Có lượt đặt sân mới',
+              'Nguyễn Minh Anh đặt Cầu Lông tại Sân Cầu Lông Thiên Triều hôm nay (cọc 1/4: 40.000 đ).', 15),
+          n('nt-202', NotificationType.playerNoShow, 'Khách vắng mặt',
+              'Lượt Bóng Đá • Sân 5 người tại Sân Bóng Hoa Lư quá 15 phút chưa check-in. '
+                  'Tiền cọc 125.000 đ đã chuyển về ví của bạn.',
+              40),
+          n('nt-203', NotificationType.newFacilityReview, 'Đánh giá mới 2 sao',
+              'Sân Cầu Lông Thiên Triều: "Đèn sân 3 bị chớp, mong sân sửa sớm."', 3 * 60),
+          n('nt-204', NotificationType.listingFeeOverdue, 'Quá hạn phí duy trì',
+              'Phí tháng trước chưa được thanh toán. Các cơ sở của bạn đang bị ẩn khỏi tìm kiếm cho tới khi trả phí.',
+              6 * 60),
+          n('nt-205', NotificationType.escrowReleased, 'Đã giải ngân',
+              'Lượt Pickleball tại Sân Cầu Lông Thiên Triều đã check-out. 150.000 đ đã vào ví.', 4 * 60, read: true),
+          n('nt-206', NotificationType.facilityRejected, 'Hồ sơ cơ sở bị từ chối',
+              'Sân Cầu Lông Tân Bình: Ảnh giấy phép bị mờ và số giấy phép không khớp với ảnh.', 5 * day, read: true),
+          n('nt-207', NotificationType.listingFeeIssued, 'Đã chốt phí duy trì',
+              'Phí duy trì tháng trước đã được chốt (10% doanh thu). Hạn trả hết ngày 07.', 8 * day, read: true),
+          n('nt-208', NotificationType.ownerWithdrawalApproved, 'Rút tiền thành công',
+              'Lệnh rút 5.000.000 đ về Techcombank ****1234 đã được chuyển.', 10 * day, read: true),
+          n('nt-209', NotificationType.lfgMatchConfirmed, 'Kèo LFG đã đủ người',
+              'Kèo Cầu Lông đôi tại Sân Cầu Lông Thiên Triều đã đủ 4/4 người.', 12 * day, read: true),
+        ];
       default:
         return [];
     }
   }
+
+  static const List<({NotificationType type, String title, String body})> _ownerIncomingTemplates = [
+    (
+      type: NotificationType.newBooking,
+      title: 'Có lượt đặt sân mới',
+      body: 'Một khách vừa đặt Bóng Đá • Sân 7 người tại Sân Bóng Hoa Lư (thanh toán 100%).',
+    ),
+    (
+      type: NotificationType.bookingCancelledByPlayer,
+      title: 'Khách hủy đặt sân',
+      body: 'Một lượt Cầu Lông tại Sân Cầu Lông Thiên Triều bị hủy trong 24 giờ. Bạn nhận 40.000 đ tiền phạt.',
+    ),
+    (
+      type: NotificationType.facilityApproved,
+      title: 'Cơ sở đã được duyệt',
+      body: 'Pickleball Bình Thạnh đã được Admin duyệt. Hãy cài giá và khung giờ để bắt đầu nhận đặt sân.',
+    ),
+    (
+      type: NotificationType.reviewReportResolved,
+      title: 'Admin đã xử lý báo cáo',
+      body: 'Đánh giá bạn báo cáo đã được ẩn vì vi phạm quy định.',
+    ),
+  ];
 
   static const List<({NotificationType type, String title, String body})> _incomingTemplates = [
     (

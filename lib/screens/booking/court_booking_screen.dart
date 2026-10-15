@@ -223,7 +223,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
               Expanded(
                 child: ListView.separated(
                   itemCount: _vietnamProvinces.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final city = _vietnamProvinces[index];
                     return ListTile(
@@ -267,7 +267,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
               Expanded(
                 child: ListView.separated(
                   itemCount: wards.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final ward = wards[index];
                     return ListTile(
@@ -409,7 +409,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _sports.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final sport = _sports[index];
           final bool isSelected = _selectedSport == sport['id'];
@@ -610,7 +610,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
                 ),
               ),
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -622,7 +622,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _dates.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final date = _dates[index];
           final bool isSelected = _selectedDateIndex == index;

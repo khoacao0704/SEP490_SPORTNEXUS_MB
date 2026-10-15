@@ -29,17 +29,51 @@ IconData notificationIcon(NotificationType type) {
       return Icons.shield_outlined;
     case NotificationType.lfgRestriction:
       return Icons.block_outlined;
+    case NotificationType.newBooking:
+      return Icons.event_available_outlined;
+    case NotificationType.bookingCancelledByPlayer:
+      return Icons.event_busy_outlined;
+    case NotificationType.lfgMatchConfirmed:
+      return Icons.groups_outlined;
+    case NotificationType.playerNoShow:
+      return Icons.person_off_outlined;
+    case NotificationType.escrowReleased:
+      return Icons.payments_outlined;
+    case NotificationType.ownerWithdrawalApproved:
+      return Icons.north_east_rounded;
+    case NotificationType.ownerWithdrawalRejected:
+      return Icons.money_off_outlined;
+    case NotificationType.listingFeeIssued:
+    case NotificationType.listingFeeDueSoon:
+      return Icons.receipt_long_outlined;
+    case NotificationType.listingFeeOverdue:
+      return Icons.visibility_off_outlined;
+    case NotificationType.facilityApproved:
+    case NotificationType.profileChangeApproved:
+      return Icons.verified_outlined;
+    case NotificationType.facilityRejected:
+    case NotificationType.profileChangeRejected:
+      return Icons.report_gmailerrorred_outlined;
+    case NotificationType.newFacilityReview:
+      return Icons.star_outline_rounded;
+    case NotificationType.reviewReportResolved:
+      return Icons.flag_outlined;
   }
 }
 
 ({Color bg, Color fg}) notificationColors(NotificationCategory category) {
   switch (category) {
     case NotificationCategory.booking:
+    case NotificationCategory.ownerBooking:
       return (bg: AppColors.lightGreen, fg: AppColors.primaryGreen);
     case NotificationCategory.wallet:
+    case NotificationCategory.ownerMoney:
       return (bg: AppColors.tagPurpleBg, fg: AppColors.tagPurpleText);
     case NotificationCategory.review:
+    case NotificationCategory.ownerReview:
       return (bg: AppColors.tagOrangeBg, fg: AppColors.tagOrangeText);
+    case NotificationCategory.ownerFacility:
+      return (bg: const Color(0xFFE3F2FD), fg: const Color(0xFF1565C0));
   }
 }
 

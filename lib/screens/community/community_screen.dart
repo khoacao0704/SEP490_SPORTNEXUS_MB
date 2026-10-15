@@ -192,7 +192,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
               Expanded(
                 child: ListView.separated(
                   itemCount: _vietnamProvinces.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final city = _vietnamProvinces[index];
                     return ListTile(
@@ -228,12 +228,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Chọn Quận / Phường (${_selectedCity})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text('Chọn Quận / Phường ($_selectedCity)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 12),
               Expanded(
                 child: ListView.separated(
                   itemCount: wards.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final ward = wards[index];
                     return ListTile(
@@ -597,7 +597,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: _sports.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final sport = _sports[index];
           final bool isSelected = _selectedSport == sport['id'];

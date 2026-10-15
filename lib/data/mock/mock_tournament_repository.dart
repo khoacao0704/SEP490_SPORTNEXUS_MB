@@ -1,16 +1,23 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/strings/owner_tournament_strings.dart';
 import '../../core/strings/tournament_strings.dart';
+import '../../models/court_type.dart';
+import '../../models/owner_facility.dart';
 import '../../models/user_role.dart';
 import '../../models/sport.dart';
 import '../../models/tournament.dart';
 import '../../models/wallet_transaction.dart';
+import '../repositories/organizer_tournament_repository.dart';
+import '../repositories/owner_repository.dart';
 import '../repositories/tournament_repository.dart';
 import '../repositories/wallet_repository.dart';
 import 'mock_auth_repository.dart';
 import 'mock_facility_data.dart';
+import 'mock_owner_repository.dart';
 import 'mock_wallet_repository.dart';
 
 /// Bản giả lập [TournamentRepository].
@@ -18,7 +25,10 @@ import 'mock_wallet_repository.dart';
 /// - Giải mẫu có ngày tính theo hôm nay để luôn đủ các trạng thái: mở đăng ký, sắp diễn ra,
 ///   đang diễn ra, đã kết thúc. Giải nào có thay đổi (đăng ký / rút / hủy) thì lưu lại nguyên bản.
 /// - Lệ phí trừ/hoàn qua ví giả lập; ghi lại khoản đã trả theo từng đơn để biết hoàn bao nhiêu.
-class MockTournamentRepository implements TournamentRepository, SandboxTournamentSimulator {
+/// - Cũng là phía ban tổ chức (Chủ sân): giải Chủ sân tạo nằm chung kho nên người chơi thấy và đăng ký được.
+///   Tạm đóng sân và giải ngân lệ phí đi qua bản giả lập Chủ sân.
+class MockTournamentRepository
+    implements TournamentRepository, OrganizerTournamentRepository, SandboxTournamentSimulator {
   static const String keyTournaments = 'tournaments';
 
   /// tournamentId -> {entryId: lệ phí đã trả qua ví}.
@@ -27,14 +37,20 @@ class MockTournamentRepository implements TournamentRepository, SandboxTournamen
   final Duration latency;
   final DateTime Function() _now;
   final MockWalletRepository _wallet;
+  final MockOwnerRepository _owner;
+  final Random _random;
   int _counter = 0;
 
   MockTournamentRepository({
     this.latency = const Duration(milliseconds: 400),
     DateTime Function()? now,
     MockWalletRepository? wallet,
+    MockOwnerRepository? owner,
+    Random? random,
   })  : _now = now ?? DateTime.now,
-        _wallet = wallet ?? MockWalletRepository(latency: Duration.zero);
+        _wallet = wallet ?? MockWalletRepository(latency: Duration.zero),
+        _owner = owner ?? MockOwnerRepository(latency: Duration.zero, now: now),
+        _random = random ?? Random();
 
   @override
   Future<List<Tournament>> getTournaments(TournamentQuery query) async {
@@ -170,22 +186,268 @@ class MockTournamentRepository implements TournamentRepository, SandboxTournamen
     return 0;
   }
 
+  // ---------------- Ban tổ chức (Chủ sân) ----------------
+
   @override
-  Future<Tournament> simulateOrganizerCancelled(String tournamentId) async {
+  Future<List<Tournament>> getOrganizedTournaments() async {
+    await _delay();
+    final me = await _requireUser();
+    final now = _now();
+    bool isPast(Tournament t) => t.status(now).index >= TournamentStatus.finished.index;
+    final mine = (await _all()).where((t) => t.organizerId == me.id).toList();
+    final active = mine.where((t) => !isPast(t)).toList()..sort((a, b) => a.startDate.compareTo(b.startDate));
+    final past = mine.where(isPast).toList()..sort((a, b) => b.startDate.compareTo(a.startDate));
+    return [...active, ...past];
+  }
+
+  @override
+  Future<Tournament> createTournament(TournamentDraft draft) async {
+    await _delay();
+    final me = await _requireUser();
+    final facility = await _approvedFacility(draft.facilityId);
+    _validate(draft, facility);
+    final id = 't-own-${_now().millisecondsSinceEpoch}-${++_counter}';
+    final closureId = await _closeCourts(draft, id);
+    final t = _build(id, draft, facility, organizerId: me.id, closureId: closureId);
+    await _save(t);
+    return t;
+  }
+
+  @override
+  Future<Tournament> updateTournament(String tournamentId, TournamentDraft draft) async {
+    await _delay();
+    final t = await _organized(tournamentId);
+    _requireEditable(t);
+    if (t.entries.isNotEmpty) {
+      if (draft.changesLockedFields(t)) throw const TournamentException(OwnerTournamentStrings.lockedFields);
+      final updated = t.copyWith(description: draft.description.trim(), prizes: draft.prizes, rules: draft.rules);
+      await _save(updated);
+      return updated;
+    }
+
+    final facility = await _approvedFacility(draft.facilityId);
+    _validate(draft, facility);
+    var closureId = t.closureId;
+    final datesOrCourtChanged = draft.facilityId != t.facilityId ||
+        draft.sport != t.sport ||
+        draft.courtType != t.courtType ||
+        draft.startDate != t.startDate ||
+        draft.endDate != t.endDate;
+    if (datesOrCourtChanged) {
+      await _reopenCourts(t);
+      closureId = await _closeCourts(draft, t.id);
+    }
+    final updated = _build(t.id, draft, facility, organizerId: t.organizerId!, closureId: closureId);
+    await _save(updated);
+    return updated;
+  }
+
+  @override
+  Future<Tournament> cancelTournament(String tournamentId) async {
+    await _delay();
+    final t = await _organized(tournamentId);
+    _requireEditable(t);
+    await _refundAll(t, includeMyEntry: false);
+    await _reopenCourts(t);
+    final updated = t.copyWith(cancelled: true);
+    await _save(updated);
+    return updated;
+  }
+
+  @override
+  Future<Tournament> drawBracket(String tournamentId) async {
+    await _delay();
+    final t = await _organized(tournamentId);
+    _requireEditable(t);
+    if (_now().isBefore(t.registrationDeadline)) throw const TournamentException(OwnerTournamentStrings.drawNotYet);
+    if (t.isDrawn) throw const TournamentException(OwnerTournamentStrings.alreadyDrawn);
+    final active = t.entries.where((e) => !e.withdrawn).toList();
+    if (active.length < TournamentDraw.minEntries) throw const TournamentException(OwnerTournamentStrings.drawTooFew);
+    final updated = t.copyWith(
+      matches: TournamentDraw.draw(t.id, active, _random),
+      bracketSize: TournamentDraw.bracketSizeFor(active.length),
+    );
+    await _save(updated);
+    return updated;
+  }
+
+  @override
+  Future<Tournament> scheduleMatch(String tournamentId, String matchId, {required DateTime at, required String court}) async {
+    await _delay();
+    final t = await _organized(tournamentId);
+    _requireEditable(t);
+    _match(t, matchId);
+    final updated = t.copyWith(matches: [
+      for (final m in t.matches) m.id == matchId ? m.copyWith(scheduledAt: at, court: court.trim()) : m,
+    ]);
+    await _save(updated);
+    return updated;
+  }
+
+  @override
+  Future<Tournament> recordResult(String tournamentId, String matchId, {required String winnerId, required String score}) async {
+    await _delay();
+    final t = await _organized(tournamentId);
+    _requireEditable(t);
+    final m = _match(t, matchId);
+    if (m.entryAId == null || m.entryBId == null) throw const TournamentException(OwnerTournamentStrings.matchNotReady);
+    if (winnerId != m.entryAId && winnerId != m.entryBId) {
+      throw const TournamentException(OwnerTournamentStrings.invalidWinner);
+    }
+    if (score.trim().isEmpty) throw const TournamentException(OwnerTournamentStrings.scoreRequired);
+
+    List<TournamentMatch> matches;
+    try {
+      matches = TournamentDraw.recordResult(t.matches, matchId, winnerId: winnerId, score: score.trim());
+    } on StateError {
+      throw const TournamentException(OwnerTournamentStrings.nextPlayed);
+    }
+    var updated = t.copyWith(matches: matches);
+
+    // Xong chung kết: giải kết thúc, lệ phí (kể cả đơn rút sau hạn, không được hoàn) về ví Chủ sân.
+    if (m.round == t.roundCount) {
+      final amount = t.entryFee * t.entries.length;
+      await _owner.recordTournamentPayout(
+        tournamentId: t.id,
+        tournamentName: t.name,
+        facilityId: t.facilityId,
+        facilityName: t.facilityName,
+        amount: amount,
+      );
+      updated = updated.copyWith(paidOutAt: _now());
+    }
+    await _save(updated);
+    return updated;
+  }
+
+  Future<OwnerFacility> _approvedFacility(String facilityId) async {
+    try {
+      final f = await _owner.getOwnerFacility(facilityId);
+      if (!f.isApproved) throw const TournamentException(OwnerTournamentStrings.noFacility);
+      return f;
+    } on OwnerException {
+      throw const TournamentException(OwnerTournamentStrings.noFacility);
+    }
+  }
+
+  void _validate(TournamentDraft d, OwnerFacility facility) {
+    if (d.name.trim().isEmpty) throw const TournamentException(OwnerTournamentStrings.invalidName);
+    final court = facility.courtFor(d.sport, d.courtType);
+    if (court == null || court.isLocked) throw const TournamentException(OwnerTournamentStrings.invalidCourt);
+    if (!TournamentDraft.entryTypesFor(d.sport).contains(d.entryType)) {
+      throw const TournamentException(OwnerTournamentStrings.invalidEntryType);
+    }
+    final membersOk = switch (d.entryType) {
+      TournamentEntryType.single => d.minMembers == 1 && d.maxMembers == 1,
+      TournamentEntryType.pair => d.minMembers == 2 && d.maxMembers == 2,
+      TournamentEntryType.team =>
+        d.minMembers == d.courtType.playersPerTeam && d.maxMembers >= d.minMembers && d.maxMembers <= d.minMembers * 2,
+    };
+    if (!membersOk) throw const TournamentException(OwnerTournamentStrings.invalidMembers);
+    if (!TournamentDraft.sizeOptions.contains(d.maxEntries)) throw const TournamentException(OwnerTournamentStrings.invalidSize);
+    if (d.entryFee < 0) throw const TournamentException(OwnerTournamentStrings.invalidFee);
+    if (!d.registrationDeadline.isBefore(d.startDate) || d.endDate.isBefore(d.startDate)) {
+      throw const TournamentException(OwnerTournamentStrings.invalidDates);
+    }
+    if (!d.registrationDeadline.isAfter(_now())) throw const TournamentException(OwnerTournamentStrings.deadlinePassed);
+  }
+
+  Tournament _build(String id, TournamentDraft d, OwnerFacility f, {required String organizerId, String? closureId}) =>
+      Tournament(
+        id: id,
+        name: d.name.trim(),
+        organizer: f.profile.name,
+        organizerId: organizerId,
+        courtType: d.courtType,
+        closureId: closureId,
+        facilityId: f.id,
+        facilityName: f.profile.name,
+        city: f.profile.city,
+        district: f.profile.ward,
+        sport: d.sport,
+        entryType: d.entryType,
+        minMembers: d.minMembers,
+        maxMembers: d.maxMembers,
+        maxEntries: d.maxEntries,
+        entryFee: d.entryFee,
+        registrationDeadline: d.registrationDeadline,
+        startDate: d.startDate,
+        endDate: d.endDate,
+        description: d.description.trim(),
+        prizes: d.prizes,
+        rules: d.rules,
+      );
+
+  /// Tạm đóng loại sân thi đấu trong các ngày thi đấu; ngày đó đã có lượt đặt thì báo lỗi.
+  Future<String?> _closeCourts(TournamentDraft d, String tournamentId) async {
+    try {
+      final f = await _owner.addClosure(
+        d.facilityId,
+        sport: d.sport,
+        courtType: d.courtType,
+        from: d.startDate,
+        to: d.endDate,
+        reason: '${OwnerTournamentStrings.closureReason}: ${d.name.trim()}',
+      );
+      return f.closures.last.id;
+    } on OwnerException catch (e) {
+      throw TournamentException(e.message);
+    }
+  }
+
+  Future<void> _reopenCourts(Tournament t) async {
+    final closureId = t.closureId;
+    if (closureId == null) return;
+    try {
+      await _owner.removeClosure(t.facilityId, closureId);
+    } on OwnerException {
+      // Lịch đóng đã bị gỡ tay: bỏ qua.
+    }
+  }
+
+  Future<Tournament> _organized(String tournamentId) async {
+    final me = await _requireUser();
     final t = await _find(tournamentId);
-    if (t.cancelled) return t;
+    if (t.organizerId != me.id) throw const TournamentException(OwnerTournamentStrings.notOrganizer);
+    return t;
+  }
+
+  void _requireEditable(Tournament t) {
+    if (t.cancelled) throw const TournamentException(OwnerTournamentStrings.alreadyCancelled);
+    if (t.paidOutAt != null || t.status(_now()) == TournamentStatus.finished) {
+      throw const TournamentException(OwnerTournamentStrings.alreadyFinished);
+    }
+  }
+
+  TournamentMatch _match(Tournament t, String matchId) {
+    final m = t.matches.where((m) => m.id == matchId).firstOrNull;
+    if (m == null) throw const TournamentException(OwnerTournamentStrings.matchNotFound);
+    return m;
+  }
+
+  /// Hoàn 100% lệ phí đã ghi nhận cho các đơn. [includeMyEntry]: đơn mẫu của người đang đăng nhập không có
+  /// bản ghi thanh toán thì vẫn hoàn (dùng khi giả lập BTC hủy từ phía người chơi).
+  Future<void> _refundAll(Tournament t, {required bool includeMyEntry}) async {
     final payments = await _payments();
     final paid = payments.remove(t.id) ?? {};
-    // Đơn mẫu không có bản ghi thanh toán: vẫn hoàn cho đơn của người dùng hiện tại (nếu là đội trưởng).
-    final me = await _requireUser();
-    final myEntry = t.entryOf(me.id);
-    if (myEntry != null && myEntry.captainId == me.id && !myEntry.withdrawn) {
-      paid.putIfAbsent(myEntry.id, () => t.entryFee);
+    if (includeMyEntry) {
+      final me = await _requireUser();
+      final myEntry = t.entryOf(me.id);
+      if (myEntry != null && myEntry.captainId == me.id && !myEntry.withdrawn) {
+        paid.putIfAbsent(myEntry.id, () => t.entryFee);
+      }
     }
     for (final amount in paid.values) {
       await _wallet.creditRefund(amount: amount, description: 'Hoàn 100% lệ phí • BTC hủy ${t.name}', reference: t.id);
     }
     await _savePayments(payments);
+  }
+
+  @override
+  Future<Tournament> simulateOrganizerCancelled(String tournamentId) async {
+    final t = await _find(tournamentId);
+    if (t.cancelled) return t;
+    await _refundAll(t, includeMyEntry: true);
     final updated = t.copyWith(cancelled: true);
     await _save(updated);
     return updated;
@@ -313,12 +575,16 @@ class MockTournamentRepository implements TournamentRepository, SandboxTournamen
       required List<TournamentEntry> entries,
       List<TournamentMatch> matches = const [],
       List<String> extraRules = const [],
+      String? organizerId,
+      CourtType courtType = CourtType.standard,
     }) {
       final f = facilities[facilityId]!;
       return Tournament(
         id: id,
         name: name,
         organizer: f.name,
+        organizerId: organizerId,
+        courtType: courtType,
         facilityId: f.id,
         facilityName: f.name,
         city: f.city,
@@ -512,6 +778,29 @@ class MockTournamentRepository implements TournamentRepository, SandboxTournamen
           TournamentPrize(title: 'Á quân', amount: 1500000),
         ],
         entries: [for (var n = 0; n < 20; n++) single('t-hn-caulong-mo-rong', n)],
+      ),
+      // Giải do Chủ sân demo tổ chức trên app: đã hết hạn đăng ký, chờ bốc thăm.
+      make(
+        id: 't-own-bongda-hoalu',
+        name: 'Hoa Lư Cup – Bóng Đá 5 Người',
+        facilityId: 'f-hcm-hoalu',
+        organizerId: MockAuthRepository.ownerId,
+        courtType: CourtType.football5,
+        sport: Sport.football,
+        type: TournamentEntryType.team,
+        minMembers: 5,
+        maxMembers: 8,
+        maxEntries: 8,
+        fee: 500000,
+        deadline: day(-1, 23, 59),
+        start: day(20, 7),
+        end: day(21, 18),
+        description: 'Giải giao hữu các đội phong trào khu vực Quận 1, thi đấu tại sân 5 người.',
+        prizes: const [
+          TournamentPrize(title: 'Vô địch', amount: 3000000, extra: 'Cúp + huy chương'),
+          TournamentPrize(title: 'Á quân', amount: 1500000),
+        ],
+        entries: [for (var n = 0; n < 6; n++) team('t-own-bongda-hoalu', n, 6)],
       ),
     ];
   }

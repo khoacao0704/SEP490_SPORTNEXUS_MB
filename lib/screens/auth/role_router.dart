@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/app_user.dart';
 import '../../models/user_role.dart';
 import '../main/main_navigation_screen.dart';
-import 'owner_pending_screen.dart';
+import '../owner/owner_main_screen.dart';
 
 /// App mobile chỉ dành cho Player và Chủ sân; Admin dùng Web Portal.
 bool isRoleAllowedOnMobile(UserRole role) => role != UserRole.admin;
@@ -14,7 +14,7 @@ Widget homeScreenFor(AppUser user) {
     case UserRole.player:
       return const MainNavigationScreen();
     case UserRole.courtOwner:
-      return OwnerPendingScreen(user: user);
+      return OwnerMainScreen(user: user);
     case UserRole.admin:
       throw StateError('Admin không sử dụng app mobile');
   }

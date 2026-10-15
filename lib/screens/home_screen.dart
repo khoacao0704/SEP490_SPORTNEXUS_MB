@@ -11,7 +11,6 @@ import '../widgets/lfg/lfg_match_card.dart';
 import '../widgets/main_drawer.dart';
 import '../widgets/notification/notification_bell.dart';
 import 'auth/login_screen.dart';
-import 'booking/court_booking_screen.dart';
 import 'lfg/lfg_match_detail_screen.dart';
 import 'main/main_navigation_screen.dart';
 
@@ -240,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         gradient: LinearGradient(
-                          colors: [Colors.black.withOpacity(0.6), Colors.transparent],
+                          colors: [Colors.black.withValues(alpha: 0.6), Colors.transparent],
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                         ),
@@ -334,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
-                BoxShadow(color: AppColors.primaryGreen.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4)),
+                BoxShadow(color: AppColors.primaryGreen.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4)),
               ],
             ),
             child: Column(

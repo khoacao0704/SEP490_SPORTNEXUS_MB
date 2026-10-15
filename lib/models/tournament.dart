@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'court_type.dart';
 import 'sport.dart';
 
 /// Đơn vị đăng ký giải: cá nhân, cặp đôi hoặc đội.
@@ -129,6 +132,30 @@ class TournamentMatch {
 
   bool involves(String entryId) => entryAId == entryId || entryBId == entryId;
 
+  /// Trận vòng đầu chỉ có một bên: bên đó được miễn thi đấu.
+  bool get isBye => round == 1 && (entryAId == null) != (entryBId == null);
+
+  TournamentMatch copyWith({
+    String? entryAId,
+    String? entryBId,
+    DateTime? scheduledAt,
+    String? court,
+    String? score,
+    String? winnerId,
+    bool clearResult = false,
+  }) =>
+      TournamentMatch(
+        id: id,
+        round: round,
+        index: index,
+        entryAId: entryAId ?? this.entryAId,
+        entryBId: entryBId ?? this.entryBId,
+        scheduledAt: scheduledAt ?? this.scheduledAt,
+        court: court ?? this.court,
+        score: clearResult ? null : score ?? this.score,
+        winnerId: clearResult ? null : winnerId ?? this.winnerId,
+      );
+
   factory TournamentMatch.fromJson(Map<String, dynamic> json) => TournamentMatch(
         id: json['id'] as String,
         round: (json['round'] as num).toInt(),
@@ -173,11 +200,26 @@ class TournamentPrize {
   Map<String, dynamic> toJson() => {'title': title, 'amount': amount, 'extra': extra};
 }
 
-/// Giải đấu do chủ sân / Admin tạo trên Web. Thể thức loại trực tiếp.
+/// Giải đấu do chủ sân (app hoặc Web) / Admin tạo. Thể thức loại trực tiếp.
 class Tournament {
   final String id;
   final String name;
   final String organizer;
+
+  /// Tài khoản Chủ sân tổ chức; `null` với giải Admin tạo trên Web.
+  final String? organizerId;
+
+  /// Loại sân dùng để thi đấu (bị tạm đóng trong các ngày thi đấu).
+  final CourtType courtType;
+
+  /// Lịch tạm đóng sân tạo kèm giải.
+  final String? closureId;
+
+  /// Lệ phí đã giải ngân về ví Chủ sân (khi giải kết thúc).
+  final DateTime? paidOutAt;
+
+  /// Kích thước sơ đồ sau khi bốc thăm (lũy thừa của 2, có thể nhỏ hơn [maxEntries] khi thiếu đội).
+  final int? bracketSize;
   final String facilityId;
   final String facilityName;
   final String city;
@@ -212,6 +254,11 @@ class Tournament {
     required this.id,
     required this.name,
     required this.organizer,
+    this.organizerId,
+    this.courtType = CourtType.standard,
+    this.closureId,
+    this.paidOutAt,
+    this.bracketSize,
     required this.facilityId,
     required this.facilityName,
     required this.city,
@@ -242,7 +289,7 @@ class Tournament {
 
   TournamentStatus status(DateTime now) {
     if (cancelled) return TournamentStatus.cancelled;
-    if (!endDate.isAfter(now)) return TournamentStatus.finished;
+    if (!endDate.isAfter(now) || champion != null) return TournamentStatus.finished;
     if (!startDate.isAfter(now)) return TournamentStatus.ongoing;
     if (now.isBefore(registrationDeadline)) return TournamentStatus.registrationOpen;
     return TournamentStatus.upcoming;
@@ -258,11 +305,14 @@ class Tournament {
 
   TournamentEntry? entryById(String? id) => id == null ? null : entries.where((e) => e.id == id).firstOrNull;
 
+  bool get isDrawn => matches.isNotEmpty;
+
   /// Số vòng của sơ đồ: 8 suất → 3 vòng (tứ kết, bán kết, chung kết).
   int get roundCount {
+    final target = bracketSize ?? maxEntries;
     var rounds = 0;
     var size = 1;
-    while (size < maxEntries) {
+    while (size < target) {
       size *= 2;
       rounds++;
     }
@@ -276,10 +326,27 @@ class Tournament {
 
   TournamentEntry? get champion => entryById(finalMatch?.winnerId);
 
-  Tournament copyWith({List<TournamentEntry>? entries, List<TournamentMatch>? matches, bool? cancelled}) => Tournament(
+  Tournament copyWith({
+    List<TournamentEntry>? entries,
+    List<TournamentMatch>? matches,
+    bool? cancelled,
+    String? name,
+    String? description,
+    List<TournamentPrize>? prizes,
+    List<String>? rules,
+    String? closureId,
+    DateTime? paidOutAt,
+    int? bracketSize,
+  }) =>
+      Tournament(
         id: id,
-        name: name,
+        name: name ?? this.name,
         organizer: organizer,
+        organizerId: organizerId,
+        courtType: courtType,
+        closureId: closureId ?? this.closureId,
+        paidOutAt: paidOutAt ?? this.paidOutAt,
+        bracketSize: bracketSize ?? this.bracketSize,
         facilityId: facilityId,
         facilityName: facilityName,
         city: city,
@@ -293,9 +360,9 @@ class Tournament {
         registrationDeadline: registrationDeadline,
         startDate: startDate,
         endDate: endDate,
-        description: description,
-        prizes: prizes,
-        rules: rules,
+        description: description ?? this.description,
+        prizes: prizes ?? this.prizes,
+        rules: rules ?? this.rules,
         entries: entries ?? this.entries,
         matches: matches ?? this.matches,
         cancelled: cancelled ?? this.cancelled,
@@ -305,6 +372,11 @@ class Tournament {
         id: json['id'] as String,
         name: json['name'] as String,
         organizer: json['organizer'] as String,
+        organizerId: json['organizerId'] as String?,
+        courtType: CourtType.fromApi(json['courtType'] as String?),
+        closureId: json['closureId'] as String?,
+        paidOutAt: json['paidOutAt'] == null ? null : DateTime.parse(json['paidOutAt'] as String),
+        bracketSize: (json['bracketSize'] as num?)?.toInt(),
         facilityId: json['facilityId'] as String,
         facilityName: json['facilityName'] as String,
         city: json['city'] as String,
@@ -330,6 +402,11 @@ class Tournament {
         'id': id,
         'name': name,
         'organizer': organizer,
+        'organizerId': organizerId,
+        'courtType': courtType.apiValue,
+        'closureId': closureId,
+        'paidOutAt': paidOutAt?.toIso8601String(),
+        'bracketSize': bracketSize,
         'facilityId': facilityId,
         'facilityName': facilityName,
         'city': city,
@@ -373,4 +450,158 @@ class TournamentRegistration {
   final List<TournamentMember> teammates;
 
   const TournamentRegistration({required this.tournamentId, this.teamName = '', this.teammates = const []});
+}
+
+/// Bốc thăm và cập nhật sơ đồ loại trực tiếp (Chủ sân làm trên app).
+class TournamentDraw {
+  TournamentDraw._();
+
+  /// Tối thiểu số đơn để bốc thăm; ít hơn thì chỉ có thể hủy giải.
+  static const int minEntries = 4;
+
+  /// Sơ đồ nhỏ nhất (lũy thừa của 2) đủ chỗ cho [count] đơn.
+  static int bracketSizeFor(int count) {
+    var size = 2;
+    while (size < count) {
+      size *= 2;
+    }
+    return size;
+  }
+
+  /// Bốc thăm ngẫu nhiên. Thiếu đơn thì các ô trống là "miễn thi đấu": đơn đối diện tự vào vòng 2.
+  /// Các trận miễn đấu được rải đều trong sơ đồ để không dồn về một nhánh.
+  static List<TournamentMatch> draw(String tournamentId, List<TournamentEntry> entries, Random random) {
+    final ids = entries.map((e) => e.id).toList()..shuffle(random);
+    final size = bracketSizeFor(ids.length);
+    final firstRound = size ~/ 2;
+    final byes = size - ids.length;
+    final byeIndexes = {for (var k = 0; k < byes; k++) (k * firstRound / byes).floor()};
+
+    final matches = <TournamentMatch>[];
+    var next = 0;
+    for (var i = 0; i < firstRound; i++) {
+      final a = ids[next++];
+      final b = byeIndexes.contains(i) ? null : ids[next++];
+      matches.add(TournamentMatch(id: '$tournamentId-r1-m$i', round: 1, index: i, entryAId: a, entryBId: b));
+    }
+    for (var round = 2, count = firstRound ~/ 2; count >= 1; round++, count ~/= 2) {
+      for (var i = 0; i < count; i++) {
+        matches.add(TournamentMatch(id: '$tournamentId-r$round-m$i', round: round, index: i));
+      }
+    }
+    var result = matches;
+    for (final m in matches.where((m) => m.isBye)) {
+      result = _setWinner(result, m.id, m.entryAId ?? m.entryBId!, null);
+    }
+    return result;
+  }
+
+  /// Ghi kết quả một trận và đưa người thắng vào trận kế tiếp.
+  /// Ném [StateError] nếu trận sau đã có kết quả (không sửa ngược được).
+  static List<TournamentMatch> recordResult(
+    List<TournamentMatch> matches,
+    String matchId, {
+    required String winnerId,
+    required String score,
+  }) {
+    final m = matches.firstWhere((x) => x.id == matchId);
+    final next = _nextOf(matches, m);
+    if (next != null && next.isFinished) throw StateError('next-finished');
+    return _setWinner(matches, matchId, winnerId, score);
+  }
+
+  static TournamentMatch? _nextOf(List<TournamentMatch> matches, TournamentMatch m) =>
+      matches.where((x) => x.round == m.round + 1 && x.index == m.index ~/ 2).firstOrNull;
+
+  static List<TournamentMatch> _setWinner(List<TournamentMatch> matches, String matchId, String winnerId, String? score) {
+    final m = matches.firstWhere((x) => x.id == matchId);
+    final next = _nextOf(matches, m);
+    return [
+      for (final x in matches)
+        if (x.id == m.id)
+          x.copyWith(winnerId: winnerId, score: score)
+        else if (next != null && x.id == next.id)
+          m.index.isEven ? x.copyWith(entryAId: winnerId) : x.copyWith(entryBId: winnerId)
+        else
+          x,
+    ];
+  }
+}
+
+/// Thông tin Chủ sân nhập khi tạo / sửa giải.
+class TournamentDraft {
+  final String name;
+  final String facilityId;
+  final Sport sport;
+  final CourtType courtType;
+  final TournamentEntryType entryType;
+  final int minMembers;
+  final int maxMembers;
+  final int maxEntries;
+  final int entryFee;
+  final DateTime registrationDeadline;
+  final DateTime startDate;
+  final DateTime endDate;
+  final String description;
+  final List<TournamentPrize> prizes;
+  final List<String> rules;
+
+  const TournamentDraft({
+    required this.name,
+    required this.facilityId,
+    required this.sport,
+    this.courtType = CourtType.standard,
+    required this.entryType,
+    required this.minMembers,
+    required this.maxMembers,
+    required this.maxEntries,
+    required this.entryFee,
+    required this.registrationDeadline,
+    required this.startDate,
+    required this.endDate,
+    this.description = '',
+    this.prizes = const [],
+    this.rules = const [],
+  });
+
+  static const List<int> sizeOptions = [4, 8, 16, 32];
+
+  /// Bóng đá / bóng rổ thi đấu theo đội; môn vợt đơn hoặc đôi.
+  static List<TournamentEntryType> entryTypesFor(Sport sport) =>
+      sport == Sport.football || sport == Sport.basketball
+          ? const [TournamentEntryType.team]
+          : const [TournamentEntryType.single, TournamentEntryType.pair];
+
+  factory TournamentDraft.fromTournament(Tournament t) => TournamentDraft(
+        name: t.name,
+        facilityId: t.facilityId,
+        sport: t.sport,
+        courtType: t.courtType,
+        entryType: t.entryType,
+        minMembers: t.minMembers,
+        maxMembers: t.maxMembers,
+        maxEntries: t.maxEntries,
+        entryFee: t.entryFee,
+        registrationDeadline: t.registrationDeadline,
+        startDate: t.startDate,
+        endDate: t.endDate,
+        description: t.description,
+        prizes: t.prizes,
+        rules: t.rules,
+      );
+
+  /// Khác ở các mục bị khóa sau khi đã có người đăng ký (tên, môn, thể thức, lệ phí, số suất, ngày giờ).
+  bool changesLockedFields(Tournament t) =>
+      name.trim() != t.name ||
+      facilityId != t.facilityId ||
+      sport != t.sport ||
+      courtType != t.courtType ||
+      entryType != t.entryType ||
+      minMembers != t.minMembers ||
+      maxMembers != t.maxMembers ||
+      maxEntries != t.maxEntries ||
+      entryFee != t.entryFee ||
+      registrationDeadline != t.registrationDeadline ||
+      startDate != t.startDate ||
+      endDate != t.endDate;
 }

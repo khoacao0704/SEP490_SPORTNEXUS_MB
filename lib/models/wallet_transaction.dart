@@ -5,7 +5,12 @@ enum TransactionType {
   lfgDeposit('LfgDeposit', 'Cọc tạo kèo LFG', isCredit: false),
   flashClaim('FlashClaim', 'Cọc tham gia kèo LFG', isCredit: false),
   tournamentFee('TournamentFee', 'Lệ phí giải đấu', isCredit: false),
-  refund('Refund', 'Hoàn tiền', isCredit: true);
+  refund('Refund', 'Hoàn tiền', isCredit: true),
+
+  // Phía Chủ sân
+  escrowRelease('EscrowRelease', 'Giải ngân tiền sân', isCredit: true),
+  penaltyIncome('PenaltyIncome', 'Tiền phạt hủy / vắng mặt', isCredit: true),
+  listingFee('ListingFee', 'Phí duy trì hàng tháng', isCredit: false);
 
   const TransactionType(this.apiValue, this.label, {required this.isCredit});
 

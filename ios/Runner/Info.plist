@@ -8,6 +8,10 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SportNexus dùng vị trí của bạn để tìm sân gần nhất và tính khoảng cách tới sân.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SportNexus dùng camera để quét mã QR check-in và chụp ảnh sân, giấy phép kinh doanh.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SportNexus cần truy cập thư viện ảnh để bạn chọn ảnh sân và giấy phép kinh doanh.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Test1</string>
 	<key>CFBundleExecutable</key>
