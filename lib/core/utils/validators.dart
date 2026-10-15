@@ -39,6 +39,15 @@ class Validators {
     return null;
   }
 
+  /// Theo BE: 3-30 ký tự, chữ không dấu / số / "." / "_".
+  static final RegExp _username = RegExp(r'^[a-zA-Z0-9._]{3,30}$');
+
+  static String? username(String? value) {
+    if (value == null || value.trim().isEmpty) return AuthStrings.requiredField;
+    if (!_username.hasMatch(value.trim())) return AuthStrings.invalidUsername;
+    return null;
+  }
+
   static String? password(String? value) {
     if (value == null || value.isEmpty) return AuthStrings.requiredField;
     if (value.length < 8 || !_hasLetter.hasMatch(value) || !_hasDigit.hasMatch(value)) {

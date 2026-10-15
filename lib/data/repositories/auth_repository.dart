@@ -1,4 +1,5 @@
 import '../../models/app_user.dart';
+import '../../models/user_role.dart';
 
 /// Lỗi nghiệp vụ trả về từ tầng xác thực; [message] đã sẵn sàng để hiển thị cho người dùng.
 class AuthException implements Exception {
@@ -14,30 +15,38 @@ class AuthException implements Exception {
 }
 
 class RegisterRequest {
+  final String username;
   final String fullName;
   final String email;
   final String phone;
   final String password;
 
+  /// Người chơi hoặc Chủ sân (BE không cho tự đăng ký Admin).
+  final UserRole role;
+
   const RegisterRequest({
+    required this.username,
     required this.fullName,
     required this.email,
     required this.phone,
     required this.password,
+    this.role = UserRole.player,
   });
 }
 
 enum OtpPurpose { register, resetPassword }
 
-/// Hợp đồng xác thực mà UI sử dụng.
-/// Hiện tại dùng [MockAuthRepository]; khi nối Swagger chỉ cần viết bản cài đặt gọi API.
+/// Hợp đồng xác thực mà UI sử dụng: ApiAuthRepository (BE thật) hoặc MockAuthRepository.
 abstract class AuthRepository {
-  /// Đăng nhập bằng email hoặc số điện thoại.
+  /// Đăng nhập bằng tên đăng nhập (bản giả lập nhận thêm email / số điện thoại).
   /// [rememberMe] = false thì lần mở app sau phải đăng nhập lại.
   Future<AppUser> login(String identifier, String password, {bool rememberMe = true});
 
-  /// Tạo tài khoản ở trạng thái chưa xác thực và gửi OTP về email.
+  /// Tạo tài khoản. BE chưa có OTP nên tài khoản dùng được ngay (đăng nhập lại sau khi đăng ký).
   Future<void> register(RegisterRequest request);
+
+  /// BE đã có OTP xác thực đăng ký / quên mật khẩu chưa. `false`: các màn đó báo "đang phát triển".
+  bool get supportsOtp;
 
   Future<void> verifyRegisterOtp(String email, String otp);
 

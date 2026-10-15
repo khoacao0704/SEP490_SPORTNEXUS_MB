@@ -44,6 +44,7 @@ class MockAuthRepository implements AuthRepository {
     _MockAccount(
       user: const AppUser(
         id: 'u-player-001',
+        username: 'player1',
         fullName: 'Khoa Cao',
         email: 'player@sportnexus.vn',
         phone: '0901234567',
@@ -56,6 +57,7 @@ class MockAuthRepository implements AuthRepository {
     _MockAccount(
       user: const AppUser(
         id: restrictedPlayerId,
+        username: 'player2',
         fullName: 'Trần Văn Bình',
         email: 'restricted@sportnexus.vn',
         phone: '0908888888',
@@ -68,6 +70,7 @@ class MockAuthRepository implements AuthRepository {
     _MockAccount(
       user: const AppUser(
         id: ownerId,
+        username: 'owner1',
         fullName: 'Chủ Sân Demo',
         email: 'owner@sportnexus.vn',
         phone: '0907654321',
@@ -77,6 +80,9 @@ class MockAuthRepository implements AuthRepository {
       verified: true,
     ),
   ];
+
+  @override
+  bool get supportsOtp => true;
 
   @override
   Future<AppUser> login(String identifier, String password, {bool rememberMe = true}) async {
@@ -113,14 +119,18 @@ class MockAuthRepository implements AuthRepository {
     if (accounts.any((a) => a.user.phone == phone)) {
       throw const AuthException(AuthStrings.phoneTaken);
     }
+    if (accounts.any((a) => a.user.username == request.username.trim())) {
+      throw const AuthException(AuthStrings.usernameTaken);
+    }
 
     accounts.add(_MockAccount(
       user: AppUser(
         id: 'u-${DateTime.now().millisecondsSinceEpoch}',
+        username: request.username.trim(),
         fullName: request.fullName.trim(),
         email: email,
         phone: phone,
-        role: UserRole.player,
+        role: request.role,
       ),
       password: request.password,
       verified: false,
@@ -235,8 +245,11 @@ class MockAuthRepository implements AuthRepository {
   _MockAccount? _findByIdentifier(List<_MockAccount> accounts, String identifier) {
     final email = _normalizeEmail(identifier);
     final phone = _normalizePhone(identifier);
+    final username = identifier.trim();
     for (final a in accounts) {
-      if (a.user.email == email || a.user.phone == phone) return a;
+      if (a.user.email == email || a.user.phone == phone || (a.user.username.isNotEmpty && a.user.username == username)) {
+        return a;
+      }
     }
     return null;
   }

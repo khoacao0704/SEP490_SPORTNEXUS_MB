@@ -1,3 +1,7 @@
+import '../core/config/api_config.dart';
+import 'api/api_auth_repository.dart';
+import 'api/api_client.dart';
+import 'api/token_store.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_booking_repository.dart';
 import 'mock/mock_facility_repository.dart';
@@ -21,14 +25,22 @@ import 'repositories/tournament_repository.dart';
 import 'repositories/wallet_repository.dart';
 
 /// Nơi duy nhất quyết định UI dùng bản cài đặt nào của từng repository.
-/// Khi nối Swagger: đổi `Mock...Repository()` thành bản gọi API, UI giữ nguyên.
+/// Đã nối API: đăng nhập / đăng ký. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
 class AppRepositories {
   AppRepositories._();
 
   static final MockWalletRepository _mockWallet = MockWalletRepository();
   static final MockFacilityRepository _mockFacility = MockFacilityRepository();
 
-  static AuthRepository auth = MockAuthRepository();
+  /// JWT của phiên đăng nhập (Keystore / Keychain).
+  static final TokenStore tokenStore = SecureTokenStore();
+
+  /// Gọi Backend; tự gắn token. main.dart gán [ApiClient.onUnauthorized] để xử lý phiên hết hạn.
+  static final ApiClient api = ApiClient(tokens: tokenStore);
+
+  static AuthRepository auth = ApiConfig.useMockAuth
+      ? MockAuthRepository()
+      : ApiAuthRepository(api: api, tokens: tokenStore);
   static FacilityRepository facility = _mockFacility;
   static WalletRepository wallet = _mockWallet;
   static ReviewRepository review = MockReviewRepository();
