@@ -3,13 +3,14 @@ import '../../core/strings/auth_strings.dart';
 import '../../core/utils/validators.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../models/user_role.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/auth/auth_card_scaffold.dart';
 import '../../widgets/auth/auth_primary_button.dart';
 import '../../widgets/auth/auth_text_field.dart';
 import 'otp_verification_screen.dart';
 
-/// Pop về email đã đăng ký khi xác thực OTP thành công.
+/// Pop về tên đăng nhập khi đăng ký xong (BE chưa có OTP) hoặc khi xác thực OTP thành công (bản giả lập).
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -19,6 +20,7 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -26,10 +28,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
 
   bool _agreedToTerms = false;
+  UserRole _role = UserRole.player;
   bool _isLoading = false;
 
   @override
   void dispose() {
+    _usernameController.dispose();
     _fullNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -47,14 +51,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _isLoading = true);
     final email = _emailController.text.trim();
+    final username = _usernameController.text.trim();
     try {
       await AppRepositories.auth.register(RegisterRequest(
+        username: username,
         fullName: _fullNameController.text.trim(),
         email: email,
         phone: _phoneController.text.trim(),
         password: _passwordController.text,
+        role: _role,
       ));
       if (!mounted) return;
+      // BE chưa có OTP: tài khoản dùng được ngay, về màn Login với tên đăng nhập điền sẵn.
+      if (!AppRepositories.auth.supportsOtp) {
+        Navigator.pop(context, username);
+        return;
+      }
       setState(() => _isLoading = false);
       final verified = await Navigator.push<bool>(
         context,
@@ -62,8 +74,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           builder: (_) => OtpVerificationScreen(email: email, purpose: OtpPurpose.register),
         ),
       );
-      // Trả email về màn Login để điền sẵn.
-      if (verified == true && mounted) Navigator.pop(context, email);
+      if (verified == true && mounted) Navigator.pop(context, username);
     } on AuthException catch (e) {
       if (mounted) showAuthError(context, e.message);
     } finally {
@@ -83,6 +94,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
         child: AutofillGroup(
           child: Column(
             children: [
+              _buildRoleSelector(),
+              const SizedBox(height: 16),
+              AuthTextField(
+                label: AuthStrings.usernameLabel,
+                hint: AuthStrings.usernameHint,
+                controller: _usernameController,
+                validator: Validators.username,
+                keyboardType: TextInputType.text,
+                helperText: AuthStrings.usernameRule,
+                autofillHints: const [AutofillHints.newUsername],
+              ),
+              const SizedBox(height: 16),
               AuthTextField(
                 label: AuthStrings.fullNameLabel,
                 hint: AuthStrings.fullNameHint,
@@ -147,6 +170,61 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildRoleSelector() {
+    Widget option(UserRole role, String label, IconData icon) {
+      final selected = _role == role;
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => setState(() => _role = role),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.lightGreen : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: selected ? AppColors.authPrimary : AppColors.authBorder,
+                width: selected ? 1.5 : 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Icon(icon, color: selected ? AppColors.authPrimary : AppColors.authSubtle),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: selected ? AppColors.authPrimary : AppColors.authBody,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          AuthStrings.roleLabel,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.authLabel),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            option(UserRole.player, AuthStrings.rolePlayer, Icons.sports_tennis),
+            const SizedBox(width: 12),
+            option(UserRole.courtOwner, AuthStrings.roleOwner, Icons.storefront),
+          ],
+        ),
+      ],
     );
   }
 

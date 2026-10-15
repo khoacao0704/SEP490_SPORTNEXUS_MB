@@ -69,6 +69,7 @@ void main() {
 
   group('đăng ký', () {
     const request = RegisterRequest(
+      username: 'nguyenvana',
       fullName: 'Nguyễn Văn A',
       email: 'NguyenA@Gmail.com',
       phone: '0912345678',
@@ -100,11 +101,38 @@ void main() {
       final restarted = MockAuthRepository(latency: Duration.zero);
       final user = await restarted.login('nguyena@gmail.com', 'Matkhau123');
       expect(user.fullName, 'Nguyễn Văn A');
+      // Đăng nhập được bằng tên đăng nhập như BE thật.
+      expect((await restarted.login('nguyenvana', 'Matkhau123')).username, 'nguyenvana');
+    });
+
+    test('đăng ký Chủ sân và trùng tên đăng nhập', () async {
+      await repo.register(const RegisterRequest(
+        username: 'chusanmoi',
+        fullName: 'Chủ Sân Mới',
+        email: 'chusan@gmail.com',
+        phone: '0933334444',
+        password: 'Matkhau123',
+        role: UserRole.courtOwner,
+      ));
+      await repo.verifyRegisterOtp('chusan@gmail.com', MockAuthRepository.mockOtp);
+      expect((await repo.login('chusanmoi', 'Matkhau123')).role, UserRole.courtOwner);
+
+      expect(
+        () => repo.register(const RegisterRequest(
+          username: 'player1',
+          fullName: 'Y',
+          email: 'y@gmail.com',
+          phone: '0944445555',
+          password: 'Matkhau123',
+        )),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.usernameTaken)),
+      );
     });
 
     test('trùng email hoặc số điện thoại đã xác thực thì báo lỗi', () async {
       expect(
         () => repo.register(const RegisterRequest(
+          username: 'xuser1',
           fullName: 'X',
           email: 'player@sportnexus.vn',
           phone: '0999888777',
@@ -114,6 +142,7 @@ void main() {
       );
       expect(
         () => repo.register(const RegisterRequest(
+          username: 'xuser2',
           fullName: 'X',
           email: 'moi@gmail.com',
           phone: '+84901234567',

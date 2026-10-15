@@ -1,6 +1,6 @@
 enum UserRole {
   player('Player'),
-  courtOwner('CourtOwner'),
+  courtOwner('Owner'),
   admin('Admin');
 
   const UserRole(this.apiValue);
@@ -9,6 +9,8 @@ enum UserRole {
   final String apiValue;
 
   static UserRole fromApi(String? value) {
+    // Bản giả lập cũ lưu "CourtOwner"; BE dùng "Owner".
+    if (value?.toLowerCase() == 'courtowner') return UserRole.courtOwner;
     return UserRole.values.firstWhere(
       (role) => role.apiValue.toLowerCase() == value?.toLowerCase(),
       orElse: () => UserRole.player,

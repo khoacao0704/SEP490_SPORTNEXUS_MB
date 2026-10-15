@@ -58,11 +58,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Register / ForgotPassword pop về email khi hoàn tất; điền sẵn để đăng nhập ngay.
+  /// Register / ForgotPassword pop về tên đăng nhập khi hoàn tất; điền sẵn để đăng nhập ngay.
   Future<void> _openAuthFlow(Widget screen, String successMessage) async {
-    final email = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => screen));
-    if (email == null || !mounted) return;
-    _usernameController.text = email;
+    final username = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => screen));
+    if (username == null || !mounted) return;
+    _usernameController.text = username;
     _passwordController.clear();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(successMessage), backgroundColor: AppColors.primaryGreen),
@@ -89,8 +89,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 label: AuthStrings.identifierLabel,
                 hint: AuthStrings.identifierHint,
                 controller: _usernameController,
-                validator: Validators.emailOrPhone,
-                keyboardType: TextInputType.emailAddress,
+                validator: Validators.required,
+                keyboardType: TextInputType.text,
                 autofillHints: const [AutofillHints.username],
               ),
               const SizedBox(height: 16),
@@ -196,7 +196,10 @@ class _LoginScreenState extends State<LoginScreen> {
               AuthFooterLink(
                 prompt: AuthStrings.noAccount,
                 action: AuthStrings.registerNow,
-                onTap: () => _openAuthFlow(const RegisterScreen(), AuthStrings.registerSuccess),
+                onTap: () => _openAuthFlow(
+                  const RegisterScreen(),
+                  AppRepositories.auth.supportsOtp ? AuthStrings.registerSuccess : AuthStrings.registerDone,
+                ),
               ),
             ],
           ),
