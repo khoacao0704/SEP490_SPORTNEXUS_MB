@@ -21,6 +21,12 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
 
   final TextEditingController _amountController = TextEditingController(text: '100.000');
 
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
+
   final List<int> _quickAmounts = [50000, 100000, 200000, 500000];
 
   final List<Map<String, dynamic>> _paymentMethods = [
@@ -315,7 +321,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: isSelected ? const Color(0xFFE8F5E9).withOpacity(0.5) : Colors.white,
+                          color: isSelected ? const Color(0xFFE8F5E9).withValues(alpha: 0.5) : Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: isSelected ? AppColors.primaryGreen : const Color(0xFFE2E8F0),
@@ -324,13 +330,12 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                         ),
                         child: Row(
                           children: [
-                            Radio<int>(
-                              value: method['id'] as int,
+                            RadioGroup<int>(
                               groupValue: _selectedPaymentMethod,
-                              activeColor: AppColors.primaryGreen,
                               onChanged: (val) {
                                 if (val != null) _selectPaymentMethod(val);
                               },
+                              child: Radio<int>(value: method['id'] as int, activeColor: AppColors.primaryGreen),
                             ),
                             Container(
                               padding: const EdgeInsets.all(8),
@@ -393,7 +398,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ),

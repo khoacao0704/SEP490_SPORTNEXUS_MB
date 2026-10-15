@@ -12,13 +12,18 @@ import 'add_bank_account_screen.dart';
 
 /// Pop về `true` khi đã gửi lệnh rút.
 class WithdrawScreen extends StatefulWidget {
-  const WithdrawScreen({super.key});
+  /// Ví dùng cho màn này; bỏ trống = ví người chơi. Chủ sân truyền ví của Chủ sân.
+  final WalletRepository? wallet;
+
+  const WithdrawScreen({super.key, this.wallet});
 
   @override
   State<WithdrawScreen> createState() => _WithdrawScreenState();
 }
 
 class _WithdrawScreenState extends State<WithdrawScreen> {
+  WalletRepository get _wallet => widget.wallet ?? AppRepositories.wallet;
+
   final _amountController = TextEditingController();
   static const List<int> _quickAmounts = [100000, 200000, 500000];
 
@@ -50,8 +55,8 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       _loadError = null;
     });
     try {
-      final balance = await AppRepositories.wallet.getBalance();
-      final accounts = await AppRepositories.wallet.getBankAccounts();
+      final balance = await _wallet.getBalance();
+      final accounts = await _wallet.getBankAccounts();
       if (!mounted) return;
       setState(() {
         _balance = balance;
@@ -86,7 +91,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   Future<void> _addAccount() async {
     final account = await Navigator.push<BankAccount>(
       context,
-      MaterialPageRoute(builder: (_) => const AddBankAccountScreen()),
+      MaterialPageRoute(builder: (_) => AddBankAccountScreen(wallet: widget.wallet)),
     );
     if (account == null || !mounted) return;
     setState(() {
@@ -111,7 +116,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       ),
     );
     if (ok != true) return;
-    await AppRepositories.wallet.removeBankAccount(account.id);
+    await _wallet.removeBankAccount(account.id);
     if (!mounted) return;
     setState(() {
       _accounts = _accounts.where((a) => a.id != account.id).toList();
@@ -150,7 +155,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     setState(() => _isSubmitting = true);
     try {
       final amount = _amount;
-      await AppRepositories.wallet.requestWithdrawal(amount: amount, account: account);
+      await _wallet.requestWithdrawal(amount: amount, account: account);
       if (!mounted) return;
       setState(() => _isSubmitting = false);
       await showDialog(

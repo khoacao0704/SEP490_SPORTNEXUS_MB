@@ -15,7 +15,8 @@ import '../repositories/wallet_repository.dart';
 /// - Giữ key `wallet_balance` cũ để số dư hiện có của người dùng không bị mất.
 /// - Lần đầu chạy: tạo 1 giao dịch "Số dư ban đầu" bằng đúng số dư hiện tại để lịch sử khớp với số dư.
 /// - Lệnh nạp chỉ cộng tiền khi gọi [simulateTopUpReceived] (thay cho webhook ngân hàng của BE).
-/// - Ví dùng chung cho mọi tài khoản trên cùng máy (giới hạn của bản giả lập).
+/// - Ví dùng chung cho mọi tài khoản trên cùng máy (giới hạn của bản giả lập); ví Chủ sân tách riêng
+///   bằng [keyPrefix] để tiền demo của hai phía không lẫn vào nhau.
 class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator {
   static const String keyBalance = 'wallet_balance';
   static const String keyTransactions = 'wallet_transactions';
@@ -32,12 +33,24 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
   final Random _random;
   int _counter = 0;
 
+  /// Tiền tố key lưu trữ ('owner_' cho ví Chủ sân).
+  final String keyPrefix;
+
+  /// Số dư lúc chạy lần đầu.
+  final int initialBalance;
+
   MockWalletRepository({
     this.latency = const Duration(milliseconds: 500),
     DateTime Function()? now,
     Random? random,
+    this.keyPrefix = '',
+    this.initialBalance = defaultBalance,
   })  : _now = now ?? DateTime.now,
         _random = random ?? Random();
+
+  String get _keyBalance => '$keyPrefix$keyBalance';
+  String get _keyTransactions => '$keyPrefix$keyTransactions';
+  String get _keyBankAccounts => '$keyPrefix$keyBankAccounts';
 
   // ---------------- Số dư & lịch sử ----------------
 
@@ -46,7 +59,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
     await _delay();
     await _transactions(); // đảm bảo đã khởi tạo dữ liệu ban đầu
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(keyBalance) ?? defaultBalance;
+    return prefs.getInt(_keyBalance) ?? initialBalance;
   }
 
   @override
@@ -146,14 +159,23 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
       throw const WalletException(WalletStrings.topUpNotPending);
     }
     final prefs = await SharedPreferences.getInstance();
-    final balance = prefs.getInt(keyBalance) ?? defaultBalance;
+    final balance = prefs.getInt(_keyBalance) ?? initialBalance;
     await _save(balance: balance + tx.amount, replace: tx.copyWith(status: TransactionStatus.success));
   }
 
   /// Cộng tiền hoàn vào ví. Chỉ các bản giả lập khác gọi (vd. hoàn cọc LFG); bản thật do BE tự cộng.
-  Future<WalletTransaction> creditRefund({required int amount, required String description, String? reference}) async {
+  Future<WalletTransaction> creditRefund({required int amount, required String description, String? reference}) =>
+      credit(type: TransactionType.refund, amount: amount, description: description, reference: reference);
+
+  /// Cộng tiền vào ví (hoàn tiền, giải ngân cho Chủ sân...). Chỉ các bản giả lập khác gọi; bản thật do BE tự cộng.
+  Future<WalletTransaction> credit({
+    required TransactionType type,
+    required int amount,
+    required String description,
+    String? reference,
+  }) async {
     final tx = _newTransaction(
-      type: TransactionType.refund,
+      type: type,
       amount: amount,
       status: TransactionStatus.success,
       description: description,
@@ -168,7 +190,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
   @override
   Future<List<BankAccount>> getBankAccounts() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(keyBankAccounts);
+    final raw = prefs.getString(_keyBankAccounts);
     if (raw == null) return [];
     return (jsonDecode(raw) as List).map((e) => BankAccount.fromJson(e as Map<String, dynamic>)).toList();
   }
@@ -233,7 +255,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
     }
     // Bị từ chối: hoàn lại tiền vào ví.
     final prefs = await SharedPreferences.getInstance();
-    final balance = prefs.getInt(keyBalance) ?? defaultBalance;
+    final balance = prefs.getInt(_keyBalance) ?? initialBalance;
     await _save(balance: balance + tx.amount, replace: tx.copyWith(status: TransactionStatus.failed));
   }
 
@@ -244,10 +266,10 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
   /// Đọc giao dịch; tự chuyển lệnh nạp quá hạn sang "Hết hạn".
   Future<List<WalletTransaction>> _transactions() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(keyTransactions);
+    final raw = prefs.getString(_keyTransactions);
 
     if (raw == null) {
-      final balance = prefs.getInt(keyBalance) ?? defaultBalance;
+      final balance = prefs.getInt(_keyBalance) ?? initialBalance;
       final seed = <WalletTransaction>[
         if (balance > 0)
           WalletTransaction(
@@ -259,8 +281,8 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
             description: 'Số dư ban đầu',
           ),
       ];
-      await prefs.setInt(keyBalance, balance);
-      await prefs.setString(keyTransactions, jsonEncode(seed.map((t) => t.toJson()).toList()));
+      await prefs.setInt(_keyBalance, balance);
+      await prefs.setString(_keyTransactions, jsonEncode(seed.map((t) => t.toJson()).toList()));
       return seed;
     }
 
@@ -276,7 +298,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
       return tx.copyWith(status: TransactionStatus.expired);
     }).toList();
 
-    if (changed) await prefs.setString(keyTransactions, jsonEncode(txs.map((t) => t.toJson()).toList()));
+    if (changed) await prefs.setString(_keyTransactions, jsonEncode(txs.map((t) => t.toJson()).toList()));
     return txs;
   }
 
@@ -288,13 +310,13 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
       final i = txs.indexWhere((t) => t.id == replace.id);
       if (i >= 0) txs[i] = replace;
     }
-    await prefs.setString(keyTransactions, jsonEncode(txs.map((t) => t.toJson()).toList()));
-    if (balance != null) await prefs.setInt(keyBalance, balance);
+    await prefs.setString(_keyTransactions, jsonEncode(txs.map((t) => t.toJson()).toList()));
+    if (balance != null) await prefs.setInt(_keyBalance, balance);
   }
 
   Future<void> _saveBankAccounts(List<BankAccount> accounts) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(keyBankAccounts, jsonEncode(accounts.map((a) => a.toJson()).toList()));
+    await prefs.setString(_keyBankAccounts, jsonEncode(accounts.map((a) => a.toJson()).toList()));
   }
 
   WalletTransaction _newTransaction({

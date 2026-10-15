@@ -37,6 +37,9 @@ class MockAuthRepository implements AuthRepository {
   /// Tài khoản demo có Fair Play dưới 30 để thử chặn LFG.
   static const String restrictedPlayerId = 'u-player-002';
 
+  /// Tài khoản Chủ sân demo, sở hữu các cơ sở trong MockOwnerRepository.
+  static const String ownerId = 'u-owner-001';
+
   static final List<_MockAccount> _seedAccounts = [
     _MockAccount(
       user: const AppUser(
@@ -64,7 +67,7 @@ class MockAuthRepository implements AuthRepository {
     ),
     _MockAccount(
       user: const AppUser(
-        id: 'u-owner-001',
+        id: ownerId,
         fullName: 'Chủ Sân Demo',
         email: 'owner@sportnexus.vn',
         phone: '0907654321',

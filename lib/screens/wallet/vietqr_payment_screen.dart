@@ -19,13 +19,23 @@ class VietQrPaymentScreen extends StatefulWidget {
   /// Chu kỳ hỏi lại trạng thái; test có thể rút ngắn.
   final Duration pollInterval;
 
-  const VietQrPaymentScreen({super.key, required this.order, this.pollInterval = const Duration(seconds: 3)});
+  /// Ví tạo lệnh nạp; bỏ trống = ví người chơi.
+  final WalletRepository? wallet;
+
+  const VietQrPaymentScreen({
+    super.key,
+    required this.order,
+    this.pollInterval = const Duration(seconds: 3),
+    this.wallet,
+  });
 
   @override
   State<VietQrPaymentScreen> createState() => _VietQrPaymentScreenState();
 }
 
 class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
+  WalletRepository get _wallet => widget.wallet ?? AppRepositories.wallet;
+
   Timer? _countdownTimer;
   Timer? _pollTimer;
   late int _secondsLeft;
@@ -65,7 +75,7 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
     if (_finished) return;
     WalletTransaction tx;
     try {
-      tx = await AppRepositories.wallet.getTransaction(_order.transactionId);
+      tx = await _wallet.getTransaction(_order.transactionId);
     } catch (_) {
       return; // lỗi mạng tạm thời: lần hỏi sau thử lại
     }
@@ -93,7 +103,7 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
   }
 
   Future<void> _simulatePaid() async {
-    final simulator = AppRepositories.wallet;
+    final simulator = _wallet;
     if (simulator is! SandboxPaymentSimulator) return;
     setState(() => _isSimulating = true);
     try {
@@ -124,7 +134,7 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
     );
     if (cancel != true || !mounted) return;
     _finish();
-    await AppRepositories.wallet.cancelTopUp(_order.transactionId);
+    await _wallet.cancelTopUp(_order.transactionId);
     if (mounted) Navigator.pop(context, false);
   }
 
@@ -195,7 +205,7 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
   @override
   Widget build(BuildContext context) {
     final mmss = '${(_secondsLeft ~/ 60).toString().padLeft(2, '0')}:${(_secondsLeft % 60).toString().padLeft(2, '0')}';
-    final isSandbox = AppRepositories.wallet is SandboxPaymentSimulator;
+    final isSandbox = _wallet is SandboxPaymentSimulator;
 
     return PopScope(
       canPop: false,

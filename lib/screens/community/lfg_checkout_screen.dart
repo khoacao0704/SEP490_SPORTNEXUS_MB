@@ -395,7 +395,7 @@ class _LfgCheckoutScreenState extends State<LfgCheckoutScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: _selectedPaymentMethod == 0 ? const Color(0xFFE8F5E9).withOpacity(0.5) : Colors.white,
+                        color: _selectedPaymentMethod == 0 ? const Color(0xFFE8F5E9).withValues(alpha: 0.5) : Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: _selectedPaymentMethod == 0 ? AppColors.primaryGreen : AppColors.cardBorder,
@@ -404,11 +404,10 @@ class _LfgCheckoutScreenState extends State<LfgCheckoutScreen> {
                       ),
                       child: Row(
                         children: [
-                          Radio<int>(
-                            value: 0,
+                          RadioGroup<int>(
                             groupValue: _selectedPaymentMethod,
-                            activeColor: AppColors.primaryGreen,
                             onChanged: (val) => setState(() => _selectedPaymentMethod = val!),
+                            child: Radio<int>(value: 0, activeColor: AppColors.primaryGreen),
                           ),
                           Container(
                             padding: const EdgeInsets.all(8),
@@ -440,7 +439,7 @@ class _LfgCheckoutScreenState extends State<LfgCheckoutScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: _selectedPaymentMethod == 1 ? const Color(0xFFE8F5E9).withOpacity(0.5) : Colors.white,
+                        color: _selectedPaymentMethod == 1 ? const Color(0xFFE8F5E9).withValues(alpha: 0.5) : Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: _selectedPaymentMethod == 1 ? AppColors.primaryGreen : AppColors.cardBorder,
@@ -449,11 +448,10 @@ class _LfgCheckoutScreenState extends State<LfgCheckoutScreen> {
                       ),
                       child: Row(
                         children: [
-                          Radio<int>(
-                            value: 1,
+                          RadioGroup<int>(
                             groupValue: _selectedPaymentMethod,
-                            activeColor: AppColors.primaryGreen,
                             onChanged: (val) => setState(() => _selectedPaymentMethod = val!),
+                            child: Radio<int>(value: 1, activeColor: AppColors.primaryGreen),
                           ),
                           Container(
                             padding: const EdgeInsets.all(8),

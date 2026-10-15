@@ -9,13 +9,18 @@ import '../../theme/app_colors.dart';
 
 /// Pop về [BankAccount] vừa lưu.
 class AddBankAccountScreen extends StatefulWidget {
-  const AddBankAccountScreen({super.key});
+  /// Ví dùng cho màn này; bỏ trống = ví người chơi. Chủ sân truyền ví của Chủ sân.
+  final WalletRepository? wallet;
+
+  const AddBankAccountScreen({super.key, this.wallet});
 
   @override
   State<AddBankAccountScreen> createState() => _AddBankAccountScreenState();
 }
 
 class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
+  WalletRepository get _wallet => widget.wallet ?? AppRepositories.wallet;
+
   final _formKey = GlobalKey<FormState>();
   final _accountNumberController = TextEditingController();
   final _holderController = TextEditingController();
@@ -40,7 +45,7 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
 
     setState(() => _isSaving = true);
     try {
-      final account = await AppRepositories.wallet.addBankAccount(
+      final account = await _wallet.addBankAccount(
         bankCode: _bank!.code,
         bankName: _bank!.name,
         accountNumber: _accountNumberController.text.trim(),

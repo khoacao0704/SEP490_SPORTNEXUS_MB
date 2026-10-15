@@ -10,7 +10,10 @@ import '../../theme/app_colors.dart';
 class NotificationBell extends StatefulWidget {
   final Color color;
 
-  const NotificationBell({super.key, this.color = AppColors.textMain});
+  /// Màn thông báo mở khi bấm chuông; bỏ trống = màn của người chơi.
+  final WidgetBuilder? screenBuilder;
+
+  const NotificationBell({super.key, this.color = AppColors.textMain, this.screenBuilder});
 
   @override
   State<NotificationBell> createState() => _NotificationBellState();
@@ -43,7 +46,10 @@ class _NotificationBellState extends State<NotificationBell> {
   }
 
   Future<void> _open() async {
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: widget.screenBuilder ?? (_) => const NotificationsScreen()),
+    );
     _load();
   }
 

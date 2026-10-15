@@ -217,3 +217,68 @@ class _UserLocationDot extends StatelessWidget {
     );
   }
 }
+
+/// Bản đồ để Chủ sân ghim vị trí cơ sở: chạm để đặt ghim, [moveTo] đổi thì bản đồ dời tới đó.
+class LocationPickerMap extends StatefulWidget {
+  final GeoPoint initialCenter;
+  final GeoPoint? picked;
+  final GeoPoint? moveTo;
+  final ValueChanged<GeoPoint> onPicked;
+
+  const LocationPickerMap({
+    super.key,
+    required this.initialCenter,
+    required this.onPicked,
+    this.picked,
+    this.moveTo,
+  });
+
+  @override
+  State<LocationPickerMap> createState() => _LocationPickerMapState();
+}
+
+class _LocationPickerMapState extends State<LocationPickerMap> {
+  final MapController _controller = MapController();
+
+  @override
+  void didUpdateWidget(LocationPickerMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final target = widget.moveTo;
+    if (target != null && target != oldWidget.moveTo) _controller.move(_toLatLng(target), 16);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final picked = widget.picked;
+    return FlutterMap(
+      mapController: _controller,
+      options: MapOptions(
+        initialCenter: _toLatLng(picked ?? widget.initialCenter),
+        initialZoom: picked == null ? 13 : 16,
+        onTap: (_, latLng) => widget.onPicked(GeoPoint(latLng.latitude, latLng.longitude)),
+      ),
+      children: [
+        _osmTileLayer(),
+        if (picked != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: _toLatLng(picked),
+                width: 44,
+                height: 44,
+                alignment: Alignment.topCenter,
+                child: const Icon(Icons.location_on, size: 44, color: AppColors.primaryGreen),
+              ),
+            ],
+          ),
+        _osmAttribution(),
+      ],
+    );
+  }
+}

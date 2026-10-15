@@ -22,7 +22,7 @@ class AiChatScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('SportNexus AI', style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 16)),
-                Text('Clarification Mode', style: TextStyle(color: AppColors.primaryGreen.withOpacity(0.8), fontSize: 12)),
+                Text('Clarification Mode', style: TextStyle(color: AppColors.primaryGreen.withValues(alpha: 0.8), fontSize: 12)),
               ],
             )
           ],

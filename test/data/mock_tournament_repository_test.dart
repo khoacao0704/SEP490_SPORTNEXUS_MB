@@ -25,6 +25,7 @@ void main() {
   const basketball = 't-hcm-bongro-3x3'; // đã hết hạn, Khoa Cao là đội trưởng
   const pickleball = 't-hcm-pickleball-open-q7'; // đang diễn ra
   const tennis = 't-hcm-tennis-he'; // đã kết thúc
+  const ownerCup = 't-own-bongda-hoalu'; // Chủ sân demo tổ chức trên app, đã hết hạn, chờ bốc thăm
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -37,10 +38,11 @@ void main() {
   group('danh sách', () {
     test('lọc theo thành phố; đang mở đăng ký trước, đã kết thúc sau cùng', () async {
       final list = await repo.getTournaments(const TournamentQuery(city: 'Hồ Chí Minh'));
-      expect(list.map((t) => t.id), [footballCup, pairCup, basketball, pickleball, tennis]);
+      expect(list.map((t) => t.id), [footballCup, pairCup, basketball, ownerCup, pickleball, tennis]);
       expect(list.map((t) => t.status(clock)), [
         TournamentStatus.registrationOpen,
         TournamentStatus.registrationOpen,
+        TournamentStatus.upcoming,
         TournamentStatus.upcoming,
         TournamentStatus.ongoing,
         TournamentStatus.finished,
@@ -52,7 +54,7 @@ void main() {
 
     test('lọc theo môn và trạng thái', () async {
       final football = await repo.getTournaments(const TournamentQuery(city: 'Hồ Chí Minh', sport: Sport.football));
-      expect(football.single.id, footballCup);
+      expect(football.map((t) => t.id), [footballCup, ownerCup]);
 
       final ongoing = await repo.getTournaments(
         const TournamentQuery(city: 'Hồ Chí Minh', status: TournamentStatus.ongoing),

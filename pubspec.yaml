@@ -39,6 +39,8 @@ dependencies:
   latlong2: ^0.10.1
   geolocator: ^14.1.1
   qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.2
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_test:

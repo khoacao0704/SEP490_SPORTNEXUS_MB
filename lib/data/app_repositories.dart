@@ -3,6 +3,7 @@ import 'mock/mock_booking_repository.dart';
 import 'mock/mock_facility_repository.dart';
 import 'mock/mock_lfg_repository.dart';
 import 'mock/mock_notification_repository.dart';
+import 'mock/mock_owner_repository.dart';
 import 'mock/mock_review_repository.dart';
 import 'mock/mock_split_payment_repository.dart';
 import 'mock/mock_tournament_repository.dart';
@@ -12,6 +13,8 @@ import 'repositories/booking_repository.dart';
 import 'repositories/facility_repository.dart';
 import 'repositories/lfg_repository.dart';
 import 'repositories/notification_repository.dart';
+import 'repositories/organizer_tournament_repository.dart';
+import 'repositories/owner_repository.dart';
 import 'repositories/review_repository.dart';
 import 'repositories/split_payment_repository.dart';
 import 'repositories/tournament_repository.dart';
@@ -31,11 +34,25 @@ class AppRepositories {
   static ReviewRepository review = MockReviewRepository();
   static NotificationRepository notification = MockNotificationRepository();
 
+  /// Ví Chủ sân. Bản giả lập tách riêng với ví người chơi trên cùng máy;
+  /// khi nối API dùng cùng WalletRepository (BE trả ví theo tài khoản đăng nhập).
+  static final MockWalletRepository _mockOwnerWallet =
+      MockWalletRepository(keyPrefix: MockOwnerRepository.ownerWalletPrefix, initialBalance: 3200000);
+  static WalletRepository ownerWallet = _mockOwnerWallet;
+
+  /// Phía Chủ sân: cơ sở, lượt sân, check-in / check-out, doanh thu & phí. Giải ngân vào ví Chủ sân.
+  static final MockOwnerRepository _mockOwner = MockOwnerRepository(wallet: _mockOwnerWallet);
+  static OwnerRepository owner = _mockOwner;
+
   /// Bản giả lập LFG trừ/hoàn cọc qua cùng ví giả lập ở trên.
   static LfgRepository lfg = MockLfgRepository(wallet: _mockWallet);
 
-  /// Lệ phí giải đấu trừ/hoàn qua cùng ví giả lập.
-  static TournamentRepository tournament = MockTournamentRepository(wallet: _mockWallet);
+  /// Lệ phí giải đấu trừ/hoàn qua cùng ví giả lập. Cùng một kho cho người chơi và Chủ sân tổ chức giải.
+  static final MockTournamentRepository _mockTournament = MockTournamentRepository(wallet: _mockWallet, owner: _mockOwner);
+  static TournamentRepository tournament = _mockTournament;
+
+  /// Chủ sân tạo / quản lý giải; tạm đóng sân và giải ngân lệ phí qua bản giả lập Chủ sân.
+  static OrganizerTournamentRepository organizer = _mockTournament;
 
   static final MockBookingRepository _mockBookings = MockBookingRepository(facility: _mockFacility, wallet: _mockWallet);
 

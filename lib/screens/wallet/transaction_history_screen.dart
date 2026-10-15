@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/strings/wallet_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
+import '../../data/repositories/wallet_repository.dart';
 import '../../models/wallet_transaction.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/wallet/transaction_tile.dart';
@@ -9,13 +10,18 @@ import '../../widgets/wallet/transaction_tile.dart';
 enum _Filter { all, moneyIn, moneyOut, pending }
 
 class TransactionHistoryScreen extends StatefulWidget {
-  const TransactionHistoryScreen({super.key});
+  /// Ví dùng cho màn này; bỏ trống = ví người chơi. Chủ sân truyền ví của Chủ sân.
+  final WalletRepository? wallet;
+
+  const TransactionHistoryScreen({super.key, this.wallet});
 
   @override
   State<TransactionHistoryScreen> createState() => _TransactionHistoryScreenState();
 }
 
 class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
+  WalletRepository get _wallet => widget.wallet ?? AppRepositories.wallet;
+
   List<WalletTransaction> _transactions = [];
   bool _isLoading = true;
   String? _error;
@@ -33,7 +39,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       _error = null;
     });
     try {
-      final txs = await AppRepositories.wallet.getTransactions();
+      final txs = await _wallet.getTransactions();
       if (!mounted) return;
       setState(() {
         _transactions = txs;

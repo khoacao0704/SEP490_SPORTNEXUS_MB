@@ -17,8 +17,17 @@ import '../wallet/transaction_history_screen.dart';
 /// Bộ lọc: `null` là tất cả, [_unreadFilter] là chưa đọc, còn lại lọc theo nhóm.
 const Object _unreadFilter = 'unread';
 
+/// Mở màn liên quan khi bấm thông báo (Chủ sân điều hướng khác người chơi).
+typedef NotificationOpener = Future<void> Function(BuildContext context, AppNotification notification);
+
 class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({super.key});
+  /// Nhóm hiện trên thanh lọc; mặc định là nhóm của người chơi.
+  final List<NotificationCategory>? categories;
+
+  /// Bỏ trống = điều hướng của người chơi.
+  final NotificationOpener? onOpen;
+
+  const NotificationsScreen({super.key, this.categories, this.onOpen});
 
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
@@ -99,9 +108,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       unawaited(AppRepositories.notification.markAsRead(n.id).catchError((_) {}));
     }
 
+    final custom = widget.onOpen;
+    if (custom != null) {
+      await custom(context, n);
+      return;
+    }
+
     Widget? page;
     switch (n.type.target) {
       case NotificationTarget.none:
+      case NotificationTarget.ownerSchedule:
+      case NotificationTarget.ownerFinance:
+      case NotificationTarget.ownerListingFee:
+      case NotificationTarget.ownerFacilities:
+      case NotificationTarget.ownerReviews:
         return;
       case NotificationTarget.myBookings:
         Navigator.pushAndRemoveUntil(
@@ -172,7 +192,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final labels = <Object?, String>{
       null: NotificationStrings.filterAll,
       _unreadFilter: unread > 0 ? '${NotificationStrings.filterUnread} ($unread)' : NotificationStrings.filterUnread,
-      for (final c in NotificationCategory.values) c: c.label,
+      for (final c in widget.categories ?? NotificationCategory.playerCategories) c: c.label,
     };
     return Container(
       color: AppColors.white,

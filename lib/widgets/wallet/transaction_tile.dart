@@ -51,6 +51,12 @@ IconData transactionIcon(TransactionType type) {
       return Icons.emoji_events_outlined;
     case TransactionType.refund:
       return Icons.replay;
+    case TransactionType.escrowRelease:
+      return Icons.payments_outlined;
+    case TransactionType.penaltyIncome:
+      return Icons.gavel_outlined;
+    case TransactionType.listingFee:
+      return Icons.receipt_long_outlined;
   }
 }
 
