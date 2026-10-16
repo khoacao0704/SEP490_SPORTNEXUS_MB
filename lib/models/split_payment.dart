@@ -44,14 +44,18 @@ class SplitShare {
 /// Một khung giờ trong lượt chia tiền.
 class SplitSlot {
   final String id;
+
+  /// Sân con đã chọn, vd. "Sân 2".
+  final String? courtName;
   final DateTime start;
   final DateTime end;
   final int price;
 
-  const SplitSlot({required this.id, required this.start, required this.end, required this.price});
+  const SplitSlot({required this.id, this.courtName, required this.start, required this.end, required this.price});
 
   factory SplitSlot.fromJson(Map<String, dynamic> json) => SplitSlot(
         id: json['id'] as String,
+        courtName: json['courtName'] as String?,
         start: DateTime.parse(json['start'] as String),
         end: DateTime.parse(json['end'] as String),
         price: (json['price'] as num).toInt(),
@@ -59,6 +63,7 @@ class SplitSlot {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'courtName': courtName,
         'start': start.toIso8601String(),
         'end': end.toIso8601String(),
         'price': price,

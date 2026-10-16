@@ -1,33 +1,35 @@
 import 'court_type.dart';
 import 'sport.dart';
 
-/// Khung giờ do chủ sân cấu hình sẵn; người chơi chỉ chọn trong danh sách này.
+/// Khung giờ do chủ sân cấu hình sẵn, trên một sân con cụ thể; người chơi chỉ chọn trong danh sách này.
 class TimeSlot {
   final String id;
   final String facilityId;
   final Sport sport;
   final CourtType courtType;
+
+  /// Sân con người chơi sẽ được xếp vào, vd. "Sân 2".
+  final String courtName;
   final DateTime start;
   final DateTime end;
   final int price;
-  final int totalCourts;
 
-  /// Số sân còn trống (đã trừ sân đã đặt và sân đang được giữ chỗ).
-  final int availableCourts;
+  /// Sân con này còn trống ở khung giờ này (chưa ai đặt, không ai đang giữ chỗ).
+  final bool isAvailable;
 
   const TimeSlot({
     required this.id,
     required this.facilityId,
     required this.sport,
     this.courtType = CourtType.standard,
+    required this.courtName,
     required this.start,
     required this.end,
     required this.price,
-    required this.totalCourts,
-    required this.availableCourts,
+    required this.isAvailable,
   });
 
-  bool get isFull => availableCourts <= 0;
+  bool get isFull => !isAvailable;
 
   bool hasStarted(DateTime now) => !start.isAfter(now);
 

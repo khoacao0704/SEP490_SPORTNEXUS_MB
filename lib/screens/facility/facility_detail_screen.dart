@@ -35,12 +35,16 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
   late final List<DateTime> _dates;
   late DateTime _date;
 
+  /// Khung giờ của mọi sân con trong ngày đang xem.
   List<TimeSlot> _slots = [];
+
+  /// Sân con đang xem; giữ nguyên khi đổi ngày, chọn lại khi đổi môn / loại sân.
+  String? _court;
   bool _isLoadingSlots = true;
   String? _slotsError;
   DateTime _now = DateTime.now();
 
-  /// Khung giờ đã chọn (theo id), có thể thuộc nhiều ngày. Giữ nguyên khi đổi ngày, xóa khi đổi môn.
+  /// Khung giờ đã chọn (theo id), có thể thuộc nhiều ngày và nhiều sân con. Giữ nguyên khi đổi ngày / sân, xóa khi đổi môn.
   final Map<String, TimeSlot> _selected = {};
 
   List<TimeSlot> get _selectedSorted => _selected.values.toList()..sort((a, b) => a.start.compareTo(b.start));
@@ -81,6 +85,12 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
         _slots = slots;
         _now = DateTime.now();
         _isLoadingSlots = false;
+        final courts = courtsOf(slots);
+        if (!courts.contains(_court)) {
+          // Mặc định sân đầu tiên còn khung trống trong ngày.
+          final free = freeSlotsByCourt(slots, _now);
+          _court = courts.where((c) => (free[c] ?? 0) > 0).firstOrNull ?? courts.firstOrNull;
+        }
         // Cập nhật khung đã chọn của ngày này theo dữ liệu mới; khung vừa hết sân / đã qua thì bỏ chọn.
         for (final slot in slots) {
           if (!_selected.containsKey(slot.id)) continue;
@@ -346,6 +356,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                 setState(() {
                   _sport = sport;
                   _courtType = _facility.offeringFor(sport)!.courtType;
+                  _court = null;
                   _selected.clear(); // khung giờ của môn khác không dùng được
                 });
                 _loadSlots();
@@ -376,6 +387,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
               if (type == _courtType) return;
               setState(() {
                 _courtType = type;
+                _court = null;
                 _selected.clear(); // khung giờ của loại sân khác không dùng được
               });
               _loadSlots();
@@ -423,9 +435,24 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
         ),
       );
     }
+    final courts = courtsOf(_slots);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (courts.isNotEmpty) ...[
+          const Text(
+            FacilityStrings.chooseCourt,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textMain),
+          ),
+          const SizedBox(height: 8),
+          CourtSelector(
+            courts: courts,
+            selected: _court,
+            freeSlots: freeSlotsByCourt(_slots, _now),
+            onSelected: (court) => setState(() => _court = court),
+          ),
+          const SizedBox(height: 12),
+        ],
         const Padding(
           padding: EdgeInsets.only(bottom: 10),
           child: Text(
@@ -434,7 +461,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
           ),
         ),
         TimeSlotGrid(
-          slots: _slots,
+          slots: _slots.where((s) => s.courtName == _court).toList(),
           selectedSlotIds: _selected.keys.toSet(),
           now: _now,
           onSelected: _toggleSlot,
@@ -566,7 +593,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                         .map((s) => ListTile(
                               leading: const Icon(Icons.schedule, color: AppColors.primaryGreen),
                               title: Text(
-                                Formatters.slotLabel(s.start, s.end),
+                                '${s.courtName} • ${Formatters.slotLabel(s.start, s.end)}',
                                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                               ),
                               subtitle: Text(Formatters.vnd(s.price)),

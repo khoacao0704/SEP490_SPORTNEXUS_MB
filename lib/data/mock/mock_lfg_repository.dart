@@ -189,6 +189,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
       sport: slot.sport,
       format: format,
       courtType: slot.courtType,
+      courtName: slot.courtName,
       start: slot.start,
       end: slot.end,
       courtPrice: slot.price,
@@ -500,6 +501,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
         sport: sport,
         format: format,
         courtType: courtType,
+        courtName: 'Sân ${n % f.offeringFor(sport, courtType: courtType)!.courtCount + 1}',
         start: start,
         end: start.add(Duration(minutes: sport == Sport.football ? 90 : 60)),
         // Giờ cao điểm (từ 17:00) giá x1.4, giống bản giả lập khung giờ.

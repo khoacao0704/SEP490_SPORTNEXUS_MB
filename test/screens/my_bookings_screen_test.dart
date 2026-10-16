@@ -69,9 +69,9 @@ void main() {
     await pump(tester);
     await tester.tap(find.text(BookingStrings.tabLfg));
     await tester.pumpAndSettle();
-    expect(find.text('Gò Vấp Arena • Gò Vấp'), findsOneWidget);
+    expect(find.text('Gò Vấp Arena • Sân 4 • Gò Vấp'), findsOneWidget);
 
-    await tester.tap(find.text('Gò Vấp Arena • Gò Vấp'));
+    await tester.tap(find.text('Gò Vấp Arena • Sân 4 • Gò Vấp'));
     await tester.pumpAndSettle();
     expect(find.byType(LfgMatchDetailScreen), findsOneWidget);
     expect(find.text(LfgStrings.leave), findsOneWidget);

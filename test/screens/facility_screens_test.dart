@@ -201,6 +201,34 @@ void main() {
     await tester.tap(find.text('Sân 7 người (7 vs 7)'));
     await tester.pumpAndSettle();
     expect(find.textContaining(FacilityStrings.selectedSlotCount(1)), findsNothing);
-    expect(find.textContaining('/2 sân'), findsWidgets);
+    // Sân 7 người có 2 sân con.
+    expect(find.text(FacilityStrings.chooseCourt), findsOneWidget);
+    expect(find.text('Sân 2'), findsOneWidget);
+    expect(find.text('Sân 3'), findsNothing);
+  });
+
+  testWidgets('Chi tiết: chọn sân con rồi chọn giờ; khung đã chọn ghi rõ sân con', (tester) async {
+    final facility = MockFacilityData.facilities.firstWhere((f) => f.id == 'f-hcm-thientrieu');
+    await pumpScreen(tester, FacilityDetailScreen(facility: facility, initialSport: Sport.badminton));
+    final now = DateTime.now();
+    await tester.ensureVisible(find.text(Formatters.dayMonth(DateTime(now.year, now.month, now.day + 1))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(Formatters.dayMonth(DateTime(now.year, now.month, now.day + 1))));
+    await tester.pumpAndSettle();
+    expect(find.text('Sân 6'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Sân 4'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sân 4'));
+    await tester.pumpAndSettle();
+    final available = find.text(FacilityStrings.available);
+    await tester.ensureVisible(available.first);
+    await tester.pumpAndSettle();
+    await tester.tap(available.hitTestable().first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining(FacilityStrings.selectedSlotCount(1)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Sân 4 • '), findsOneWidget);
   });
 }

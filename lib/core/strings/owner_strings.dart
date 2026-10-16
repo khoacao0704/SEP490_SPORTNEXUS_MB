@@ -51,7 +51,6 @@ class OwnerStrings {
   static const String detailTitle = 'Chi Tiết Lượt Sân';
   static const String players = 'Người chơi';
   static String checkedInCount(int done, int total) => 'Đã check-in $done/$total';
-  static const String noCourtYet = 'Chưa chỉ định sân';
   static String court(String name) => name;
   static const String booker = 'Người đặt';
   static const String host = 'Host';
@@ -72,13 +71,9 @@ class OwnerStrings {
   // Check-in
   static const String checkIn = 'Check-in';
   static const String scanToCheckIn = 'Quét QR check-in';
-  static const String chooseCourtTitle = 'Chỉ định sân con';
-  static const String chooseCourtHint = 'Chọn sân con cho lượt này. Các người chơi khác của lượt sẽ vào cùng sân.';
-  static const String noFreeCourt = 'Không còn sân con trống trong khung giờ này.';
   static const String confirmCheckIn = 'Xác nhận check-in';
   static String checkInSuccess(String name, String court) => 'Đã check-in $name • $court';
-  static const String chooseCourtRequired = 'Hãy chọn sân con trước khi check-in.';
-  static String courtBusy(String court) => '$court đang được dùng trong khung giờ này.';
+  static String bookedCourt(String court) => 'Sân đã đặt: $court';
   static const String alreadyCheckedIn = 'Người chơi này đã check-in.';
   static String checkInNotOpen(String time) => 'Chưa tới giờ check-in. Mở từ $time.';
   static String checkInClosed(String time) =>

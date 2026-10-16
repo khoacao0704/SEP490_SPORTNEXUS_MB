@@ -196,7 +196,7 @@ class LfgMatchCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 _infoRow(
                   Icons.location_on_outlined,
-                  '${match.facilityName} • ${match.district}',
+                  '${match.facilityCourtLabel} • ${match.district}',
                   trailing: distanceKm == null ? null : GeoUtils.formatDistance(distanceKm!),
                 ),
                 const SizedBox(height: 4),

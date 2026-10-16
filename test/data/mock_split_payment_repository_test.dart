@@ -101,7 +101,7 @@ void main() {
     // Sau 15 phút (quá 10 phút giữ chỗ thường) khung giờ vẫn được giữ.
     clock = clock.add(const Duration(minutes: 15));
     final slot = (await facility.getTimeSlots('f-test', Sport.badminton, clock.add(const Duration(days: 1))))
-        .firstWhere((s) => s.start == DateTime(2026, 10, 15, 6));
+        .firstWhere((s) => s.id == split.slots.first.id);
     expect(slot.isFull, isTrue);
   });
 
@@ -156,7 +156,7 @@ void main() {
     expect(() => repo.payShare(split.code), error(SplitPaymentStrings.expired));
 
     final slot = (await facility.getTimeSlots('f-test', Sport.badminton, clock.add(const Duration(days: 1))))
-        .firstWhere((s) => s.start == DateTime(2026, 10, 15, 6));
+        .firstWhere((s) => s.id == split.slots.first.id);
     expect(slot.isFull, isFalse);
   });
 

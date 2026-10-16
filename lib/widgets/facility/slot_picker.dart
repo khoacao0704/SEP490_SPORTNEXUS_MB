@@ -5,14 +5,116 @@ import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
 
 /// Mô tả lịch của nhiều khung giờ, gom theo ngày, mỗi ngày một dòng:
-/// "Thứ 4, 15/10: 18:00 - 19:00, 20:00 - 21:00\nThứ 6, 17/10: 07:00 - 08:00"
+/// "Thứ 4, 15/10: Sân 2 18:00 - 19:00, Sân 1 20:00 - 21:00\nThứ 6, 17/10: Sân 3 07:00 - 08:00"
 String describeSlotSchedule(Iterable<TimeSlot> slots) {
   final sorted = slots.toList()..sort((a, b) => a.start.compareTo(b.start));
   final byDay = <String, List<String>>{};
   for (final s in sorted) {
-    byDay.putIfAbsent(Formatters.weekdayDayMonth(s.start), () => []).add(Formatters.timeRange(s.start, s.end));
+    byDay
+        .putIfAbsent(Formatters.weekdayDayMonth(s.start), () => [])
+        .add('${s.courtName} ${Formatters.timeRange(s.start, s.end)}');
   }
   return byDay.entries.map((e) => '${e.key}: ${e.value.join(', ')}').join('\n');
+}
+
+/// Chọn sân con (Sân 1, Sân 2, ...) trước khi chọn giờ; mỗi sân hiện số khung còn trống trong ngày.
+class CourtSelector extends StatelessWidget {
+  final List<String> courts;
+  final String? selected;
+
+  /// Số khung còn đặt được của từng sân trong ngày đang xem.
+  final Map<String, int> freeSlots;
+  final ValueChanged<String> onSelected;
+
+  const CourtSelector({
+    super.key,
+    required this.courts,
+    required this.selected,
+    required this.freeSlots,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final court in courts)
+          _CourtChip(
+            name: court,
+            free: freeSlots[court] ?? 0,
+            selected: court == selected,
+            onTap: () => onSelected(court),
+          ),
+      ],
+    );
+  }
+}
+
+class _CourtChip extends StatelessWidget {
+  final String name;
+  final int free;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _CourtChip({required this.name, required this.free, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.primaryGreen : AppColors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: selected ? AppColors.primaryGreen : AppColors.cardBorder),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: selected ? Colors.white : AppColors.textMain,
+                ),
+              ),
+              Text(
+                FacilityStrings.freeSlotCount(free),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: selected
+                      ? Colors.white70
+                      : free == 0
+                          ? AppColors.textSecondary
+                          : AppColors.primaryGreen,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Danh sách sân con theo thứ tự xuất hiện trong [slots] (repository đã sắp theo sân).
+List<String> courtsOf(Iterable<TimeSlot> slots) => slots.map((s) => s.courtName).toSet().toList();
+
+/// Số khung còn đặt được lúc [now] của từng sân con.
+Map<String, int> freeSlotsByCourt(Iterable<TimeSlot> slots, DateTime now) {
+  final result = <String, int>{};
+  for (final s in slots) {
+    result[s.courtName] = (result[s.courtName] ?? 0) + (s.isBookable(now) ? 1 : 0);
+  }
+  return result;
 }
 
 /// Thanh chọn ngày ngang (mặc định 7 ngày kể từ hôm nay).
@@ -107,7 +209,7 @@ class DateSelectorBar extends StatelessWidget {
   }
 }
 
-/// Lưới khung giờ: hiển thị giờ, giá, số sân còn trống; khung đã qua hoặc hết sân thì khóa.
+/// Lưới khung giờ của một sân con: hiển thị giờ, giá, còn trống hay không; khung đã qua hoặc đã có người đặt thì khóa.
 class TimeSlotGrid extends StatelessWidget {
   final List<TimeSlot> slots;
   final Set<String> selectedSlotIds;
@@ -167,7 +269,6 @@ class _TimeSlotTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final disabled = isPassed || slot.isFull;
-    final fewLeft = !disabled && slot.availableCourts == 1;
 
     final Color bg = isSelected
         ? AppColors.primaryGreen
@@ -189,15 +290,13 @@ class _TimeSlotTile extends StatelessWidget {
         ? FacilityStrings.passed
         : slot.isFull
             ? FacilityStrings.full
-            : FacilityStrings.courtsLeft(slot.availableCourts, slot.totalCourts);
+            : FacilityStrings.available;
 
     final Color statusColor = isSelected
         ? Colors.white
         : disabled
             ? AppColors.textSecondary
-            : fewLeft
-                ? AppColors.tagOrangeText
-                : AppColors.primaryGreen;
+            : AppColors.primaryGreen;
 
     return GestureDetector(
       onTap: disabled ? null : onTap,

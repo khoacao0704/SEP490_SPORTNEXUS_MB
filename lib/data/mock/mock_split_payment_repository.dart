@@ -88,7 +88,7 @@ class MockSplitPaymentRepository implements SplitPaymentRepository, SandboxSplit
       sportLabel: sportLabel,
       location: location,
       schedule: schedule,
-      slots: [for (final s in hold.slots) SplitSlot(id: s.id, start: s.start, end: s.end, price: s.price)],
+      slots: [for (final s in hold.slots) SplitSlot(id: s.id, courtName: s.courtName, start: s.start, end: s.end, price: s.price)],
       totalAmount: total,
       parts: parts,
       shares: [

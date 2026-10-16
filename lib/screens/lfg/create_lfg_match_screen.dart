@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/lfg_rules.dart';
 import '../../core/constants/vietnam_cities.dart';
+import '../../core/strings/facility_strings.dart';
 import '../../core/strings/lfg_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
@@ -42,7 +43,9 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
 
   late final List<DateTime> _dates = _eligibleDates(DateTime.now());
   late DateTime _date = _dates.first;
+  /// Khung giờ hợp lệ (trong cửa sổ tạo kèo) của mọi sân con trong ngày.
   List<TimeSlot> _slots = [];
+  String? _court;
   bool _loadingSlots = false;
   TimeSlot? _slot;
 
@@ -114,8 +117,13 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
       if (!mounted) return;
       final now = DateTime.now();
       setState(() {
-        _slots = slots.where((s) => !s.isFull && LfgRules.canCreateFor(s.start, now)).toList();
+        _slots = slots.where((s) => LfgRules.canCreateFor(s.start, now)).toList();
         _loadingSlots = false;
+        final courts = courtsOf(_slots);
+        if (!courts.contains(_court)) {
+          final free = freeSlotsByCourt(_slots, now);
+          _court = courts.where((c) => (free[c] ?? 0) > 0).firstOrNull ?? courts.firstOrNull;
+        }
       });
     } catch (_) {
       if (mounted) setState(() => _loadingSlots = false);
@@ -190,7 +198,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             sport: _sport,
             format: _format,
             courtType: slot.courtType,
-            facilityName: facility.name,
+            facilityName: '${facility.name} • ${slot.courtName}',
             district: facility.district,
             start: slot.start,
             end: slot.end,
@@ -342,13 +350,26 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Center(child: Text(LfgStrings.noSlots, style: TextStyle(color: AppColors.textSecondary))),
               )
-            else
+            else ...[
+              const Text(
+                FacilityStrings.chooseCourt,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textMain),
+              ),
+              const SizedBox(height: 8),
+              CourtSelector(
+                courts: courtsOf(_slots),
+                selected: _court,
+                freeSlots: freeSlotsByCourt(_slots, DateTime.now()),
+                onSelected: (c) => setState(() => _court = c),
+              ),
+              const SizedBox(height: 12),
               TimeSlotGrid(
-                slots: _slots,
+                slots: _slots.where((s) => s.courtName == _court).toList(),
                 selectedSlotIds: {if (slot != null) slot.id},
                 now: DateTime.now(),
                 onSelected: (s) => setState(() => _slot = s),
               ),
+            ],
             const SizedBox(height: 18),
             _title(LfgStrings.stepNote),
             TextField(

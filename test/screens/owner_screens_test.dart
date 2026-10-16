@@ -61,21 +61,18 @@ void main() {
     expect(find.text(OwnerFacilityStrings.title), findsOneWidget);
   });
 
-  testWidgets('nhập mã vé: chỉ định sân con rồi check-in', (tester) async {
+  testWidgets('nhập mã vé: hiện sân con người chơi đã đặt rồi check-in', (tester) async {
     await pump(tester, const OwnerScanScreen(enableCamera: false));
     await tester.enterText(find.byType(TextField), 'SPN-BK-OW1001');
     await tester.tap(find.text(OwnerStrings.lookup));
     await tester.pumpAndSettle();
 
     expect(find.text('Nguyễn Minh Anh'), findsOneWidget);
-    expect(find.text(OwnerStrings.chooseCourtTitle), findsOneWidget);
-    expect(find.text('Sân 2'), findsNothing); // kèo LFG đang dùng
-    await tester.tap(find.text('Sân 4'));
-    await tester.pumpAndSettle();
+    expect(find.text(OwnerStrings.bookedCourt('Sân 3')), findsOneWidget);
     await tester.tap(find.text(OwnerStrings.confirmCheckIn));
     await tester.pumpAndSettle();
 
-    expect(find.text(OwnerStrings.checkInSuccess('Nguyễn Minh Anh', 'Sân 4')), findsOneWidget);
+    expect(find.text(OwnerStrings.checkInSuccess('Nguyễn Minh Anh', 'Sân 3')), findsOneWidget);
   });
 
   testWidgets('quá giờ check-in: báo vắng mặt, không mở check-in', (tester) async {

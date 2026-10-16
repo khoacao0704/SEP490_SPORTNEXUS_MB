@@ -143,7 +143,7 @@ class SessionCard extends StatelessWidget {
                         const Icon(Icons.grid_view, size: 14, color: AppColors.textSecondary),
                         const SizedBox(width: 4),
                         Text(
-                          s.assignedCourt ?? OwnerStrings.noCourtYet,
+                          s.assignedCourt,
                           style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                         ),
                       ],

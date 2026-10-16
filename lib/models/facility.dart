@@ -3,8 +3,7 @@ import 'geo_point.dart';
 import 'sport.dart';
 
 /// Một loại sân của một môn mà cơ sở cung cấp (vd. Bóng đá • Sân 7 người).
-/// Các sân con cùng loại là như nhau: người chơi không chọn sân cụ thể,
-/// hệ thống trừ dần [courtCount] và chủ sân chỉ sân khi check-in.
+/// Loại sân có [courtCount] sân con (Sân 1, Sân 2, ...); người chơi chọn đúng sân con khi đặt.
 class SportOffering {
   final Sport sport;
   final CourtType courtType;

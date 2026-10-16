@@ -256,8 +256,8 @@ void main() {
         start: start,
         end: start.add(const Duration(minutes: 90)),
         price: 1120000,
-        totalCourts: 2,
-        availableCourts: 1,
+        courtName: 'Sân 2',
+        isAvailable: true,
       );
       final match = await repo.createMatch(
         hold: SlotHold(holdId: 'h', slots: [slot], expiresAt: clock.add(const Duration(minutes: 10))),
@@ -298,8 +298,8 @@ Future<LfgMatch> _createMatch(
     start: start,
     end: start.add(const Duration(hours: 1)),
     price: 168000,
-    totalCourts: 6,
-    availableCourts: 3,
+    courtName: 'Sân 4',
+    isAvailable: true,
   );
   return repo.createMatch(
     hold: SlotHold(holdId: 'hold-test', slots: [slot], expiresAt: now.add(const Duration(minutes: 10))),

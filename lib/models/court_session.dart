@@ -92,8 +92,8 @@ class CourtSession {
   /// Người đặt (booking) hoặc host (LFG) đứng đầu.
   final List<SessionPlayer> players;
 
-  /// Sân con chủ sân chỉ định lúc check-in người đầu tiên, vd. "Sân 2".
-  final String? assignedCourt;
+  /// Sân con người chơi đã chọn lúc đặt sân / tạo kèo, vd. "Sân 2".
+  final String assignedCourt;
   final DateTime? checkedOutAt;
   final DateTime? cancelledAt;
 
@@ -109,7 +109,7 @@ class CourtSession {
     required this.totalPrice,
     required this.paidViaApp,
     required this.players,
-    this.assignedCourt,
+    required this.assignedCourt,
     this.checkedOutAt,
     this.cancelledAt,
   });
@@ -160,7 +160,6 @@ class CourtSession {
 
   CourtSession copyWith({
     List<SessionPlayer>? players,
-    String? assignedCourt,
     DateTime? checkedOutAt,
   }) =>
       CourtSession(
@@ -175,7 +174,7 @@ class CourtSession {
         totalPrice: totalPrice,
         paidViaApp: paidViaApp,
         players: players ?? this.players,
-        assignedCourt: assignedCourt ?? this.assignedCourt,
+        assignedCourt: assignedCourt,
         checkedOutAt: checkedOutAt ?? this.checkedOutAt,
         cancelledAt: cancelledAt,
       );
@@ -192,7 +191,7 @@ class CourtSession {
         totalPrice: (json['totalPrice'] as num).toInt(),
         paidViaApp: (json['paidViaApp'] as num).toInt(),
         players: (json['players'] as List).map((e) => SessionPlayer.fromJson(e as Map<String, dynamic>)).toList(),
-        assignedCourt: json['assignedCourt'] as String?,
+        assignedCourt: json['assignedCourt'] as String,
         checkedOutAt: json['checkedOutAt'] == null ? null : DateTime.parse(json['checkedOutAt'] as String),
         cancelledAt: json['cancelledAt'] == null ? null : DateTime.parse(json['cancelledAt'] as String),
       );

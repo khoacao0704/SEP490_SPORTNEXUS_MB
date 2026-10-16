@@ -99,13 +99,7 @@ class MockOwnerRepository implements OwnerRepository {
   }
 
   @override
-  Future<List<String>> getFreeCourts(String sessionId) async {
-    await _delay();
-    return _freeCourts(_find(sessionId, await _myFacilityIds()), await _mine());
-  }
-
-  @override
-  Future<CourtSession> checkIn({required String sessionId, required String userId, String? court}) async {
+  Future<CourtSession> checkIn({required String sessionId, required String userId}) async {
     await _delay();
     final session = _find(sessionId, await _myFacilityIds());
     final now = _now();
@@ -115,16 +109,8 @@ class MockOwnerRepository implements OwnerRepository {
     final block = session.checkInBlock(player, now);
     if (block != null) throw OwnerException(OwnerStrings.checkInBlocked(session, block));
 
-    // Người đầu tiên check-in thì chủ sân chỉ sân con; những người sau vào cùng sân.
-    var assigned = session.assignedCourt;
-    if (assigned == null) {
-      if (court == null) throw const OwnerException(OwnerStrings.chooseCourtRequired);
-      if (!_freeCourts(session, await _mine()).contains(court)) throw OwnerException(OwnerStrings.courtBusy(court));
-      assigned = court;
-    }
-
+    // Sân con do người chơi chọn lúc đặt: check-in chỉ ghi nhận giờ vào sân.
     final updated = session.copyWith(
-      assignedCourt: assigned,
       players: [
         for (final p in session.players) p.userId == userId ? p.copyWith(checkedInAt: now) : p,
       ],
@@ -265,9 +251,8 @@ class MockOwnerRepository implements OwnerRepository {
             s.facilityId == facilityId &&
             s.sport == court.sport &&
             s.courtType == court.courtType &&
-            s.assignedCourt != null &&
             _stillActive(s, now))
-        .map((s) => int.tryParse(s.assignedCourt!.replaceAll(RegExp(r'\D'), '')) ?? 0)
+        .map((s) => int.tryParse(s.assignedCourt.replaceAll(RegExp(r'\D'), '')) ?? 0)
         .fold(0, (a, b) => a > b ? a : b);
     if (court.courtCount < highestInUse) throw const OwnerException(OwnerFacilityStrings.courtInUse);
 
@@ -637,33 +622,6 @@ class MockOwnerRepository implements OwnerRepository {
     list[list.indexWhere((s) => s.id == updated.id)] = updated;
   }
 
-  /// Sân con cùng môn, cùng loại chưa bị lượt sân khác (trùng giờ, chưa check-out) chiếm.
-  List<String> _freeCourts(CourtSession session, List<OwnerFacility> mine) {
-    final count = mine
-            .where((f) => f.id == session.facilityId)
-            .firstOrNull
-            ?.courtFor(session.sport, session.courtType)
-            ?.courtCount ??
-        0;
-    final busy = _all()
-        .where((s) =>
-            s.id != session.id &&
-            s.facilityId == session.facilityId &&
-            s.sport == session.sport &&
-            s.courtType == session.courtType &&
-            s.assignedCourt != null &&
-            s.cancelledAt == null &&
-            s.checkedOutAt == null &&
-            s.start.isBefore(session.end) &&
-            s.end.isAfter(session.start))
-        .map((s) => s.assignedCourt)
-        .toSet();
-    return [
-      for (var i = 1; i <= count; i++)
-        if (!busy.contains('Sân $i')) 'Sân $i',
-    ];
-  }
-
   List<CourtSession> _all() => _sessions ??= _seed(_now());
 
   /// Lượt sân mẫu quanh giờ hiện tại để có đủ trạng thái khi demo.
@@ -724,6 +682,7 @@ class MockOwnerRepository implements OwnerRepository {
         totalPrice: 500000,
         paidViaApp: 125000,
         players: [bookingPlayer('OW1004', 'Phạm Đức Huy')],
+        assignedCourt: 'Sân 2',
       ),
       // Kèo LFG đang chơi: 3/4 check-in, 1 người vắng.
       CourtSession(
@@ -756,6 +715,7 @@ class MockOwnerRepository implements OwnerRepository {
         totalPrice: 160000,
         paidViaApp: 40000,
         players: [bookingPlayer('OW1001', 'Nguyễn Minh Anh')],
+        assignedCourt: 'Sân 3',
       ),
       // Kèo Team vs Team chiều nay, chưa mở check-in.
       CourtSession(
@@ -773,6 +733,7 @@ class MockOwnerRepository implements OwnerRepository {
           lfgPlayer('LFGOW2', 'u-lfg-21', 'Đội FC Sao Mai (Hùng)'),
           lfgPlayer('LFGOW2', 'u-lfg-22', 'Đội Q1 United (Khoa)'),
         ],
+        assignedCourt: 'Sân 1',
       ),
       // Ngày mai.
       CourtSession(
@@ -786,6 +747,7 @@ class MockOwnerRepository implements OwnerRepository {
         totalPrice: 160000,
         paidViaApp: 160000,
         players: [bookingPlayer('OW1006', 'Hồ Thị Thu')],
+        assignedCourt: 'Sân 1',
       ),
       CourtSession(
         id: 'OW1007',
@@ -799,6 +761,7 @@ class MockOwnerRepository implements OwnerRepository {
         totalPrice: 150000,
         paidViaApp: 38000,
         players: [bookingPlayer('OW1007', 'Lý Minh Khang')],
+        assignedCourt: 'Sân 1',
         cancelledAt: now,
       ),
     ];
