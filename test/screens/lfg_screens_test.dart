@@ -50,22 +50,22 @@ void main() {
 
   testWidgets('bảng tin: hiện kèo, lọc theo môn; tab Kèo của tôi', (tester) async {
     await pump(tester, const LfgScreen());
-    expect(find.text('Sân Bóng Hoa Lư • Quận 1'), findsOneWidget);
+    expect(find.text('Sân Bóng Hoa Lư • Sân 1 • Quận 1'), findsOneWidget);
     expect(find.text(LfgStrings.joined), findsOneWidget); // kèo Gò Vấp đang tham gia
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'Bóng Đá'));
     await tester.pumpAndSettle();
-    expect(find.text('Sân Bóng Hoa Lư • Quận 1'), findsOneWidget);
-    expect(find.text('Sân Cầu Lông Thiên Triều • Quận 7'), findsNothing);
+    expect(find.text('Sân Bóng Hoa Lư • Sân 1 • Quận 1'), findsOneWidget);
+    expect(find.textContaining('Sân Cầu Lông Thiên Triều'), findsNothing);
     expect(find.text('${LfgFormat.teamVsTeam.label} • 7 vs 7'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(ChoiceChip, '5 vs 5'));
     await tester.pumpAndSettle();
-    expect(find.text('Sân Bóng Hoa Lư • Quận 1'), findsNothing);
+    expect(find.text('Sân Bóng Hoa Lư • Sân 1 • Quận 1'), findsNothing);
 
     await tester.tap(find.text(LfgStrings.tabMine));
     await tester.pumpAndSettle();
-    expect(find.text('Gò Vấp Arena • Gò Vấp'), findsOneWidget);
+    expect(find.text('Gò Vấp Arena • Sân 4 • Gò Vấp'), findsOneWidget);
   });
 
   testWidgets('Flash Claim từ chi tiết kèo: thanh toán bằng ví, có vé QR và nút Rời kèo', (tester) async {

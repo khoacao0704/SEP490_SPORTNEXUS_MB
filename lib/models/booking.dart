@@ -42,6 +42,9 @@ class Booking {
   /// "Cầu Lông" hoặc "Bóng Đá • Sân 7 người".
   final String sportLabel;
 
+  /// Sân con đã đặt, vd. "Sân 2" (`null` với dữ liệu cũ chưa có sân con).
+  final String? courtName;
+
   /// Mô tả lịch, vd. "Thứ 5, 16/10 • 18:00 - 19:00".
   final String schedule;
 
@@ -63,6 +66,7 @@ class Booking {
     required this.facilityName,
     required this.location,
     required this.sportLabel,
+    this.courtName,
     required this.schedule,
     required this.start,
     required this.end,
@@ -74,7 +78,10 @@ class Booking {
     this.refunded = 0,
   });
 
-  int get amountPaid => payments.fold(0, (sum, p) => sum + p.amount);
+  /// "Cầu Lông • Sân 2" (chưa có sân con thì chỉ có môn).
+  String get sportCourtLabel => courtName == null ? sportLabel : '$sportLabel • $courtName';
+
+  int get amountPaid =>payments.fold(0, (sum, p) => sum + p.amount);
 
   /// Còn phải trả tại sân (với cọc 1/4).
   int get remainingAtCourt => (totalPrice - amountPaid).clamp(0, totalPrice);
@@ -112,6 +119,7 @@ class Booking {
         facilityName: facilityName,
         location: location,
         sportLabel: sportLabel,
+        courtName: courtName,
         schedule: schedule,
         start: start,
         end: end,
@@ -129,6 +137,7 @@ class Booking {
         facilityName: json['facilityName'] as String,
         location: json['location'] as String,
         sportLabel: json['sportLabel'] as String,
+        courtName: json['courtName'] as String?,
         schedule: json['schedule'] as String,
         start: DateTime.parse(json['start'] as String),
         end: DateTime.parse(json['end'] as String),
@@ -146,6 +155,7 @@ class Booking {
         'facilityName': facilityName,
         'location': location,
         'sportLabel': sportLabel,
+        'courtName': courtName,
         'schedule': schedule,
         'start': start.toIso8601String(),
         'end': end.toIso8601String(),

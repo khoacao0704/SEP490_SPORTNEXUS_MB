@@ -116,7 +116,7 @@ class _OwnerSessionDetailScreenState extends State<OwnerSessionDetailScreen> {
                   const SizedBox(height: 10),
                   _infoRow(Icons.storefront_outlined, s.facilityName),
                   _infoRow(Icons.schedule, Formatters.slotLabel(s.start, s.end)),
-                  _infoRow(Icons.grid_view, s.assignedCourt ?? OwnerStrings.noCourtYet),
+                  _infoRow(Icons.grid_view, s.assignedCourt),
                   _infoRow(
                     s.kind == SessionKind.lfg ? Icons.groups_outlined : Icons.receipt_long_outlined,
                     s.kind == SessionKind.lfg ? OwnerStrings.kindLfg : OwnerStrings.kindBooking,

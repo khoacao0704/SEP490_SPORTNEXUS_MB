@@ -23,11 +23,12 @@ abstract class FacilityRepository {
   Future<Facility> getFacility(String facilityId);
 
   /// Các khung giờ chủ sân đã cấu hình cho loại sân [courtType] của [sport] trong ngày [date],
-  /// kèm số sân còn trống. Bỏ trống [courtType] thì dùng loại sân rẻ nhất của môn.
+  /// trên TỪNG sân con (sắp theo sân rồi theo giờ), kèm trạng thái còn trống.
+  /// Bỏ trống [courtType] thì dùng loại sân rẻ nhất của môn.
   Future<List<TimeSlot>> getTimeSlots(String facilityId, Sport sport, DateTime date, {CourtType? courtType});
 
-  /// Giữ 1 sân ở mỗi khung giờ trong [slots] tối đa 10 phút để thanh toán.
-  /// Giữ theo kiểu "tất cả hoặc không": chỉ cần 1 khung vừa hết sân / đã bắt đầu
+  /// Giữ đúng sân con của mỗi khung giờ trong [slots] tối đa 10 phút để thanh toán.
+  /// Giữ theo kiểu "tất cả hoặc không": chỉ cần 1 khung vừa có người đặt / đã bắt đầu
   /// thì không giữ khung nào và ném [FacilityException] nêu rõ khung đó.
   Future<SlotHold> holdSlots(List<TimeSlot> slots);
 

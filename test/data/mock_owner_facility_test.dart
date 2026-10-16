@@ -193,7 +193,6 @@ void main() {
     );
     final more = await repo.saveCourt('f-hcm-thientrieu', badminton.copyWith(courtCount: 8));
     expect(more.courtFor(Sport.badminton, CourtType.standard)!.courtCount, 8);
-    expect(await repo.getFreeCourts('OW1001'), hasLength(7)); // 8 sân trừ Sân 2
   });
 
   test('khóa loại sân: chặn nếu còn lượt đặt; đang khóa không sửa được; mở khóa lại được', () async {

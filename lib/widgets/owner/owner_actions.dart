@@ -11,7 +11,7 @@ void _showError(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
 }
 
-/// Check-in một người chơi: lượt sân chưa có sân con thì chủ sân chọn sân trước.
+/// Check-in một người chơi vào sân con đã đặt.
 /// Trả về lượt sân sau khi check-in, hoặc `null` nếu bỏ qua / lỗi.
 Future<CourtSession?> checkInPlayer(BuildContext context, CourtSession session, SessionPlayer player) async {
   final result = await showModalBottomSheet<CourtSession>(
@@ -23,7 +23,7 @@ Future<CourtSession?> checkInPlayer(BuildContext context, CourtSession session, 
   );
   if (result != null && context.mounted) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(OwnerStrings.checkInSuccess(player.name, result.assignedCourt ?? ''))));
+        .showSnackBar(SnackBar(content: Text(OwnerStrings.checkInSuccess(player.name, result.assignedCourt))));
   }
   return result;
 }
@@ -76,31 +76,8 @@ class _CheckInSheet extends StatefulWidget {
 }
 
 class _CheckInSheetState extends State<_CheckInSheet> {
-  List<String>? _freeCourts;
-  String? _court;
   bool _submitting = false;
   String? _error;
-
-  bool get _needsCourt => widget.session.assignedCourt == null;
-
-  @override
-  void initState() {
-    super.initState();
-    if (_needsCourt) _loadCourts();
-  }
-
-  Future<void> _loadCourts() async {
-    try {
-      final courts = await AppRepositories.owner.getFreeCourts(widget.session.id);
-      if (!mounted) return;
-      setState(() {
-        _freeCourts = courts;
-        _court = courts.firstOrNull;
-      });
-    } on OwnerException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    }
-  }
 
   Future<void> _submit() async {
     setState(() {
@@ -111,7 +88,6 @@ class _CheckInSheetState extends State<_CheckInSheet> {
       final updated = await AppRepositories.owner.checkIn(
         sessionId: widget.session.id,
         userId: widget.player.userId,
-        court: _needsCourt ? _court : null,
       );
       if (mounted) Navigator.pop(context, updated);
     } on OwnerException catch (e) {
@@ -127,8 +103,6 @@ class _CheckInSheetState extends State<_CheckInSheet> {
   @override
   Widget build(BuildContext context) {
     final s = widget.session;
-    final courts = _freeCourts;
-    final canSubmit = !_submitting && (!_needsCourt || _court != null);
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -154,49 +128,17 @@ class _CheckInSheetState extends State<_CheckInSheet> {
               style: const TextStyle(color: AppColors.textSecondary, height: 1.4),
             ),
             const SizedBox(height: 16),
-            if (_needsCourt) ...[
-              const Text(
-                OwnerStrings.chooseCourtTitle,
-                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
-              ),
-              const SizedBox(height: 4),
-              const Text(OwnerStrings.chooseCourtHint, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-              const SizedBox(height: 10),
-              if (courts == null && _error == null)
-                const Center(
-                  child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator()),
-                )
-              else if (courts != null && courts.isEmpty)
-                const Text(OwnerStrings.noFreeCourt, style: TextStyle(color: Colors.red))
-              else if (courts != null)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final c in courts)
-                      ChoiceChip(
-                        label: Text(c),
-                        selected: _court == c,
-                        selectedColor: AppColors.lightGreen,
-                        labelStyle: TextStyle(
-                          color: _court == c ? AppColors.darkGreen : AppColors.textMain,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        onSelected: (_) => setState(() => _court = c),
-                      ),
-                  ],
+            // Sân con người chơi đã chọn lúc đặt; chủ sân chỉ cần xếp vào đúng sân này.
+            Row(
+              children: [
+                const Icon(Icons.grid_view, size: 18, color: AppColors.primaryGreen),
+                const SizedBox(width: 6),
+                Text(
+                  OwnerStrings.bookedCourt(s.assignedCourt),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.darkGreen),
                 ),
-            ] else
-              Row(
-                children: [
-                  const Icon(Icons.grid_view, size: 18, color: AppColors.primaryGreen),
-                  const SizedBox(width: 6),
-                  Text(
-                    s.assignedCourt!,
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.darkGreen),
-                  ),
-                ],
-              ),
+              ],
+            ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!, style: const TextStyle(color: Colors.red)),
@@ -206,7 +148,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
-                onPressed: canSubmit ? _submit : null,
+                onPressed: _submitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryGreen,
                   foregroundColor: Colors.white,

@@ -141,6 +141,9 @@ class LfgMatch {
 
   /// Loại sân của khung giờ; Team vs Team quyết định số người mỗi đội (vd. sân 7 → 7 vs 7).
   final CourtType courtType;
+
+  /// Sân con host đã đặt, vd. "Sân 2"; mọi người trong kèo chơi chung sân này.
+  final String? courtName;
   final DateTime start;
   final DateTime end;
 
@@ -170,6 +173,7 @@ class LfgMatch {
     required this.sport,
     required this.format,
     this.courtType = CourtType.standard,
+    this.courtName,
     required this.start,
     required this.end,
     required this.courtPrice,
@@ -182,6 +186,9 @@ class LfgMatch {
   });
 
   LfgMember get host => members.firstWhere((m) => m.isHost, orElse: () => members.first);
+
+  /// "Sân Cầu Lông Thiên Triều • Sân 2" (chưa có sân con thì chỉ có tên cơ sở).
+  String get facilityCourtLabel => courtName == null ? facilityName : '$facilityName • $courtName';
 
   int get totalSlots => format.totalSlots;
 
@@ -236,6 +243,7 @@ class LfgMatch {
         sport: sport,
         format: format,
         courtType: courtType,
+        courtName: courtName,
         start: start,
         end: end,
         courtPrice: courtPrice,
@@ -257,6 +265,7 @@ class LfgMatch {
         sport: Sport.fromApi(json['sport'] as String),
         format: LfgFormat.fromApi(json['format'] as String),
         courtType: CourtType.fromApi(json['courtType'] as String?),
+        courtName: json['courtName'] as String?,
         start: DateTime.parse(json['start'] as String),
         end: DateTime.parse(json['end'] as String),
         courtPrice: (json['courtPrice'] as num).toInt(),
@@ -280,6 +289,7 @@ class LfgMatch {
         'sport': sport.apiValue,
         'format': format.apiValue,
         'courtType': courtType.apiValue,
+        'courtName': courtName,
         'start': start.toIso8601String(),
         'end': end.toIso8601String(),
         'courtPrice': courtPrice,

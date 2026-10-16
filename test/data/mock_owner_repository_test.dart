@@ -61,20 +61,8 @@ void main() {
     expect(() => repo.lookupTicket('SPN-BK-KHONGCO'), throwsOwner(OwnerStrings.ticketNotFound));
   });
 
-  test('check-in người đầu tiên phải chỉ định sân con còn trống', () async {
-    // Sân 2 đang có kèo LFG chơi trùng giờ.
-    expect(await repo.getFreeCourts('OW1001'), ['Sân 1', 'Sân 3', 'Sân 4', 'Sân 5', 'Sân 6']);
-
-    expect(
-      () => repo.checkIn(sessionId: 'OW1001', userId: 'u-OW1001'),
-      throwsOwner(OwnerStrings.chooseCourtRequired),
-    );
-    expect(
-      () => repo.checkIn(sessionId: 'OW1001', userId: 'u-OW1001', court: 'Sân 2'),
-      throwsOwner(OwnerStrings.courtBusy('Sân 2')),
-    );
-
-    final s = await repo.checkIn(sessionId: 'OW1001', userId: 'u-OW1001', court: 'Sân 3');
+  test('check-in vào đúng sân con người chơi đã đặt, chủ sân không cần chỉ sân', () async {
+    final s = await repo.checkIn(sessionId: 'OW1001', userId: 'u-OW1001');
     expect(s.assignedCourt, 'Sân 3');
     expect(s.status(now), SessionStatus.playing);
     expect(
@@ -86,7 +74,7 @@ void main() {
   test('ngoài khung T−30 phút tới T+15 phút không check-in được', () async {
     final upcoming = await repo.getSession('LFGOW2');
     expect(
-      () => repo.checkIn(sessionId: 'LFGOW2', userId: 'u-lfg-21', court: 'Sân 1'),
+      () => repo.checkIn(sessionId: 'LFGOW2', userId: 'u-lfg-21'),
       throwsOwner(OwnerStrings.checkInNotOpen('17:30')),
     );
     expect(upcoming.checkInOpensAt, DateTime(2026, 10, 15, 17, 30));
@@ -104,9 +92,6 @@ void main() {
     expect(done.status(now), SessionStatus.completed);
     expect(done.checkedOutAt, now);
     expect(() => repo.checkOut('LFGOW1'), throwsOwner(OwnerStrings.sessionCompleted));
-
-    // Sân con được nhả sau check-out.
-    expect(await repo.getFreeCourts('OW1001'), contains('Sân 2'));
   });
 
   test('lượt sân đã hủy không check-in được', () async {
@@ -114,7 +99,7 @@ void main() {
     final cancelled = (await repo.getSessions(day: tomorrow)).firstWhere((s) => s.id == 'OW1007');
     expect(cancelled.status(now), SessionStatus.cancelled);
     expect(
-      () => repo.checkIn(sessionId: 'OW1007', userId: 'u-OW1007', court: 'Sân 1'),
+      () => repo.checkIn(sessionId: 'OW1007', userId: 'u-OW1007'),
       throwsOwner(OwnerStrings.sessionCancelled),
     );
   });

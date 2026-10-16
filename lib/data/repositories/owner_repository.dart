@@ -29,11 +29,8 @@ abstract class OwnerRepository {
   /// Tra mã QR người chơi xuất trình. Lỗi nếu mã sai hoặc không thuộc cơ sở của Chủ sân.
   Future<TicketLookup> lookupTicket(String code);
 
-  /// Sân con còn trống trong khung giờ của lượt sân (cùng môn, cùng loại sân), vd. ["Sân 1", "Sân 3"].
-  Future<List<String>> getFreeCourts(String sessionId);
-
-  /// Check-in một người. Lượt sân chưa có sân con thì phải truyền [court] (chủ sân chỉ sân lúc check-in).
-  Future<CourtSession> checkIn({required String sessionId, required String userId, String? court});
+  /// Check-in một người vào đúng sân con người chơi đã chọn lúc đặt ([CourtSession.assignedCourt]).
+  Future<CourtSession> checkIn({required String sessionId, required String userId});
 
   /// Check-out cả lượt sân: xác nhận đã nhận đủ tiền sân, giải ngân phần escrow cho Chủ sân.
   Future<CourtSession> checkOut(String sessionId);

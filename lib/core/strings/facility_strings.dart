@@ -42,8 +42,11 @@ class FacilityStrings {
   static const String chooseDate = 'Chọn ngày';
   static const String chooseSlot = 'Chọn khung giờ';
   static const String noSlots = 'Không có khung giờ nào trong ngày này';
-  static String courtsLeft(int available, int total) => 'Còn $available/$total sân';
-  static const String full = 'Hết sân';
+  static const String chooseCourt = 'Chọn sân';
+  static String courtName(int number) => 'Sân $number';
+  static String freeSlotCount(int n) => n == 0 ? 'Kín lịch' : 'Trống $n khung';
+  static const String available = 'Còn trống';
+  static const String full = 'Đã đặt';
   static const String passed = 'Đã qua';
   static const String today = 'Hôm nay';
   static const String openingHours = 'Giờ mở cửa';
@@ -53,7 +56,7 @@ class FacilityStrings {
   static const String about = 'Giới thiệu';
   static const String location = 'Vị trí';
   static const String sameCourtsNote =
-      'Các sân cùng môn là như nhau. Chủ sân sẽ chỉ sân cho bạn khi check-in.';
+      'Bạn đặt đúng sân con đã chọn. Khi check-in, chủ sân xếp bạn vào đúng sân này.';
   static const String totalLabel = 'TỔNG TIỀN TẠM TÍNH';
   static const String selectSlotFirst = 'Chọn khung giờ để đặt sân';
   static const String multiSlotHint = 'Có thể chọn nhiều khung giờ, kể cả ở các ngày khác nhau.';
@@ -65,7 +68,7 @@ class FacilityStrings {
 
   // Lỗi
   static const String facilityNotFound = 'Không tìm thấy cơ sở';
-  static String slotJustFull(String slot) => 'Khung giờ $slot vừa hết sân. Vui lòng bỏ chọn khung này.';
+  static String slotJustFull(String slot) => '$slot vừa có người đặt. Vui lòng bỏ chọn khung này.';
   static String slotStarted(String slot) => 'Khung giờ $slot đã bắt đầu. Vui lòng bỏ chọn khung này.';
   static const String noSlotSelected = 'Vui lòng chọn ít nhất 1 khung giờ';
   static const String loadError = 'Không tải được dữ liệu. Vui lòng thử lại.';

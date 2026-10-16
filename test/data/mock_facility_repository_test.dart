@@ -96,10 +96,15 @@ void main() {
       expect(badminton.last.end.isAfter(DateTime(2026, 10, 15, 21, 30)), isFalse);
     });
 
-    test('số sân trống không vượt quá số sân của cơ sở', () async {
+    test('mỗi sân con có lịch riêng: đủ Sân 1 → Sân 6, cùng khung giờ, sắp theo sân', () async {
       final slots = await repo.getTimeSlots('f-hcm-thientrieu', Sport.badminton, tomorrow);
-      expect(slots.every((s) => s.totalCourts == 6), isTrue);
-      expect(slots.every((s) => s.availableCourts >= 0 && s.availableCourts <= 6), isTrue);
+      expect(courtsOf(slots), [for (var i = 1; i <= 6; i++) 'Sân $i']);
+      final perCourt = slots.where((s) => s.courtName == 'Sân 1').map((s) => s.start).toList();
+      expect(slots.where((s) => s.courtName == 'Sân 6').map((s) => s.start), perCourt);
+      expect(slots.map((s) => s.id).toSet(), hasLength(slots.length));
+      // Có cả sân trống lẫn sân đã đặt để demo.
+      expect(slots.any((s) => s.isAvailable), isTrue);
+      expect(slots.any((s) => s.isFull), isTrue);
     });
 
     test('giờ cao điểm từ 17:00 đắt hơn', () async {
@@ -110,11 +115,11 @@ void main() {
       expect(evening.price, greaterThan(morning.price));
     });
 
-    test('mở lại nhiều lần vẫn ra cùng số sân trống', () async {
+    test('mở lại nhiều lần vẫn ra cùng trạng thái từng sân con', () async {
       final a = await repo.getTimeSlots('f-hcm-hoalu', Sport.football, tomorrow);
       final b = await MockFacilityRepository(latency: Duration.zero, now: () => clock)
           .getTimeSlots('f-hcm-hoalu', Sport.football, tomorrow);
-      expect(a.map((s) => s.availableCourts), b.map((s) => s.availableCourts));
+      expect(a.map((s) => s.isAvailable), b.map((s) => s.isAvailable));
     });
 
     test('loại sân: mỗi loại có số sân và giá riêng; bỏ trống thì lấy loại rẻ nhất', () async {
@@ -125,8 +130,10 @@ void main() {
 
       final five = await repo.getTimeSlots('f-hcm-hoalu', Sport.football, tomorrow);
       final seven = await repo.getTimeSlots('f-hcm-hoalu', Sport.football, tomorrow, courtType: CourtType.football7);
-      expect(five.every((s) => s.courtType == CourtType.football5 && s.totalCourts == 3), isTrue);
-      expect(seven.every((s) => s.courtType == CourtType.football7 && s.totalCourts == 2), isTrue);
+      expect(five.every((s) => s.courtType == CourtType.football5), isTrue);
+      expect(courtsOf(five), ['Sân 1', 'Sân 2', 'Sân 3']);
+      expect(seven.every((s) => s.courtType == CourtType.football7), isTrue);
+      expect(courtsOf(seven), ['Sân 1', 'Sân 2']);
       expect(seven.first.price, greaterThan(five.first.price));
       expect(seven.first.id, isNot(five.first.id));
 
@@ -168,50 +175,58 @@ void main() {
     Future<List<TimeSlot>> openSlots() async =>
         (await testRepo.getTimeSlots('f-test', Sport.badminton, tomorrow)).where((s) => !s.isFull).toList();
 
-    String label(TimeSlot s) => Formatters.slotLabel(s.start, s.end);
+    String label(TimeSlot s) => '${s.courtName} • ${Formatters.slotLabel(s.start, s.end)}';
 
-    test('giữ chỗ trừ 1 sân trống; nhả chỗ thì trả lại', () async {
+    test('giữ đúng sân con đã chọn; sân con khác cùng giờ không bị ảnh hưởng; nhả thì trống lại', () async {
       final slot = (await openSlots()).first;
-      final before = slot.availableCourts;
+      final sameTimeOtherCourt = (await testRepo.getTimeSlots('f-test', Sport.badminton, tomorrow))
+          .firstWhere((s) => s.start == slot.start && s.courtName != slot.courtName);
 
       final hold = await testRepo.holdSlots([slot]);
-      expect((await freshSlot(slot.id)).availableCourts, before - 1);
+      expect(hold.slots.single.courtName, slot.courtName);
+      expect((await freshSlot(slot.id)).isAvailable, isFalse);
+      expect((await freshSlot(sameTimeOtherCourt.id)).isAvailable, sameTimeOtherCourt.isAvailable);
       expect(hold.secondsRemaining(clock), 600);
 
       await testRepo.releaseHold(hold.holdId);
-      expect((await freshSlot(slot.id)).availableCourts, before);
+      expect((await freshSlot(slot.id)).isAvailable, isTrue);
     });
 
     test('giữ nhiều khung (kể cả khác ngày) trong 1 lần, tổng tiền cộng dồn, nhả thì trả lại tất cả', () async {
       final open = await openSlots();
       final otherDay = (await testRepo.getTimeSlots('f-test', Sport.badminton, tomorrow.add(const Duration(days: 2))))
           .firstWhere((s) => !s.isFull);
-      final picked = [otherDay, open[0], open[1]]; // cố tình không theo thứ tự
-      final before = {for (final s in picked) s.id: s.availableCourts};
+      final picked = [otherDay, open[1], open[0]]; // cố tình không theo thứ tự
 
       final hold = await testRepo.holdSlots(picked);
-      expect(hold.slots.map((s) => s.id), [open[0].id, open[1].id, otherDay.id]); // đã sắp theo giờ
+      expect(hold.slots.map((s) => s.start), [open[0].start, open[1].start, otherDay.start]..sort()); // đã sắp theo giờ
       expect(hold.totalPrice, picked.fold<int>(0, (sum, s) => sum + s.price));
-      expect((await freshSlot(open[0].id)).availableCourts, before[open[0].id]! - 1);
-      expect((await freshSlot(open[1].id)).availableCourts, before[open[1].id]! - 1);
+      expect((await freshSlot(open[0].id)).isAvailable, isFalse);
+      expect((await freshSlot(open[1].id)).isAvailable, isFalse);
 
       await testRepo.releaseHold(hold.holdId);
-      expect((await freshSlot(open[0].id)).availableCourts, before[open[0].id]);
-      expect((await freshSlot(open[1].id)).availableCourts, before[open[1].id]);
+      expect((await freshSlot(open[0].id)).isAvailable, isTrue);
+      expect((await freshSlot(open[1].id)).isAvailable, isTrue);
     });
 
-    test('chọn trùng 1 khung 2 lần thì chỉ giữ 1 sân', () async {
+    test('đặt 2 sân con cùng một giờ trong 1 lần được', () async {
+      final slots = await testRepo.getTimeSlots('f-test', Sport.badminton, tomorrow);
+      final start = slots.firstWhere((s) => slots.where((o) => o.start == s.start && o.isAvailable).length == 2).start;
+      final both = slots.where((s) => s.start == start).toList();
+
+      final hold = await testRepo.holdSlots(both);
+      expect(hold.slots.map((s) => s.courtName).toSet(), {'Sân 1', 'Sân 2'});
+    });
+
+    test('chọn trùng 1 khung 2 lần thì chỉ giữ 1 lần', () async {
       final slot = (await openSlots()).first;
       final hold = await testRepo.holdSlots([slot, slot]);
       expect(hold.slots, hasLength(1));
-      expect((await freshSlot(slot.id)).availableCourts, slot.availableCourts - 1);
     });
 
-    test('hết sân thì không giữ được nữa, báo rõ khung nào', () async {
+    test('sân con đã có người giữ thì không giữ được nữa, báo rõ sân và khung nào', () async {
       final slot = (await openSlots()).first;
-      for (var i = 0; i < slot.availableCourts; i++) {
-        await testRepo.holdSlots([slot]);
-      }
+      await testRepo.holdSlots([slot]);
       expect((await freshSlot(slot.id)).isFull, isTrue);
       expect(
         () => testRepo.holdSlots([slot]),
@@ -219,31 +234,27 @@ void main() {
       );
     });
 
-    test('1 khung hết sân thì không giữ khung nào (tất cả hoặc không)', () async {
+    test('1 khung vừa có người đặt thì không giữ khung nào (tất cả hoặc không)', () async {
       final open = await openSlots();
       final full = open[0];
       final other = open[1];
-      for (var i = 0; i < full.availableCourts; i++) {
-        await testRepo.holdSlots([full]);
-      }
-      final otherBefore = (await freshSlot(other.id)).availableCourts;
+      await testRepo.holdSlots([full]);
 
       await expectLater(testRepo.holdSlots([other, full]), throwsA(isA<FacilityException>()));
-      expect((await freshSlot(other.id)).availableCourts, otherBefore);
+      expect((await freshSlot(other.id)).isAvailable, isTrue);
     });
 
     test('quá 10 phút thì chỗ giữ tự hết hạn', () async {
       final slot = (await openSlots()).first;
-      final before = slot.availableCourts;
       await testRepo.holdSlots([slot]);
 
       clock = now.add(const Duration(minutes: 10, seconds: 1));
-      expect((await freshSlot(slot.id)).availableCourts, before);
+      expect((await freshSlot(slot.id)).isAvailable, isTrue);
     });
 
     test('không giữ được khung giờ đã bắt đầu', () async {
       final today = await testRepo.getTimeSlots('f-test', Sport.badminton, now);
-      final started = today.firstWhere((s) => s.hasStarted(now));
+      final started = today.firstWhere((s) => s.hasStarted(now) && s.isAvailable);
       expect(
         () => testRepo.holdSlots([started]),
         throwsA(isA<FacilityException>().having((e) => e.message, 'message', FacilityStrings.slotStarted(label(started)))),
@@ -255,23 +266,39 @@ void main() {
     });
   });
 
-  test('describeSlotSchedule gom theo ngày, sắp theo giờ', () {
-    TimeSlot slot(DateTime start) => TimeSlot(
-          id: start.toIso8601String(),
+  test('describeSlotSchedule gom theo ngày, sắp theo giờ, kèm sân con', () {
+    TimeSlot slot(DateTime start, String court) => TimeSlot(
+          id: '$court${start.toIso8601String()}',
           facilityId: 'f',
           sport: Sport.badminton,
+          courtName: court,
           start: start,
           end: start.add(const Duration(hours: 1)),
           price: 100000,
-          totalCourts: 2,
-          availableCourts: 2,
+          isAvailable: true,
         );
     final text = describeSlotSchedule([
-      slot(DateTime(2026, 10, 17, 7)),
-      slot(DateTime(2026, 10, 15, 20)),
-      slot(DateTime(2026, 10, 15, 18)),
+      slot(DateTime(2026, 10, 17, 7), 'Sân 3'),
+      slot(DateTime(2026, 10, 15, 20), 'Sân 1'),
+      slot(DateTime(2026, 10, 15, 18), 'Sân 2'),
     ]);
-    expect(text, 'Thứ 5, 15/10: 18:00 - 19:00, 20:00 - 21:00\nThứ 7, 17/10: 07:00 - 08:00');
+    expect(text, 'Thứ 5, 15/10: Sân 2 18:00 - 19:00, Sân 1 20:00 - 21:00\nThứ 7, 17/10: Sân 3 07:00 - 08:00');
+  });
+
+  test('freeSlotsByCourt đếm khung còn đặt được của từng sân', () {
+    TimeSlot slot(String court, int hour, bool free) => TimeSlot(
+          id: '$court$hour',
+          facilityId: 'f',
+          sport: Sport.badminton,
+          courtName: court,
+          start: DateTime(2026, 10, 15, hour),
+          end: DateTime(2026, 10, 15, hour + 1),
+          price: 100000,
+          isAvailable: free,
+        );
+    final now = DateTime(2026, 10, 15, 9, 30);
+    final slots = [slot('Sân 1', 9, true), slot('Sân 1', 10, true), slot('Sân 1', 11, false), slot('Sân 2', 10, false)];
+    expect(freeSlotsByCourt(slots, now), {'Sân 1': 1, 'Sân 2': 0}); // 9:00 đã bắt đầu
   });
 
   test('dữ liệu giả hợp lệ: id không trùng, mỗi cơ sở có ít nhất 1 môn', () {

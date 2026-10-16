@@ -189,7 +189,7 @@ class _BookingsViewState extends State<_BookingsView> {
             const SizedBox(height: 8),
             SelectableText(b.ticketCode, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen)),
             const SizedBox(height: 8),
-            Text('${b.facilityName}\n${b.schedule}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
+            Text('${b.facilityName}\n${b.sportCourtLabel}\n${b.schedule}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 8),
             const Text(
               BookingStrings.ticketNote,
@@ -309,7 +309,7 @@ class _BookingsViewState extends State<_BookingsView> {
             children: [
               Expanded(
                 child: Text(
-                  b.sportLabel,
+                  b.sportCourtLabel,
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
                 ),
               ),

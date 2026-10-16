@@ -268,7 +268,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(m.facilityName, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain)),
+                    Text(m.facilityCourtLabel, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain)),
                     Text('${m.district}, ${m.city}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     Text(
                       Formatters.slotLabel(m.start, m.end),

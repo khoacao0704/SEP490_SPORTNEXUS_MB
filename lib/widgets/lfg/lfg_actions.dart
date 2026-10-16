@@ -37,7 +37,7 @@ Future<LfgMatch?> flashClaimMatch(BuildContext context, LfgMatch match) async {
           sport: m.sport,
           format: m.format,
           courtType: m.courtType,
-          facilityName: m.facilityName,
+          facilityName: m.facilityCourtLabel,
           district: m.district,
           start: m.start,
           end: m.end,
