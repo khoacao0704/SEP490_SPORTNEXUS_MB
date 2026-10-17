@@ -14,7 +14,7 @@ void main() {
 
 bool _handlingExpiry = false;
 
-/// Token hết hạn (BE trả 401, hạn 7 ngày, không có refresh token): đăng xuất và về màn đăng nhập.
+/// Phiên hết hạn (BE trả 401 và refresh token cũng không dùng được nữa): đăng xuất và về màn đăng nhập.
 Future<void> _onSessionExpired() async {
   if (_handlingExpiry) return; // nhiều request cùng bị 401 một lúc
   _handlingExpiry = true;

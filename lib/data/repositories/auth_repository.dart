@@ -64,4 +64,23 @@ abstract class AuthRepository {
   Future<AppUser?> getCurrentUser();
 
   Future<void> logout();
+
+  // ---------------- Hồ sơ của chính mình ----------------
+
+  /// Tải hồ sơ mới nhất từ máy chủ và lưu lại vào phiên.
+  Future<AppUser> getProfile();
+
+  /// Đổi họ tên (tên đăng nhập, SĐT, email chưa đổi được).
+  Future<AppUser> updateFullName(String fullName);
+
+  /// Tải ảnh JPG / PNG / WEBP tối đa 5MB lên làm ảnh đại diện.
+  Future<AppUser> uploadAvatar(String filePath);
+
+  Future<AppUser> removeAvatar();
+
+  /// Đổi mật khẩu. Thành công thì mọi phiên đăng nhập bị thu hồi: đăng xuất tại máy, người dùng đăng nhập lại.
+  Future<void> changePassword({required String oldPassword, required String newPassword, required String confirmPassword});
+
+  /// Xóa tài khoản (xóa mềm). Chặn nếu còn lịch đặt sân sắp diễn ra hoặc ví còn tiền. Thành công thì đăng xuất.
+  Future<void> deleteAccount({required String password, String? reason});
 }

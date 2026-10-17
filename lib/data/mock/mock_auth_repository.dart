@@ -2,10 +2,13 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/strings/api_strings.dart';
 import '../../core/strings/auth_strings.dart';
+import '../../core/strings/profile_strings.dart';
 import '../../models/app_user.dart';
 import '../../models/user_role.dart';
 import '../repositories/auth_repository.dart';
+import '../session_store.dart';
 
 /// Bản giả lập [AuthRepository] khi chưa nối API.
 ///
@@ -215,6 +218,70 @@ class MockAuthRepository implements AuthRepository {
     await prefs.remove(keyRememberMe);
   }
 
+  // ---------------- Hồ sơ ----------------
+
+  /// Tài khoản của phiên đang đăng nhập.
+  Future<_MockAccount> _me() async {
+    final current = await SessionStore.readUser();
+    final account = current == null
+        ? null
+        : (await _loadAccounts()).where((a) => a.user.id == current.id).firstOrNull;
+    if (account == null) throw const AuthException(ApiStrings.sessionExpired);
+    return account;
+  }
+
+  Future<AppUser> _update(AppUser Function(AppUser) change) async {
+    await _delay();
+    final account = await _me();
+    account.user = change(account.user);
+    await _saveAccounts();
+    await SessionStore.save(account.user, rememberMe: await SessionStore.rememberMe());
+    return account.user;
+  }
+
+  @override
+  Future<AppUser> getProfile() => _update((u) => u);
+
+  @override
+  Future<AppUser> updateFullName(String fullName) {
+    final name = fullName.trim();
+    if (name.isEmpty) throw const AuthException(AuthStrings.requiredField);
+    return _update((u) => u.copyWith(fullName: name));
+  }
+
+  /// Bản giả lập lưu đường dẫn ảnh trong máy thay cho URL Cloudinary.
+  @override
+  Future<AppUser> uploadAvatar(String filePath) => _update((u) => u.copyWith(avatarUrl: filePath));
+
+  @override
+  Future<AppUser> removeAvatar() => _update((u) => u.copyWith(clearAvatar: true));
+
+  @override
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    await _delay();
+    final account = await _me();
+    if (account.password != oldPassword) throw const AuthException(ProfileStrings.wrongOldPassword);
+    if (newPassword != confirmPassword) throw const AuthException(ProfileStrings.confirmMismatch);
+    if (newPassword == oldPassword) throw const AuthException(ProfileStrings.samePassword);
+    account.password = newPassword;
+    await _saveAccounts();
+    await logout();
+  }
+
+  @override
+  Future<void> deleteAccount({required String password, String? reason}) async {
+    await _delay();
+    final account = await _me();
+    if (account.password != password) throw const AuthException(ProfileStrings.wrongDeletePassword);
+    _accounts!.remove(account);
+    await _saveAccounts();
+    await logout();
+  }
+
   /// Tra cứu tài khoản theo email / số điện thoại (giả lập tìm đồng đội khi đăng ký giải).
   Future<AppUser?> findUser(String identifier) async => _findByIdentifier(await _loadAccounts(), identifier)?.user;
 
@@ -272,7 +339,7 @@ class MockAuthRepository implements AuthRepository {
 }
 
 class _MockAccount {
-  final AppUser user;
+  AppUser user;
   String password;
   bool verified;
 

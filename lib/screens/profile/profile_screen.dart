@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/main_drawer.dart';
 import '../../core/constants/fair_play_rules.dart';
+import '../../core/strings/profile_strings.dart';
 import '../../core/strings/review_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
 import '../../core/strings/wallet_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
+import '../../data/repositories/auth_repository.dart';
+import '../../data/session_store.dart';
+import '../../models/app_user.dart';
+import '../../widgets/profile/user_avatar.dart';
 import '../booking/split_payments_screen.dart';
 import '../fair_play/fair_play_screen.dart';
 import '../review/pending_reviews_screen.dart';
 import '../wallet/transaction_history_screen.dart';
 import '../wallet/withdraw_screen.dart';
+import 'change_password_screen.dart';
+import 'edit_profile_screen.dart';
 import 'top_up_wallet_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -25,8 +31,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   int _balance = 0;
   int _pendingWithdrawal = 0;
-  String _userName = 'Khoa Cao';
-  int? _fairPlay;
+  AppUser? _user;
   int _pendingReviews = 0;
 
   @override
@@ -36,18 +41,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadProfileData() async {
-    final prefs = await SharedPreferences.getInstance();
+    // Hiện ngay hồ sơ đã lưu trong máy, rồi tải bản mới nhất từ máy chủ.
+    final cached = await SessionStore.readUser();
+    if (mounted && cached != null) setState(() => _user = cached);
+    try {
+      final fresh = await AppRepositories.auth.getProfile();
+      if (mounted) setState(() => _user = fresh);
+    } on AuthException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(ProfileStrings.loadError)));
+      }
+    }
+
     final balance = await AppRepositories.wallet.getBalance();
     final pending = await AppRepositories.wallet.getPendingWithdrawalAmount();
-    final fairPlay = await AppRepositories.review.getFairPlay();
     final pendingReviews = await AppRepositories.review.getPendingReviews();
     if (!mounted) return;
     setState(() {
       _balance = balance;
       _pendingWithdrawal = pending;
-      _fairPlay = fairPlay.score;
       _pendingReviews = pendingReviews.length;
-      _userName = prefs.getString('user_name') ?? 'Khoa Cao';
     });
   }
 
@@ -68,7 +81,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             );
           }
         ),
-        title: const Text('Hồ Sơ Cá Nhân', style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold)),
+        title: const Text(ProfileStrings.title, style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold)),
       ),
       drawer: const MainDrawer(),
       body: SingleChildScrollView(
@@ -99,6 +112,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.verified_user_outlined,
               title: ReviewStrings.fairPlayTitle,
               screen: const FairPlayScreen(),
+            ),
+            _menuTile(
+              icon: Icons.lock_outline,
+              title: ProfileStrings.changePassword,
+              screen: const ChangePasswordScreen(),
             ),
           ],
         ),
@@ -135,42 +153,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildUserInfo() {
+    final user = _user;
+    if (user == null) {
+      return const SizedBox(height: 72, child: Center(child: CircularProgressIndicator(color: AppColors.primaryGreen)));
+    }
+    final fairPlay = user.fairPlayScore;
     return Row(
       children: [
-        CircleAvatar(
-          radius: 36,
-          backgroundColor: AppColors.primaryGreen,
-          child: Text(
-            _userName.isNotEmpty ? _userName[0].toUpperCase() : 'K',
-            style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+        UserAvatar(user: user),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                user.fullName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textMain),
+              ),
+              if (user.username.isNotEmpty)
+                Text('@${user.username}', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: () => _openAndReload(const FairPlayScreen()),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.star, color: FairPlayRules.canJoinLfg(fairPlay) ? Colors.amber : Colors.red, size: 16),
+                    const SizedBox(width: 4),
+                    Text(
+                      ReviewStrings.scoreLabel(fairPlay),
+                      style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold),
+                    ),
+                    const Icon(Icons.chevron_right, size: 16, color: AppColors.textSecondary),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 16),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(_userName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textMain)),
-            const SizedBox(height: 4),
-            InkWell(
-              onTap: () => _openAndReload(const FairPlayScreen()),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.star,
-                    color: _fairPlay == null || FairPlayRules.canJoinLfg(_fairPlay!) ? Colors.amber : Colors.red,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _fairPlay == null ? ReviewStrings.fairPlay : ReviewStrings.scoreLabel(_fairPlay!),
-                    style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold),
-                  ),
-                  const Icon(Icons.chevron_right, size: 16, color: AppColors.textSecondary),
-                ],
-              ),
-            )
-          ],
-        )
+        IconButton(
+          tooltip: ProfileStrings.editProfile,
+          icon: const Icon(Icons.edit_outlined, color: AppColors.primaryGreen),
+          onPressed: () => _openAndReload(EditProfileScreen(user: user)),
+        ),
       ],
     );
   }
