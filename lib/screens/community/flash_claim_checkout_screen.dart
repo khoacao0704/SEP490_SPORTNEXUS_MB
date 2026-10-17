@@ -41,7 +41,7 @@ class _FlashClaimCheckoutScreenState extends State<FlashClaimCheckoutScreen> {
   }
 
   Future<void> _loadWalletBalance() async {
-    final balance = await AppRepositories.wallet.getBalance();
+    final balance = await AppRepositories.paymentWallet.getBalance();
     if (!mounted) return;
     setState(() => _walletBalance = balance);
   }
@@ -71,7 +71,7 @@ class _FlashClaimCheckoutScreenState extends State<FlashClaimCheckoutScreen> {
 
     if (_selectedPaymentMethod == 0) {
       try {
-        await AppRepositories.wallet.pay(
+        await AppRepositories.paymentWallet.pay(
           amount: widget.slotPrice,
           type: TransactionType.flashClaim,
           description: 'Tham gia kèo ${widget.sportName} • ${widget.courtName}',

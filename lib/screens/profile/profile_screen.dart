@@ -9,6 +9,7 @@ import '../../core/strings/wallet_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../data/repositories/wallet_repository.dart';
 import '../../data/session_store.dart';
 import '../../models/app_user.dart';
 import '../../widgets/profile/user_avatar.dart';
@@ -31,6 +32,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   int _balance = 0;
   int _pendingWithdrawal = 0;
+  int _frozenBalance = 0;
   AppUser? _user;
   int _pendingReviews = 0;
 
@@ -53,15 +55,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
 
-    final balance = await AppRepositories.wallet.getBalance();
-    final pending = await AppRepositories.wallet.getPendingWithdrawalAmount();
+    try {
+      final wallet = await Future.wait([
+        AppRepositories.wallet.getBalance(),
+        AppRepositories.wallet.getFrozenBalance(),
+        AppRepositories.wallet.getPendingWithdrawalAmount(),
+      ]);
+      if (mounted) {
+        setState(() {
+          _balance = wallet[0];
+          _frozenBalance = wallet[1];
+          _pendingWithdrawal = wallet[2];
+        });
+      }
+    } on WalletException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(WalletStrings.loadError)));
+      }
+    }
+
     final pendingReviews = await AppRepositories.review.getPendingReviews();
     if (!mounted) return;
-    setState(() {
-      _balance = balance;
-      _pendingWithdrawal = pending;
-      _pendingReviews = pendingReviews.length;
-    });
+    setState(() => _pendingReviews = pendingReviews.length);
+  }
+
+  /// Mở màn nạp / rút; BE chưa hỗ trợ thì báo đang phát triển. Quay lại thì tải lại số dư.
+  Future<void> _openWalletAction(bool supported, Widget screen) async {
+    if (!supported) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(WalletStrings.featureInDevelopment)));
+      return;
+    }
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+    _loadProfileData();
   }
 
   @override
@@ -238,18 +263,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
               WalletStrings.pendingWithdrawal(Formatters.vnd(_pendingWithdrawal)),
               style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
+          if (_frozenBalance > 0)
+            Text(
+              WalletStrings.frozenBalance(Formatters.vnd(_frozenBalance)),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
           const SizedBox(height: 24),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TopUpWalletScreen()),
-                    );
-                    _loadProfileData(); // Reload balance after coming back
-                  },
+                  onPressed: () =>
+                      _openWalletAction(AppRepositories.wallet.supportsTopUp, const TopUpWalletScreen()),
                   icon: const Icon(Icons.add, color: AppColors.primaryGreen),
                   label: const Text('Nạp tiền', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
@@ -261,13 +286,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(width: 16),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const WithdrawScreen()),
-                    );
-                    _loadProfileData(); // Reload balance after coming back
-                  },
+                  onPressed: () =>
+                      _openWalletAction(AppRepositories.wallet.supportsWithdrawal, const WithdrawScreen()),
                   icon: const Icon(Icons.arrow_upward, color: Colors.white),
                   label: const Text('Rút tiền', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   style: OutlinedButton.styleFrom(

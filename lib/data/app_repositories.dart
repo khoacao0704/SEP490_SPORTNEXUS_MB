@@ -1,6 +1,8 @@
 import '../core/config/api_config.dart';
 import 'api/api_auth_repository.dart';
 import 'api/api_client.dart';
+import 'api/api_facility_repository.dart';
+import 'api/api_wallet_repository.dart';
 import 'api/token_store.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_booking_repository.dart';
@@ -25,7 +27,7 @@ import 'repositories/tournament_repository.dart';
 import 'repositories/wallet_repository.dart';
 
 /// Nơi duy nhất quyết định UI dùng bản cài đặt nào của từng repository.
-/// Đã nối API: đăng nhập / đăng ký / hồ sơ cá nhân. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
+/// Đã nối API: đăng nhập / đăng ký / hồ sơ cá nhân / số dư + lịch sử ví / tìm sân + chi tiết cơ sở. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
 class AppRepositories {
   AppRepositories._();
 
@@ -41,8 +43,19 @@ class AppRepositories {
   static AuthRepository auth = ApiConfig.useMockAuth
       ? MockAuthRepository()
       : ApiAuthRepository(api: api, tokens: tokenStore);
-  static FacilityRepository facility = _mockFacility;
-  static WalletRepository wallet = _mockWallet;
+  /// Tìm sân, chi tiết cơ sở, khung giờ: dữ liệu thật (giữ chỗ / đặt sân chưa nối → báo đang phát triển).
+  static FacilityRepository facility = ApiConfig.useMockAuth ? _mockFacility : ApiFacilityRepository(api: api);
+
+  /// Sân mà luồng tạo kèo LFG (chưa nối API) tìm, xem khung giờ và giữ chỗ. Tạm là sân giả lập;
+  /// chuyển sang [facility] khi nối LFG.
+  static FacilityRepository lfgFacility = _mockFacility;
+
+  /// Ví người chơi: số dư + lịch sử giao dịch thật (nạp / rút BE chưa có → báo đang phát triển).
+  static WalletRepository wallet = ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api);
+
+  /// Ví mà các luồng chưa nối API (đặt sân, chia tiền, LFG, giải đấu) kiểm tra số dư / trừ tiền / nạp thêm.
+  /// Tạm là ví giả lập nên có thể lệch với số dư thật; chuyển sang [wallet] khi nối từng luồng.
+  static WalletRepository paymentWallet = _mockWallet;
   static ReviewRepository review = MockReviewRepository();
   static NotificationRepository notification = MockNotificationRepository();
 

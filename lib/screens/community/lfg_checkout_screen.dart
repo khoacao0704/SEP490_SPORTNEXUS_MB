@@ -52,7 +52,7 @@ class _LfgCheckoutScreenState extends State<LfgCheckoutScreen> {
   }
 
   Future<void> _loadWalletBalance() async {
-    final balance = await AppRepositories.wallet.getBalance();
+    final balance = await AppRepositories.paymentWallet.getBalance();
     if (!mounted) return;
     setState(() => _walletBalance = balance);
   }
@@ -132,7 +132,7 @@ class _LfgCheckoutScreenState extends State<LfgCheckoutScreen> {
 
     if (_selectedPaymentMethod == 0) {
       try {
-        await AppRepositories.wallet.pay(
+        await AppRepositories.paymentWallet.pay(
           amount: widget.hostDepositAmount,
           type: TransactionType.lfgDeposit,
           description: 'Cọc tạo kèo ${widget.sport} • ${widget.courtName}',

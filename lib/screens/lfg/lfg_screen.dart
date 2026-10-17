@@ -504,7 +504,7 @@ class _LocationSheetState extends State<_LocationSheet> {
   }
 
   Future<void> _load() async {
-    final districts = await AppRepositories.facility.getDistricts(_city);
+    final districts = await AppRepositories.lfgFacility.getDistricts(_city);
     if (mounted) setState(() => _districts = districts);
   }
 

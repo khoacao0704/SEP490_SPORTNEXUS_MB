@@ -2,10 +2,17 @@ import 'package:flutter/material.dart';
 import '../../core/strings/facility_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/geo_utils.dart';
+import '../../models/facility.dart';
 import '../../models/facility_search.dart';
 import '../../models/sport.dart';
 import '../../theme/app_colors.dart';
 import 'sport_icon.dart';
+
+/// "Cầu Lông • 3 sân"; chưa biết số sân của môn (kết quả tìm kiếm của BE chỉ có tổng số sân) thì chỉ ghi tên môn.
+String _sportTooltip(Facility facility, Sport sport) {
+  final courts = facility.offeringsFor(sport).fold(0, (n, o) => n + o.courtCount);
+  return courts == 0 ? sport.label : '${sport.label} • ${FacilityStrings.courtCount(courts)}';
+}
 
 /// Ảnh mạng có nền và icon dự phòng khi tải lỗi / không có mạng.
 class FacilityImage extends StatelessWidget {
@@ -118,7 +125,7 @@ class FacilityCard extends StatelessWidget {
                         ...facility.sports.map((s) => Padding(
                               padding: const EdgeInsets.only(right: 4),
                               child: Tooltip(
-                                message: '${s.label} • ${FacilityStrings.courtCount(facility.offeringsFor(s).fold(0, (n, o) => n + o.courtCount))}',
+                                message: _sportTooltip(facility, s),
                                 child: Container(
                                   padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(

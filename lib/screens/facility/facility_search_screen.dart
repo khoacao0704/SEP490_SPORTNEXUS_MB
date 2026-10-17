@@ -6,6 +6,7 @@ import '../../core/services/location_service.dart';
 import '../../core/strings/facility_strings.dart';
 import '../../core/utils/geo_utils.dart';
 import '../../data/app_repositories.dart';
+import '../../data/repositories/facility_repository.dart';
 import '../../models/facility.dart';
 import '../../models/facility_search.dart';
 import '../../models/geo_point.dart';
@@ -69,9 +70,12 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
     super.dispose();
   }
 
+  /// BE chưa lọc được theo tỉnh/quận: ẩn chọn thành phố và bộ lọc quận.
+  bool get _hasAreaFilter => AppRepositories.facility.supportsAreaFilter;
+
   Future<void> _init() async {
     await _locate(pickNearestCity: true);
-    await _loadDistricts();
+    if (_hasAreaFilter) await _loadDistricts();
     await _search();
   }
 
@@ -119,11 +123,12 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
         _isLoading = false;
         if (!_results.any((r) => r.facility.id == _selectedMapFacilityId)) _selectedMapFacilityId = null;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted || generation != _searchGeneration) return;
       setState(() {
         _isLoading = false;
-        _error = FacilityStrings.loadError;
+        // Lỗi từ BE / mạng đã có câu tiếng Việt cụ thể; lỗi khác dùng câu chung.
+        _error = e is FacilityException ? e.message : FacilityStrings.loadError;
       });
     }
   }
@@ -227,15 +232,18 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: _HeaderButton(
-                  icon: Icons.location_on_outlined,
-                  label: _district == null ? _city.name : '$_district, ${_city.name}',
-                  showChevron: true,
-                  onTap: _showCityPicker,
+              if (_hasAreaFilter) ...[
+                Expanded(
+                  child: _HeaderButton(
+                    icon: Icons.location_on_outlined,
+                    label: _district == null ? _city.name : '$_district, ${_city.name}',
+                    showChevron: true,
+                    onTap: _showCityPicker,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
+              ] else
+                const Spacer(),
               _HeaderButton(
                 icon: Icons.tune,
                 label: FacilityStrings.filterTitle,
@@ -584,18 +592,20 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
                           () => setSheetState(() => sort = FacilitySort.rating)),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  const Text(FacilityStrings.district, style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      optionChip(FacilityStrings.allDistricts, district == null,
-                          () => setSheetState(() => district = null)),
-                      ..._districts.map((d) => optionChip(d, district == d, () => setSheetState(() => district = d))),
-                    ],
-                  ),
+                  if (_hasAreaFilter) ...[
+                    const SizedBox(height: 16),
+                    const Text(FacilityStrings.district, style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        optionChip(FacilityStrings.allDistricts, district == null,
+                            () => setSheetState(() => district = null)),
+                        ..._districts.map((d) => optionChip(d, district == d, () => setSheetState(() => district = d))),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,

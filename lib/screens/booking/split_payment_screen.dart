@@ -107,7 +107,7 @@ class _SplitPaymentScreenState extends State<SplitPaymentScreen> {
 
   Future<void> _loadBalance() async {
     try {
-      final balance = await AppRepositories.wallet.getBalance();
+      final balance = await AppRepositories.paymentWallet.getBalance();
       if (mounted) setState(() => _balance = balance);
     } catch (_) {
       // Không có số dư thì vẫn cho chọn VietQR.
@@ -125,11 +125,11 @@ class _SplitPaymentScreenState extends State<SplitPaymentScreen> {
     try {
       if (_method == _Method.vietQr) {
         // Chuyển khoản đúng số tiền vào ví rồi trừ ví (BE xác nhận chuyển khoản).
-        final order = await AppRepositories.wallet.createTopUp(amount);
+        final order = await AppRepositories.paymentWallet.createTopUp(amount);
         if (!mounted) return;
         final paid = await Navigator.push<bool>(
           context,
-          MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order)),
+          MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order, wallet: AppRepositories.paymentWallet)),
         );
         if (paid != true) return;
       }

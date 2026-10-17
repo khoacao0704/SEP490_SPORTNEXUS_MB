@@ -5,6 +5,7 @@ import '../screens/auth/login_screen.dart';
 import '../screens/profile/top_up_wallet_screen.dart';
 import '../screens/facility/facility_search_screen.dart';
 import '../core/strings/split_payment_strings.dart';
+import '../core/strings/wallet_strings.dart';
 import '../screens/booking/split_payments_screen.dart';
 import '../screens/main/main_navigation_screen.dart';
 import '../screens/tournament/tournaments_screen.dart';
@@ -160,7 +161,14 @@ class MainDrawer extends StatelessWidget {
                     title: 'Nạp Ví Escrow',
                     index: 5,
                     onTapCustom: () {
+                      final messenger = ScaffoldMessenger.of(context);
                       Navigator.pop(context);
+                      if (!AppRepositories.wallet.supportsTopUp) {
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text(WalletStrings.featureInDevelopment)),
+                        );
+                        return;
+                      }
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const TopUpWalletScreen()),

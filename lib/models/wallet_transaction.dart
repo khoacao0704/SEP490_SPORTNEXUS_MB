@@ -7,6 +7,13 @@ enum TransactionType {
   tournamentFee('TournamentFee', 'Lệ phí giải đấu', isCredit: false),
   refund('Refund', 'Hoàn tiền', isCredit: true),
 
+  // Loại giao dịch của BE (ví thật), xem ApiWalletRepository.typeFromApi
+  deposit('Deposit', 'Tiền vào ví', isCredit: true),
+  hold('Hold', 'Tạm giữ tiền', isCredit: false),
+  holdRelease('HoldRelease', 'Giải ngân tiền tạm giữ', isCredit: false),
+  walletPayment('WalletPayment', 'Thanh toán', isCredit: false),
+  prize('Prize', 'Thưởng giải đấu', isCredit: true),
+
   // Phía Chủ sân
   escrowRelease('EscrowRelease', 'Giải ngân tiền sân', isCredit: true),
   penaltyIncome('PenaltyIncome', 'Tiền phạt hủy / vắng mặt', isCredit: true),
@@ -32,7 +39,10 @@ enum TransactionStatus {
 
   /// Nạp tiền quá hạn mà chưa nhận được tiền.
   expired('Expired'),
-  cancelled('Cancelled');
+  cancelled('Cancelled'),
+
+  /// Hủy muộn nên không được hoàn tiền (BE ghi giao dịch hoàn 0đ).
+  notRefunded('NotRefunded');
 
   const TransactionStatus(this.apiValue);
 

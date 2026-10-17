@@ -65,9 +65,18 @@ class Facility {
     this.description = '',
   });
 
+  /// Tọa độ của cơ sở chưa được chủ sân ghim vị trí.
+  static const GeoPoint noLocation = GeoPoint(0, 0);
+
+  bool get hasLocation => location != noLocation;
+
+  /// Địa chỉ kèm thành phố (dữ liệu BE chỉ có địa chỉ đầy đủ, không tách thành phố).
+  String get fullAddress => city.isEmpty ? address : '$address, $city';
+
   List<Sport> get sports => offerings.map((o) => o.sport).toSet().toList();
 
-  int get priceFrom => offerings.map((o) => o.priceFrom).reduce((a, b) => a < b ? a : b);
+  int get priceFrom =>
+      offerings.isEmpty ? 0 : offerings.map((o) => o.priceFrom).reduce((a, b) => a < b ? a : b);
 
   /// Các loại sân của [sport] tại cơ sở, rẻ nhất trước.
   List<SportOffering> offeringsFor(Sport sport) =>

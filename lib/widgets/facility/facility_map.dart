@@ -97,7 +97,7 @@ class _FacilityMapState extends State<FacilityMap> {
                     height: 22,
                     child: const _UserLocationDot(),
                   ),
-                ...widget.facilities.map((f) {
+                ...widget.facilities.where((f) => f.hasLocation).map((f) {
                   final selected = f.id == widget.selectedFacilityId;
                   return Marker(
                     point: _toLatLng(f.location),

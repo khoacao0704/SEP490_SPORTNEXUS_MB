@@ -91,6 +91,7 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
       case TransactionStatus.expired:
       case TransactionStatus.failed:
       case TransactionStatus.cancelled:
+      case TransactionStatus.notRefunded:
         _finish();
         await _showResultDialog(success: false);
         if (mounted) Navigator.pop(context, false);

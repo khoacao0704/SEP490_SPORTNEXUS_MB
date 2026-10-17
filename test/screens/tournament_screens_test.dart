@@ -15,6 +15,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final wallet = MockWalletRepository(latency: Duration.zero);
     AppRepositories.wallet = wallet;
+    AppRepositories.paymentWallet = wallet;
     AppRepositories.tournament = MockTournamentRepository(latency: Duration.zero, wallet: wallet);
     AppRepositories.auth = MockAuthRepository(latency: Duration.zero);
     await MockAuthRepository(latency: Duration.zero).login('player@sportnexus.vn', 'Player@123');

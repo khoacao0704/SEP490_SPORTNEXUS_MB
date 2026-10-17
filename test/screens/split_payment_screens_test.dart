@@ -24,7 +24,8 @@ void main() {
     final wallet = MockWalletRepository(latency: Duration.zero);
     facility = MockFacilityRepository(latency: Duration.zero);
     AppRepositories.wallet = wallet;
-    AppRepositories.facility = facility;
+    AppRepositories.paymentWallet = wallet;
+    AppRepositories.facility = AppRepositories.lfgFacility = facility;
     AppRepositories.auth = MockAuthRepository(latency: Duration.zero);
     AppRepositories.split = MockSplitPaymentRepository(facility: facility, latency: Duration.zero, wallet: wallet);
     await loginAs('player@sportnexus.vn');

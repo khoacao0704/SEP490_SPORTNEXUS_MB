@@ -72,4 +72,5 @@ class FacilityStrings {
   static String slotStarted(String slot) => 'Khung giờ $slot đã bắt đầu. Vui lòng bỏ chọn khung này.';
   static const String noSlotSelected = 'Vui lòng chọn ít nhất 1 khung giờ';
   static const String loadError = 'Không tải được dữ liệu. Vui lòng thử lại.';
+  static const String featureInDevelopment = 'Chức năng đang được phát triển. Vui lòng thử lại sau.';
 }
