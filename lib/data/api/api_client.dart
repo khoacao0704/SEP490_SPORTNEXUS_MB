@@ -21,15 +21,20 @@ class ApiException implements Exception {
 /// Gọi Backend SportNexus.
 ///
 /// - BE bọc kết quả dạng {"statusCode", "message", "data"}: hàm gọi trả về phần `data`.
-/// - Tự gắn `Authorization: Bearer <token>`; request có token mà bị 401 thì gọi [onUnauthorized]
-///   (phiên hết hạn sau 7 ngày, BE không có refresh token).
+/// - Tự gắn `Authorization: Bearer <token>`. Request có token mà bị 401 thì thử refresh token
+///   một lần rồi gửi lại; refresh không được (hết hạn / bị thu hồi / tài khoản bị khóa) thì gọi [onUnauthorized].
 /// - Mọi lỗi (mạng, hết giờ, lỗi BE) đều thành [ApiException].
 class ApiClient {
+  static const String refreshPath = '/api/auth/refresh-token';
+
   final Dio _dio;
   final TokenStore _tokens;
 
   /// Gọi khi phiên đăng nhập hết hạn (app đăng xuất và về màn đăng nhập).
   void Function()? onUnauthorized;
+
+  /// Lượt refresh đang chạy: nhiều request cùng bị 401 thì dùng chung một lượt.
+  Future<bool>? _refreshing;
 
   ApiClient({required this._tokens, Dio? dio, this.onUnauthorized})
     : _dio =
@@ -53,7 +58,41 @@ class ApiClient {
 
   Future<dynamic> put(String path, {Object? body, bool auth = true}) => _send('PUT', path, body: body, auth: auth);
 
-  Future<dynamic> delete(String path, {bool auth = true}) => _send('DELETE', path, auth: auth);
+  Future<dynamic> delete(String path, {Object? body, bool auth = true}) =>
+      _send('DELETE', path, body: body, auth: auth);
+
+  /// Gửi một file dạng multipart/form-data (vd. ảnh đại diện) trong trường [field].
+  Future<dynamic> upload(String path, {required String filePath, String field = 'file'}) async {
+    final form = FormData.fromMap({field: await MultipartFile.fromFile(filePath)});
+    return _send('POST', path, body: form, auth: true);
+  }
+
+  /// Đổi refresh token lấy cặp token mới. `false` khi BE từ chối (hết hạn, đã thu hồi, tài khoản bị khóa).
+  Future<bool> refreshSession() => _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
+
+  Future<bool> _refresh() async {
+    final refreshToken = await _tokens.readRefreshToken();
+    if (refreshToken == null) return false;
+    final Response<dynamic> response;
+    try {
+      response = await _dio.request<dynamic>(
+        refreshPath,
+        data: {'refreshToken': refreshToken},
+        options: Options(method: 'POST'),
+      );
+    } on DioException catch (e) {
+      throw _networkError(e);
+    }
+    final dynamic data;
+    try {
+      data = _unwrap(response);
+    } on ApiException {
+      return false;
+    }
+    if (data is! Map<String, dynamic> || data['token'] is! String) return false;
+    await _tokens.write(data['token'] as String, refreshToken: data['refreshToken'] as String?);
+    return true;
+  }
 
   Future<dynamic> _send(
     String method,
@@ -61,23 +100,40 @@ class ApiClient {
     Map<String, dynamic>? query,
     Object? body,
     required bool auth,
+    bool isRetry = false,
   }) async {
     final token = auth ? await _tokens.read() : null;
     final Response<dynamic> response;
     try {
       response = await _dio.request<dynamic>(
         path,
-        data: body,
+        // FormData chỉ gửi được một lần: lần gửi lại sau refresh dùng bản sao.
+        data: isRetry && body is FormData ? body.clone() : body,
         queryParameters: query,
         options: Options(method: method, headers: {'Authorization': ?(token == null ? null : 'Bearer $token')}),
       );
     } on DioException catch (e) {
       throw _networkError(e);
     }
-    return _unwrap(response, sentToken: token != null);
+
+    if (token != null && _statusOf(response) == 401) {
+      if (!isRetry && await refreshSession()) {
+        return _send(method, path, query: query, body: body, auth: auth, isRetry: true);
+      }
+      onUnauthorized?.call();
+    }
+    return _unwrap(response);
   }
 
-  dynamic _unwrap(Response<dynamic> response, {required bool sentToken}) {
+  /// Mã lỗi thật: ưu tiên statusCode trong envelope của BE.
+  static int _statusOf(Response<dynamic> response) {
+    final body = response.data;
+    final envelopeCode = body is Map<String, dynamic> ? (body['statusCode'] as num?)?.toInt() : null;
+    final status = response.statusCode ?? 0;
+    return status >= 400 ? status : (envelopeCode ?? status);
+  }
+
+  dynamic _unwrap(Response<dynamic> response) {
     final status = response.statusCode ?? 0;
     final body = response.data;
     final envelope = body is Map<String, dynamic> && body.containsKey('statusCode') ? body : null;
@@ -86,7 +142,6 @@ class ApiClient {
     if (status >= 200 && status < 300 && code < 400) {
       return envelope != null ? envelope['data'] : body;
     }
-    if (code == 401 && sentToken) onUnauthorized?.call();
     throw ApiException(_errorMessage(body, code), statusCode: code);
   }
 

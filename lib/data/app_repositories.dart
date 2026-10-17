@@ -25,14 +25,14 @@ import 'repositories/tournament_repository.dart';
 import 'repositories/wallet_repository.dart';
 
 /// Nơi duy nhất quyết định UI dùng bản cài đặt nào của từng repository.
-/// Đã nối API: đăng nhập / đăng ký. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
+/// Đã nối API: đăng nhập / đăng ký / hồ sơ cá nhân. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
 class AppRepositories {
   AppRepositories._();
 
   static final MockWalletRepository _mockWallet = MockWalletRepository();
   static final MockFacilityRepository _mockFacility = MockFacilityRepository();
 
-  /// JWT của phiên đăng nhập (Keystore / Keychain).
+  /// Access token + refresh token của phiên đăng nhập (Keystore / Keychain).
   static final TokenStore tokenStore = SecureTokenStore();
 
   /// Gọi Backend; tự gắn token. main.dart gán [ApiClient.onUnauthorized] để xử lý phiên hết hạn.

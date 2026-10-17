@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/auth_strings.dart';
+import 'package:test1/core/strings/profile_strings.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/repositories/auth_repository.dart';
 import 'package:test1/models/user_role.dart';
@@ -176,6 +177,57 @@ void main() {
         () => repo.resetPassword('player@sportnexus.vn', 'token-gia', 'MatKhauMoi1'),
         throwsA(isA<AuthException>()),
       );
+    });
+  });
+
+  group('hồ sơ', () {
+    setUp(() => repo.login('player@sportnexus.vn', 'Player@123'));
+
+    test('đổi họ tên / ảnh đại diện lưu vào tài khoản và phiên; đăng nhập lại vẫn còn', () async {
+      await repo.updateFullName(' Khoa Mới ');
+      final user = await repo.uploadAvatar('/tmp/a.jpg');
+      expect(user.fullName, 'Khoa Mới');
+      expect(user.avatarUrl, '/tmp/a.jpg');
+      expect((await repo.getCurrentUser())!.fullName, 'Khoa Mới');
+
+      expect((await repo.removeAvatar()).avatarUrl, isNull);
+      await repo.logout();
+      expect((await repo.login('player1', 'Player@123')).fullName, 'Khoa Mới');
+    });
+
+    test('đổi mật khẩu: sai mật khẩu cũ / trùng mật khẩu cũ thì báo lỗi; thành công thì đăng xuất', () async {
+      expect(
+        () => repo.changePassword(oldPassword: 'sai', newPassword: 'MatKhau9', confirmPassword: 'MatKhau9'),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', ProfileStrings.wrongOldPassword)),
+      );
+      expect(
+        () => repo.changePassword(oldPassword: 'Player@123', newPassword: 'Player@123', confirmPassword: 'Player@123'),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', ProfileStrings.samePassword)),
+      );
+      await repo.changePassword(oldPassword: 'Player@123', newPassword: 'MatKhau9', confirmPassword: 'MatKhau9');
+      expect(await repo.getCurrentUser(), isNull);
+      expect((await repo.login('player1', 'MatKhau9')).id, 'u-player-001');
+    });
+
+    test('xóa tài khoản: sai mật khẩu thì báo lỗi; xóa xong thì đăng xuất, không đăng nhập được nữa', () async {
+      await repo.logout();
+      await repo.register(const RegisterRequest(
+        username: 'xoa.tk',
+        fullName: 'Xóa Thử',
+        email: 'xoa@gmail.com',
+        phone: '0911111111',
+        password: 'MatKhau9',
+      ));
+      await repo.verifyRegisterOtp('xoa@gmail.com', MockAuthRepository.mockOtp);
+      await repo.login('xoa.tk', 'MatKhau9');
+
+      expect(
+        () => repo.deleteAccount(password: 'sai'),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', ProfileStrings.wrongDeletePassword)),
+      );
+      await repo.deleteAccount(password: 'MatKhau9', reason: 'thử');
+      expect(await repo.getCurrentUser(), isNull);
+      expect(() => repo.login('xoa.tk', 'MatKhau9'), throwsA(isA<AuthException>()));
     });
   });
 }
