@@ -77,7 +77,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
   }
 
   Future<void> _loadDistricts() async {
-    final districts = await AppRepositories.facility.getDistricts(_city);
+    final districts = await AppRepositories.lfgFacility.getDistricts(_city);
     if (mounted) setState(() => _districts = districts);
   }
 
@@ -113,7 +113,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
       _slot = null;
     });
     try {
-      final slots = await AppRepositories.facility.getTimeSlots(facility.id, _sport, _date, courtType: _courtType);
+      final slots = await AppRepositories.lfgFacility.getTimeSlots(facility.id, _sport, _date, courtType: _courtType);
       if (!mounted) return;
       final now = DateTime.now();
       setState(() {
@@ -177,7 +177,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     setState(() => _isSubmitting = true);
     final SlotHold hold;
     try {
-      hold = await AppRepositories.facility.holdSlots([slot]);
+      hold = await AppRepositories.lfgFacility.holdSlots([slot]);
     } on FacilityException catch (e) {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -211,7 +211,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             format: _format,
             note: _noteController.text,
           ),
-          onRelease: () => AppRepositories.facility.releaseHold(hold.holdId),
+          onRelease: () => AppRepositories.lfgFacility.releaseHold(hold.holdId),
         ),
       ),
     );

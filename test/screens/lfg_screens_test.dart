@@ -28,10 +28,11 @@ void main() {
     final review = MockReviewRepository(latency: Duration.zero);
     lfg = MockLfgRepository(latency: Duration.zero, wallet: wallet, review: review);
     AppRepositories.wallet = wallet;
+    AppRepositories.paymentWallet = wallet;
     AppRepositories.review = review;
     AppRepositories.lfg = lfg;
     AppRepositories.auth = MockAuthRepository(latency: Duration.zero);
-    AppRepositories.facility = MockFacilityRepository(latency: Duration.zero);
+    AppRepositories.facility = AppRepositories.lfgFacility = MockFacilityRepository(latency: Duration.zero);
     await loginAs('player@sportnexus.vn');
   });
 

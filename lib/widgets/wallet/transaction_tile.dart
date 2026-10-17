@@ -19,6 +19,8 @@ String transactionStatusLabel(WalletTransaction tx) {
       return WalletStrings.statusExpired;
     case TransactionStatus.cancelled:
       return WalletStrings.statusCancelled;
+    case TransactionStatus.notRefunded:
+      return WalletStrings.statusNotRefunded;
   }
 }
 
@@ -32,6 +34,7 @@ Color transactionStatusColor(TransactionStatus status) {
       return Colors.red;
     case TransactionStatus.expired:
     case TransactionStatus.cancelled:
+    case TransactionStatus.notRefunded:
       return AppColors.textSecondary;
   }
 }
@@ -51,6 +54,16 @@ IconData transactionIcon(TransactionType type) {
       return Icons.emoji_events_outlined;
     case TransactionType.refund:
       return Icons.replay;
+    case TransactionType.deposit:
+      return Icons.add_card;
+    case TransactionType.hold:
+      return Icons.lock_clock_outlined;
+    case TransactionType.holdRelease:
+      return Icons.lock_open_outlined;
+    case TransactionType.walletPayment:
+      return Icons.shopping_bag_outlined;
+    case TransactionType.prize:
+      return Icons.emoji_events_outlined;
     case TransactionType.escrowRelease:
       return Icons.payments_outlined;
     case TransactionType.penaltyIncome:
@@ -60,9 +73,10 @@ IconData transactionIcon(TransactionType type) {
   }
 }
 
-/// Số tiền có dấu; giao dịch không làm đổi số dư (hết hạn, đã hủy...) thì không có dấu.
+/// Số tiền có dấu; giao dịch không làm đổi số dư khả dụng (hết hạn, đã hủy, giải ngân tiền
+/// đã tạm giữ — đã trừ lúc tạm giữ) thì không có dấu.
 String _amountText(WalletTransaction tx) {
-  final affectsBalance = tx.status == TransactionStatus.success ||
+  final affectsBalance = (tx.status == TransactionStatus.success && tx.type != TransactionType.holdRelease) ||
       (tx.status == TransactionStatus.pending && tx.type == TransactionType.withdrawal);
   if (!affectsBalance) return Formatters.vnd(tx.amount);
   return '${tx.type.isCredit ? '+' : '-'}${Formatters.vnd(tx.amount)}';
@@ -79,7 +93,8 @@ class TransactionTile extends StatelessWidget {
     final tx = transaction;
     final inactive = tx.status == TransactionStatus.expired ||
         tx.status == TransactionStatus.cancelled ||
-        tx.status == TransactionStatus.failed;
+        tx.status == TransactionStatus.failed ||
+        tx.status == TransactionStatus.notRefunded;
     final amountColor = inactive
         ? AppColors.textSecondary
         : tx.type.isCredit

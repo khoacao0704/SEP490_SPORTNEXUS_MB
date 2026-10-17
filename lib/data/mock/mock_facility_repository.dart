@@ -33,6 +33,9 @@ class MockFacilityRepository implements FacilityRepository {
         _facilities = facilities ?? MockFacilityData.facilities;
 
   @override
+  bool get supportsAreaFilter => true;
+
+  @override
   Future<List<FacilitySearchResult>> searchFacilities(FacilitySearchQuery query) async {
     await _delay();
     final sport = query.sport;

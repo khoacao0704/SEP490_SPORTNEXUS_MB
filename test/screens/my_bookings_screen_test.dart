@@ -22,7 +22,8 @@ void main() {
     final review = MockReviewRepository(latency: Duration.zero);
     final bookings = MockBookingRepository(facility: facility, latency: Duration.zero, wallet: wallet);
     AppRepositories.wallet = wallet;
-    AppRepositories.facility = facility;
+    AppRepositories.paymentWallet = wallet;
+    AppRepositories.facility = AppRepositories.lfgFacility = facility;
     AppRepositories.review = review;
     AppRepositories.auth = MockAuthRepository(latency: Duration.zero);
     AppRepositories.booking = bookings;

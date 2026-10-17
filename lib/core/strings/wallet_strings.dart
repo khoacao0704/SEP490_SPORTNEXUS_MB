@@ -5,6 +5,8 @@ class WalletStrings {
   static const String walletName = 'Ví SportNexus';
   static const String availableBalance = 'Số dư khả dụng';
   static String pendingWithdrawal(String amount) => 'Đang chờ rút: $amount';
+  static String frozenBalance(String amount) => 'Đang tạm giữ: $amount';
+  static const String featureInDevelopment = 'Chức năng đang được phát triển. Vui lòng thử lại sau.';
 
   // Lịch sử giao dịch
   static const String historyTitle = 'Lịch Sử Giao Dịch';
@@ -31,6 +33,7 @@ class WalletStrings {
   static const String statusFailed = 'Thất bại';
   static const String statusExpired = 'Hết hạn';
   static const String statusCancelled = 'Đã hủy';
+  static const String statusNotRefunded = 'Không được hoàn';
 
   // Nạp tiền VietQR
   static const String vietQrTitle = 'Chuyển Khoản VietQR';

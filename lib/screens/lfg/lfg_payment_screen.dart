@@ -95,7 +95,7 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
 
   Future<void> _loadBalance() async {
     try {
-      final balance = await AppRepositories.wallet.getBalance();
+      final balance = await AppRepositories.paymentWallet.getBalance();
       if (mounted) setState(() => _balance = balance);
     } catch (_) {
       // Không có số dư thì vẫn cho chọn VietQR.
@@ -131,11 +131,11 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
     try {
       if (_method == _Method.vietQr) {
         // Chuyển khoản đúng số tiền cọc vào ví rồi trừ ví (BE xác nhận chuyển khoản).
-        final order = await AppRepositories.wallet.createTopUp(widget.amount);
+        final order = await AppRepositories.paymentWallet.createTopUp(widget.amount);
         if (!mounted) return;
         final paid = await Navigator.push<bool>(
           context,
-          MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order)),
+          MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order, wallet: AppRepositories.paymentWallet)),
         );
         if (paid != true) {
           if (mounted) setState(() => _isPaying = false);

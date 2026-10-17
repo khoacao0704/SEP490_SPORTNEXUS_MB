@@ -57,19 +57,45 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
   /// Mỗi lần tải khung giờ tăng số này; kết quả của lần tải cũ về muộn sẽ bị bỏ qua.
   int _loadGeneration = 0;
 
-  Facility get _facility => widget.facility;
+  /// Bản từ kết quả tìm kiếm, thay bằng bản đầy đủ (ảnh, mô tả, số sân từng môn...) khi tải xong.
+  late Facility _facility = widget.facility;
 
   @override
   void initState() {
     super.initState();
     final initial = widget.initialSport;
-    _sport = initial != null && _facility.offeringFor(initial) != null ? initial : _facility.sports.first;
-    _courtType = _facility.offeringFor(_sport)!.courtType;
+    _sport = initial != null && _facility.offeringFor(initial) != null
+        ? initial
+        : _facility.sports.firstOrNull ?? initial ?? Sport.values.first;
+    _courtType = _facility.offeringFor(_sport)?.courtType ?? CourtType.standard;
 
     final today = DateTime(_now.year, _now.month, _now.day);
     _dates = List.generate(_bookableDays, (i) => today.add(Duration(days: i)));
     _date = today;
     _loadSlots();
+    _loadFacility();
+  }
+
+  Future<void> _loadFacility() async {
+    final Facility fresh;
+    try {
+      fresh = await AppRepositories.facility.getFacility(_facility.id);
+    } on FacilityException {
+      return; // vẫn dùng thông tin từ kết quả tìm kiếm
+    }
+    if (!mounted) return;
+    // Môn / loại sân đang xem không còn ở cơ sở (vd. sân con vừa tạm ngưng) thì chuyển sang môn đầu tiên.
+    final stillOffered = fresh.offeringFor(_sport, courtType: _courtType) != null;
+    setState(() {
+      _facility = fresh;
+      if (!stillOffered && fresh.sports.isNotEmpty) {
+        _sport = fresh.offeringFor(_sport) != null ? _sport : fresh.sports.first;
+        _courtType = fresh.offeringFor(_sport)!.courtType;
+        _court = null;
+        _selected.clear();
+      }
+    });
+    if (!stillOffered && fresh.sports.isNotEmpty) _loadSlots();
   }
 
   Future<void> _loadSlots() async {
@@ -300,7 +326,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  '${_facility.address}, ${_facility.city}',
+                  _facility.fullAddress,
                   style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
                 ),
               ),
@@ -529,20 +555,22 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                   .toList(),
             ),
           ),
-        _section(
-          title: FacilityStrings.location,
-          child: FacilityLocationPreview(location: _facility.location),
-        ),
-        _section(
-          title: FacilityStrings.contact,
-          child: Row(
-            children: [
-              const Icon(Icons.phone_outlined, size: 18, color: AppColors.primaryGreen),
-              const SizedBox(width: 8),
-              Text(_facility.phone, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-            ],
+        if (_facility.hasLocation)
+          _section(
+            title: FacilityStrings.location,
+            child: FacilityLocationPreview(location: _facility.location),
           ),
-        ),
+        if (_facility.phone.isNotEmpty)
+          _section(
+            title: FacilityStrings.contact,
+            child: Row(
+              children: [
+                const Icon(Icons.phone_outlined, size: 18, color: AppColors.primaryGreen),
+                const SizedBox(width: 8),
+                Text(_facility.phone, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
       ],
     );
   }

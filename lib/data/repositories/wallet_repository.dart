@@ -12,8 +12,17 @@ class WalletException implements Exception {
 }
 
 abstract class WalletRepository {
+  /// false: nạp tiền chưa dùng được (UI báo "đang phát triển").
+  bool get supportsTopUp;
+
+  /// false: rút tiền / tài khoản ngân hàng chưa dùng được (UI báo "đang phát triển").
+  bool get supportsWithdrawal;
+
   /// Số dư khả dụng (đã trừ các lệnh rút đang chờ xử lý).
   Future<int> getBalance();
+
+  /// Tiền đang tạm giữ, tách khỏi số dư khả dụng (cọc kèo LFG, lệ phí giải đấu).
+  Future<int> getFrozenBalance();
 
   /// Tổng tiền của các lệnh rút đang chờ xử lý.
   Future<int> getPendingWithdrawalAmount();

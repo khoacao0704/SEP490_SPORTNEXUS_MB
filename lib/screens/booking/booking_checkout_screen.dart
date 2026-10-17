@@ -84,7 +84,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   }
 
   Future<void> _loadWalletBalance() async {
-    final balance = await AppRepositories.wallet.getBalance();
+    final balance = await AppRepositories.paymentWallet.getBalance();
     if (!mounted) return;
     setState(() => _walletBalance = balance);
   }
@@ -305,11 +305,11 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   /// Chuyển khoản đúng số tiền vào ví qua VietQR (BE xác nhận) để trừ ví ở bước sau.
   /// Trả về false nếu người dùng thoát / hết hạn (đã tắt trạng thái đang xử lý).
   Future<bool> _payByVietQr(int amount) async {
-    final order = await AppRepositories.wallet.createTopUp(amount);
+    final order = await AppRepositories.paymentWallet.createTopUp(amount);
     if (!mounted) return false;
     final paid = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order)),
+      MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order, wallet: AppRepositories.paymentWallet)),
     );
     if (paid == true) return true;
     if (mounted) setState(() => _isLoading = false);

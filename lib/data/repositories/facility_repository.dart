@@ -15,6 +15,9 @@ class FacilityException implements Exception {
 }
 
 abstract class FacilityRepository {
+  /// false: không lọc được theo tỉnh/quận (UI ẩn bộ lọc khu vực, [getDistricts] trả rỗng).
+  bool get supportsAreaFilter;
+
   Future<List<FacilitySearchResult>> searchFacilities(FacilitySearchQuery query);
 
   /// Các quận/huyện trong [city] đang có cơ sở hoạt động (dùng cho bộ lọc).

@@ -52,6 +52,12 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
   String get _keyTransactions => '$keyPrefix$keyTransactions';
   String get _keyBankAccounts => '$keyPrefix$keyBankAccounts';
 
+  @override
+  bool get supportsTopUp => true;
+
+  @override
+  bool get supportsWithdrawal => true;
+
   // ---------------- Số dư & lịch sử ----------------
 
   @override
@@ -61,6 +67,10 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_keyBalance) ?? initialBalance;
   }
+
+  /// Bản giả lập trừ thẳng vào số dư, không có phần tạm giữ.
+  @override
+  Future<int> getFrozenBalance() async => 0;
 
   @override
   Future<int> getPendingWithdrawalAmount() async {
