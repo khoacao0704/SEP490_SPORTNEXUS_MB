@@ -4,6 +4,7 @@ import 'api/api_client.dart';
 import 'api/api_facility_repository.dart';
 import 'api/api_wallet_repository.dart';
 import 'api/token_store.dart';
+import 'api/api_owner_repository.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_booking_repository.dart';
 import 'mock/mock_facility_repository.dart';
@@ -65,9 +66,12 @@ class AppRepositories {
       MockWalletRepository(keyPrefix: MockOwnerRepository.ownerWalletPrefix, initialBalance: 3200000);
   static WalletRepository ownerWallet = _mockOwnerWallet;
 
-  /// Phía Chủ sân: cơ sở, lượt sân, check-in / check-out, doanh thu & phí. Giải ngân vào ví Chủ sân.
+  /// Phía Chủ sân — đã nối API cho danh sách cơ sở.
   static final MockOwnerRepository _mockOwner = MockOwnerRepository(wallet: _mockOwnerWallet);
-  static OwnerRepository owner = _mockOwner;
+  static OwnerRepository owner = ApiOwnerRepository(api: api);
+
+// Nếu cần quay lại mock nhanh khi debug:
+// static OwnerRepository owner = _mockOwner;
 
   /// Bản giả lập LFG trừ/hoàn cọc qua cùng ví giả lập ở trên.
   static LfgRepository lfg = MockLfgRepository(wallet: _mockWallet);
