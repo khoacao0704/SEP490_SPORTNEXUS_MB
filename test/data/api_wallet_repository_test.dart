@@ -56,13 +56,15 @@ Map<String, dynamic> _tx(int i, {String type = 'DEPOSIT', String status = 'SUCCE
 void main() {
   late _FakeServer server;
   late ApiWalletRepository repo;
+  late ApiClient api;
 
   setUp(() async {
     server = _FakeServer();
     final tokens = MemoryTokenStore();
     await tokens.write('token');
     final dio = Dio(BaseOptions(baseUrl: 'https://be.test', validateStatus: (_) => true))..httpClientAdapter = server;
-    repo = ApiWalletRepository(api: ApiClient(tokens: tokens, dio: dio));
+    api = ApiClient(tokens: tokens, dio: dio);
+    repo = ApiWalletRepository(api: api);
   });
 
   test('số dư lấy availableBalance, tạm giữ lấy frozenBalance, dùng chung một request khi gọi cùng lúc', () async {
@@ -79,7 +81,6 @@ void main() {
 
     expect(result, [450000, 50000]);
     expect(server.requests.where((r) => r.path == ApiWalletRepository.walletPath), hasLength(1));
-    expect(await repo.getPendingWithdrawalAmount(), 0);
   });
 
   test('lịch sử: đổi loại / trạng thái / giờ địa phương và tải hết các trang', () async {
@@ -126,6 +127,12 @@ void main() {
     expect(type('PAYOUT', 'LFG_REFUND'), TransactionType.walletPayment);
     expect(type('PAYOUT', 'PRIZE_1ST'), TransactionType.prize);
     expect(type('PAYOUT', 'PRIZE_2ND').isCredit, isTrue);
+
+    // Loại lạ (vd. Admin cộng / trừ tay): theo dấu balanceChange.
+    expect(ApiWalletRepository.typeFromApi('ADJUST', 'SUCCESS', -20000).isCredit, isFalse);
+    expect(ApiWalletRepository.typeFromApi('ADJUST', 'SUCCESS', 20000).isCredit, isTrue);
+    expect(ApiWalletRepository.typeFromApi('ADJUST').isCredit, isTrue);
+    expect(ApiWalletRepository.typeFromApi('REFUND', 'SUCCESS', 0), TransactionType.refund);
   });
 
   test('trạng thái: NO_REFUND_* là không được hoàn, còn lại đều là thành công', () {
@@ -134,6 +141,20 @@ void main() {
     }
     expect(ApiWalletRepository.statusFromApi('NO_REFUND_LATE_CANCEL'), TransactionStatus.notRefunded);
     expect(ApiWalletRepository.statusFromApi('NO_REFUND_BY_ADMIN'), TransactionStatus.notRefunded);
+  });
+
+  test('trạng thái lệnh nạp / rút: chờ, đã hủy, thất bại; nạp đã hủy trong lịch sử không tính là thành công', () {
+    expect(ApiWalletRepository.statusFromApi('PENDING_PAYMENT'), TransactionStatus.pending);
+    expect(ApiWalletRepository.statusFromApi('PENDING'), TransactionStatus.pending);
+    expect(ApiWalletRepository.statusFromApi('CANCELLED'), TransactionStatus.cancelled);
+    expect(ApiWalletRepository.statusFromApi('FAILED'), TransactionStatus.failed);
+    expect(ApiWalletRepository.statusFromApi('REJECTED'), TransactionStatus.failed);
+    expect(ApiWalletRepository.statusFromApi('COMPLETED'), TransactionStatus.success);
+    expect(ApiWalletRepository.typeFromApi('WITHDRAWAL'), TransactionType.withdrawal);
+
+    final tx = ApiWalletRepository.transactionFromApi(_tx(1, status: 'CANCELLED', amount: 10000.00));
+    expect(tx.type, TransactionType.deposit);
+    expect(tx.status, TransactionStatus.cancelled);
   });
 
   test('chi tiết giao dịch tìm trong lịch sử; không có thì báo không tìm thấy', () async {
@@ -158,22 +179,189 @@ void main() {
     );
   });
 
-  test('nạp / rút / ngân hàng / thanh toán: báo đang phát triển, không gọi BE', () async {
-    expect(repo.supportsTopUp, isFalse);
-    expect(repo.supportsWithdrawal, isFalse);
-    final inDevelopment = throwsA(
-      isA<WalletException>().having((e) => e.message, 'message', WalletStrings.featureInDevelopment),
-    );
-    const account = BankAccount(id: 'b', bankCode: 'VCB', bankName: 'Vietcombank', accountNumber: '0123456789', accountHolder: 'A');
+  Map<String, dynamic> ok(Object? data) => {'statusCode': 200, 'message': 'OK', 'data': data};
+  Map<String, dynamic> fail(int code, String message) => {'statusCode': code, 'message': message, 'data': null};
+  Matcher walletError(String message) =>
+      throwsA(isA<WalletException>().having((e) => e.message, 'message', message));
+  const account = BankAccount(
+    id: 'default',
+    bankCode: 'VCB',
+    bankName: 'Vietcombank',
+    accountNumber: '0123456789',
+    accountHolder: 'NGUYEN VAN A',
+  );
 
-    await expectLater(repo.createTopUp(100000), inDevelopment);
-    await expectLater(repo.cancelTopUp('x'), inDevelopment);
-    await expectLater(repo.getBankAccounts(), inDevelopment);
-    await expectLater(repo.removeBankAccount('b'), inDevelopment);
-    await expectLater(repo.requestWithdrawal(amount: 50000, account: account), inDevelopment);
+  group('nạp tiền PayOS', () {
+    test('tạo lệnh: QR + trang thanh toán của PayOS, app tự đặt hạn 15 phút, không có thông tin chuyển khoản tay',
+        () async {
+      server.routes['POST ${ApiWalletRepository.depositPath}'] = (
+        201,
+        {
+          'statusCode': 201,
+          'message': 'Đã tạo yêu cầu nạp tiền',
+          'data': {
+            'orderCode': 17924735835970,
+            'amount': 10000,
+            'status': 'PENDING_PAYMENT',
+            'checkoutUrl': 'https://pay.payos.vn/web/abc',
+            'qrCode': '000201010212...',
+          },
+        },
+      );
+      final before = DateTime.now();
+      final order = await repo.createTopUp(10000);
+
+      expect(server.requests.single.data, {'amount': 10000});
+      expect(order.transactionId, '17924735835970');
+      expect(order.amount, 10000);
+      expect(order.qrData, '000201010212...');
+      expect(order.checkoutUrl, 'https://pay.payos.vn/web/abc');
+      expect(order.hasTransferInfo, isFalse);
+      expect(order.expiresAt.difference(before).inMinutes, 15);
+    });
+
+    test('số tiền sai / chưa cấu hình PayOS: hiện câu của BE', () async {
+      server.routes['POST ${ApiWalletRepository.depositPath}'] = (
+        400,
+        fail(400, 'Số tiền nạp phải là số nguyên từ 10,000đ đến 50,000,000đ'),
+      );
+      await expectLater(repo.createTopUp(9999), walletError('Số tiền nạp phải là số nguyên từ 10,000đ đến 50,000,000đ'));
+    });
+
+    test('hỏi trạng thái theo orderCode', () async {
+      for (final (status, expected) in [
+        ('PENDING_PAYMENT', TransactionStatus.pending),
+        ('SUCCESS', TransactionStatus.success),
+        ('CANCELLED', TransactionStatus.cancelled),
+        ('FAILED', TransactionStatus.failed),
+      ]) {
+        server.routes['GET ${ApiWalletRepository.depositStatusPath('123')}'] = (
+          200,
+          ok({'orderCode': '123', 'amount': 10000.00, 'status': status, 'createdAt': '2026-10-20T05:19:43+00:00'}),
+        );
+        expect(await repo.getTopUpStatus('123'), expected, reason: status);
+      }
+    });
+
+    test('hủy lệnh; lệnh không còn chờ (400) thì bỏ qua, lỗi khác thì báo', () async {
+      server.routes['POST ${ApiWalletRepository.depositCancelPath('123')}'] = (200, ok(null));
+      await repo.cancelTopUp('123');
+      expect(server.requests.single.path, '/api/v1/wallet/deposits/123/cancel');
+
+      server.routes['POST ${ApiWalletRepository.depositCancelPath('123')}'] = (
+        400,
+        fail(400, 'Không có yêu cầu nạp tiền đang chờ thanh toán'),
+      );
+      await repo.cancelTopUp('123');
+
+      server.routes['POST ${ApiWalletRepository.depositCancelPath('123')}'] = (500, fail(500, 'Lỗi hệ thống'));
+      await expectLater(repo.cancelTopUp('123'), walletError('Lỗi hệ thống'));
+    });
+  });
+
+  group('tài khoản ngân hàng & rút tiền', () {
+    test('chưa lưu tài khoản: các trường null → danh sách rỗng', () async {
+      expect(repo.singleBankAccount, isTrue);
+      server.routes['GET ${ApiWalletRepository.bankAccountPath}'] = (
+        200,
+        ok({'bankName': null, 'bankAccountNumber': null, 'bankAccountHolder': null}),
+      );
+      expect(await repo.getBankAccounts(), isEmpty);
+    });
+
+    test('đã lưu: một tài khoản, ghép mã ngân hàng theo tên', () async {
+      server.routes['GET ${ApiWalletRepository.bankAccountPath}'] = (
+        200,
+        ok({'bankName': 'Vietcombank', 'bankAccountNumber': '0123456789', 'bankAccountHolder': 'NGUYEN VAN A'}),
+      );
+      final accounts = await repo.getBankAccounts();
+      expect(accounts.single.bankCode, 'VCB');
+      expect(accounts.single.shortLabel, 'VCB •••• 6789');
+    });
+
+    test('lưu tài khoản: PUT ghi đè; xóa thì BE không hỗ trợ', () async {
+      server.routes['PUT ${ApiWalletRepository.bankAccountPath}'] = (
+        200,
+        ok({'bankName': 'Vietcombank', 'bankAccountNumber': '0123456789', 'bankAccountHolder': 'NGUYEN VAN A'}),
+      );
+      final saved = await repo.addBankAccount(
+        bankCode: 'VCB',
+        bankName: 'Vietcombank',
+        accountNumber: ' 0123456789 ',
+        accountHolder: 'NGUYEN VAN A',
+      );
+      expect(server.requests.single.method, 'PUT');
+      expect(server.requests.single.data, {
+        'bankName': 'Vietcombank',
+        'bankAccountNumber': '0123456789',
+        'bankAccountHolder': 'NGUYEN VAN A',
+      });
+      expect(saved.accountNumber, '0123456789');
+      await expectLater(repo.removeBankAccount('default'), walletError(WalletStrings.featureInDevelopment));
+    });
+
+    test('gửi lệnh rút: chỉ gửi số tiền, trạng thái chờ xử lý', () async {
+      server.routes['POST ${ApiWalletRepository.withdrawalsPath}'] = (
+        200,
+        ok({'id': 'w-1', 'amount': 50000.00, 'status': 'PENDING', 'createdAt': '2026-10-20T05:00:00+00:00'}),
+      );
+      final tx = await repo.requestWithdrawal(amount: 50000, account: account);
+      expect(server.requests.single.data, {'amount': 50000});
+      expect(tx.id, 'w-1');
+      expect(tx.type, TransactionType.withdrawal);
+      expect(tx.status, TransactionStatus.pending);
+      expect(tx.amount, 50000);
+    });
+
+    test('BE chặn (chưa lưu tài khoản / không đủ số dư / Người chơi chưa được rút): hiện câu của BE', () async {
+      server.routes['POST ${ApiWalletRepository.withdrawalsPath}'] = (
+        400,
+        fail(400, 'Vui lòng lưu tài khoản ngân hàng trước khi rút tiền'),
+      );
+      await expectLater(
+        repo.requestWithdrawal(amount: 50000, account: account),
+        walletError('Vui lòng lưu tài khoản ngân hàng trước khi rút tiền'),
+      );
+
+      server.routes['GET ${ApiWalletRepository.bankAccountPath}'] = (
+        403,
+        fail(403, 'Bạn không có quyền truy cập vào tài nguyên này.'),
+      );
+      await expectLater(repo.getBankAccounts(), walletError('Bạn không có quyền truy cập vào tài nguyên này.'));
+    });
+
+    test('Người chơi tạm chưa rút tiền: tiền chờ rút là 0, không gọi BE', () async {
+      expect(repo.supportsWithdrawal, isFalse);
+      expect(await repo.getPendingWithdrawalAmount(), 0);
+      expect(server.requests, isEmpty);
+    });
+
+    test('tiền đang chờ rút = tổng lệnh PENDING; không có quyền rút (403) thì 0', () async {
+      repo = ApiWalletRepository(api: api, supportsWithdrawal: true);
+      server.routes['GET ${ApiWalletRepository.withdrawalsPath}'] = (
+        200,
+        ok({
+          'page': 1,
+          'pageSize': 100,
+          'totalItems': 3,
+          'items': [
+            {'id': 'w-1', 'amount': 50000.00, 'status': 'PENDING'},
+            {'id': 'w-2', 'amount': 70000.00, 'status': 'COMPLETED'},
+            {'id': 'w-3', 'amount': 30000.00, 'status': 'REJECTED'},
+          ],
+        }),
+      );
+      expect(await repo.getPendingWithdrawalAmount(), 50000);
+
+      server.routes['GET ${ApiWalletRepository.withdrawalsPath}'] = (403, fail(403, 'Không có quyền'));
+      expect(await repo.getPendingWithdrawalAmount(), 0);
+    });
+  });
+
+  test('thanh toán bằng ví: chưa nối, không gọi BE', () async {
     await expectLater(
       repo.pay(amount: 1, type: TransactionType.bookingPayment, description: 'x'),
-      inDevelopment,
+      walletError(WalletStrings.featureInDevelopment),
     );
     expect(server.requests, isEmpty);
   });

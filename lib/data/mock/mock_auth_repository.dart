@@ -107,8 +107,9 @@ class MockAuthRepository implements AuthRepository {
     return account.user;
   }
 
+  /// Tạo tài khoản chưa xác thực; mã OTP luôn là [mockOtp] nên không trả devOtp.
   @override
-  Future<void> register(RegisterRequest request) async {
+  Future<String?> register(RegisterRequest request) async {
     await _delay();
     final accounts = await _loadAccounts();
     final email = _normalizeEmail(request.email);
@@ -139,41 +140,43 @@ class MockAuthRepository implements AuthRepository {
       verified: false,
     ));
     await _saveAccounts();
+    return null;
   }
 
   @override
-  Future<void> verifyRegisterOtp(String email, String otp) async {
+  Future<void> verifyRegisterOtp(String phone, String otp) async {
     await _delay();
-    final account = _findByEmail(await _loadAccounts(), email);
-    if (account == null) throw const AuthException(AuthStrings.emailNotFound);
+    final account = _findByPhone(await _loadAccounts(), phone);
+    if (account == null) throw const AuthException(AuthStrings.phoneNotFound);
     if (otp != mockOtp) throw const AuthException(AuthStrings.wrongOtp);
     account.verified = true;
     await _saveAccounts();
   }
 
   @override
-  Future<void> requestPasswordReset(String email) async {
+  Future<String?> requestPasswordReset(String phone) async {
     await _delay();
-    final account = _findByEmail(await _loadAccounts(), email);
+    final account = _findByPhone(await _loadAccounts(), phone);
     if (account == null || !account.verified) {
-      throw const AuthException(AuthStrings.emailNotFound);
+      throw const AuthException(AuthStrings.phoneNotFound);
     }
+    return null;
   }
 
   @override
-  Future<String> verifyResetOtp(String email, String otp) async {
+  Future<String> verifyResetOtp(String phone, String otp) async {
     await _delay();
     if (otp != mockOtp) throw const AuthException(AuthStrings.wrongOtp);
     final token = 'reset-${DateTime.now().millisecondsSinceEpoch}';
-    _resetTokens[_normalizeEmail(email)] = token;
+    _resetTokens[_normalizePhone(phone)] = token;
     return token;
   }
 
   @override
-  Future<void> resetPassword(String email, String resetToken, String newPassword) async {
+  Future<void> resetPassword(String phone, String resetToken, String newPassword) async {
     await _delay();
-    final key = _normalizeEmail(email);
-    final account = _findByEmail(await _loadAccounts(), key);
+    final key = _normalizePhone(phone);
+    final account = _findByPhone(await _loadAccounts(), key);
     if (account == null || _resetTokens[key] != resetToken) {
       throw const AuthException(AuthStrings.sessionExpired);
     }
@@ -183,8 +186,9 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> resendOtp(String email, OtpPurpose purpose) async {
+  Future<String?> resendOtp(String phone, OtpPurpose purpose) async {
     await _delay();
+    return null;
   }
 
   @override
@@ -208,7 +212,7 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> logout() async {
+  Future<void> logout({bool revoke = true}) async {
     // Chỉ xóa dữ liệu phiên; giữ lại ví, lịch đặt và tài khoản giả lập.
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(keyIsLoggedIn);
@@ -321,10 +325,10 @@ class MockAuthRepository implements AuthRepository {
     return null;
   }
 
-  _MockAccount? _findByEmail(List<_MockAccount> accounts, String email) {
-    final key = _normalizeEmail(email);
+  _MockAccount? _findByPhone(List<_MockAccount> accounts, String phone) {
+    final key = _normalizePhone(phone);
     for (final a in accounts) {
-      if (a.user.email == key) return a;
+      if (a.user.phone == key) return a;
     }
     return null;
   }

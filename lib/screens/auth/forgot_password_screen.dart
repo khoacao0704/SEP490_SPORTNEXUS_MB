@@ -8,7 +8,7 @@ import '../../widgets/auth/auth_primary_button.dart';
 import '../../widgets/auth/auth_text_field.dart';
 import 'otp_verification_screen.dart';
 
-/// Pop về email của tài khoản khi đặt lại mật khẩu thành công.
+/// Pop về chuỗi rỗng khi đặt lại mật khẩu thành công (đăng nhập bằng tên đăng nhập, không điền sẵn).
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -18,12 +18,12 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -31,18 +31,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
     try {
-      await AppRepositories.auth.requestPasswordReset(email);
+      final devOtp = await AppRepositories.auth.requestPasswordReset(phone);
       if (!mounted) return;
       setState(() => _isLoading = false);
       final done = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
-          builder: (_) => OtpVerificationScreen(email: email, purpose: OtpPurpose.resetPassword),
+          builder: (_) => OtpVerificationScreen(phone: phone, purpose: OtpPurpose.resetPassword, devOtp: devOtp),
         ),
       );
-      if (done == true && mounted) Navigator.pop(context, email);
+      if (done == true && mounted) Navigator.pop(context, '');
     } on AuthException catch (e) {
       if (mounted) showAuthError(context, e.message);
     } finally {
@@ -62,13 +62,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         child: Column(
           children: [
             AuthTextField(
-              label: AuthStrings.emailLabel,
-              hint: AuthStrings.emailHint,
-              controller: _emailController,
-              validator: Validators.email,
-              keyboardType: TextInputType.emailAddress,
+              label: AuthStrings.phoneLabel,
+              hint: AuthStrings.phoneHint,
+              controller: _phoneController,
+              validator: Validators.phone,
+              keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.done,
-              autofillHints: const [AutofillHints.email],
+              autofillHints: const [AutofillHints.telephoneNumber],
               onFieldSubmitted: (_) => _handleSendOtp(),
             ),
             const SizedBox(height: 24),

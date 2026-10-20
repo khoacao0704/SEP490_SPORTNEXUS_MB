@@ -45,7 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
         rememberMe: _rememberMe,
       );
       if (!isRoleAllowedOnMobile(user.role)) {
-        await AppRepositories.auth.logout();
+        await AppRepositories.auth.logout(revoke: false); // không thu hồi phiên Web của Admin
         if (mounted) showAuthError(context, AuthStrings.roleNotAllowed);
         return;
       }
@@ -58,11 +58,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Register / ForgotPassword pop về tên đăng nhập khi hoàn tất; điền sẵn để đăng nhập ngay.
+  /// Register / ForgotPassword pop về tên đăng nhập khi hoàn tất (rỗng = không điền sẵn).
   Future<void> _openAuthFlow(Widget screen, String successMessage) async {
     final username = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => screen));
     if (username == null || !mounted) return;
-    _usernameController.text = username;
+    if (username.isNotEmpty) _usernameController.text = username;
     _passwordController.clear();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(successMessage), backgroundColor: AppColors.primaryGreen),

@@ -15,17 +15,36 @@ import 'token_store.dart';
 /// - Đăng nhập bằng username → nhận access token + refresh token (đều hạn 7 ngày),
 ///   rồi lấy hồ sơ đầy đủ qua GET /api/auth/me (/api/accounts/{id} chỉ dành cho Admin).
 /// - Hồ sơ: chỉ đổi được họ tên và ảnh đại diện; đổi mật khẩu / xóa tài khoản thu hồi mọi phiên.
-/// - OTP / quên mật khẩu chưa nối: các hàm đó báo "đang phát triển".
+/// - OTP gửi qua SMS về số điện thoại (BE chưa có cổng SMS: chỉ môi trường thử nghiệm trả mã trong `devOtp`).
+///   Đăng ký: gửi OTP trước, nhập đúng mã mới tạo tài khoản. Quên mật khẩu: OTP kiểm tra ở bước đặt lại mật khẩu.
+/// - Đăng xuất: BE thu hồi phiên trên MỌI thiết bị của tài khoản.
 class ApiAuthRepository implements AuthRepository {
   static const int maxAvatarBytes = 5 * 1024 * 1024;
+
+  /// Chờ BE thu hồi phiên tối đa bấy nhiêu khi đăng xuất (server ngủ thì vẫn đăng xuất trên máy).
+  static const Duration logoutTimeout = Duration(seconds: 5);
+
+  /// OTP đăng ký sống 5 phút; chỉ dùng lại mã trong 4 phút đầu để người dùng còn thời gian nhập
+  /// (mã sắp hết hạn mà dùng lại thì phải chờ 60 giây mới xin được mã mới).
+  static const Duration registerOtpReuseWindow = Duration(minutes: 4);
 
   final ApiClient _api;
   final TokenStore _tokens;
 
-  ApiAuthRepository({required this._api, required this._tokens});
+  /// Thông tin đăng ký đang chờ nhập OTP.
+  RegisterRequest? _pendingRegistration;
+
+  /// Lần gửi OTP đăng ký gần nhất (SĐT đã chuẩn hóa, lúc gửi, devOtp) để dùng lại mã còn hạn.
+  ({String phone, DateTime sentAt, String? devOtp})? _registerOtp;
+
+  /// Thời điểm hiện tại; test thay để giả lập thời gian trôi.
+  final DateTime Function() _now;
+
+  ApiAuthRepository({required this._api, required this._tokens, DateTime Function()? now})
+    : _now = now ?? DateTime.now;
 
   @override
-  bool get supportsOtp => false;
+  bool get supportsOtp => true;
 
   @override
   Future<AppUser> login(String identifier, String password, {bool rememberMe = true}) async {
@@ -114,7 +133,7 @@ class ApiAuthRepository implements AuthRepository {
           body: {'oldPassword': oldPassword, 'newPassword': newPassword, 'confirmPassword': confirmPassword},
         ));
     // BE thu hồi mọi token: token đang giữ không dùng được nữa.
-    await logout();
+    await logout(revoke: false);
   }
 
   @override
@@ -124,29 +143,87 @@ class ApiAuthRepository implements AuthRepository {
           '/api/auth/me',
           body: {'password': password, if (note != null && note.isNotEmpty) 'reason': note},
         ));
-    await logout();
+    await logout(revoke: false);
   }
 
+  /// Chưa tạo tài khoản: gửi OTP về SĐT (SĐT đã có tài khoản thì BE báo lỗi ngay ở bước này).
+  /// Quay lại sửa thông tin (vd. trùng tên đăng nhập) rồi đăng ký lại cùng SĐT: dùng lại mã vừa gửi —
+  /// BE kiểm tra trùng trước OTP nên mã chưa bị dùng, còn xin mã mới trong 60 giây sẽ bị từ chối.
   @override
-  Future<void> register(RegisterRequest request) async {
-    try {
-      await _api.post(
-        '/api/auth/register',
-        body: {
-          'username': request.username.trim(),
-          'password': request.password,
-          'fullName': request.fullName.trim(),
-          'phone': request.phone.trim(),
-          'email': request.email.trim(),
-          // BE: "owner" tạo Chủ sân, giá trị khác là Người chơi.
-          'role': request.role == UserRole.courtOwner ? 'owner' : 'player',
-        },
-        auth: false,
-      );
-    } on ApiException catch (e) {
-      // Trùng username / SĐT / email: BE trả câu tiếng Việt, hiển thị nguyên văn.
-      throw AuthException(e.message);
+  Future<String?> register(RegisterRequest request) async {
+    final sent = _registerOtp;
+    final reuse = sent != null &&
+        sent.phone == normalizePhone(request.phone) &&
+        _now().difference(sent.sentAt) < registerOtpReuseWindow;
+    final devOtp = reuse ? sent.devOtp : await _sendOtp(request.phone, OtpPurpose.register);
+    _pendingRegistration = request;
+    return devOtp;
+  }
+
+  /// Gửi thông tin đăng ký kèm OTP: đúng mã thì BE tạo tài khoản (SĐT đã xác thực).
+  @override
+  Future<void> verifyRegisterOtp(String phone, String otp) async {
+    final request = _pendingRegistration;
+    if (request == null || normalizePhone(request.phone) != normalizePhone(phone)) {
+      throw const AuthException(AuthStrings.registerExpired);
     }
+    // Trùng username / email hoặc sai OTP: BE trả câu tiếng Việt, hiển thị nguyên văn.
+    await _call(() => _api.post(
+          '/api/auth/register',
+          body: {
+            'username': request.username.trim(),
+            'password': request.password,
+            'fullName': request.fullName.trim(),
+            'phone': request.phone.trim(),
+            'email': request.email.trim(),
+            // BE: "owner" tạo Chủ sân, giá trị khác là Người chơi.
+            'role': request.role == UserRole.courtOwner ? 'owner' : 'player',
+            'otpCode': otp,
+          },
+          auth: false,
+        ));
+    _pendingRegistration = null;
+    _registerOtp = null;
+  }
+
+  /// BE luôn trả thành công (không cho biết SĐT có tài khoản hay không).
+  @override
+  Future<String?> requestPasswordReset(String phone) => _sendOtp(phone, OtpPurpose.resetPassword);
+
+  /// Không gọi BE: OTP được kiểm tra cùng lúc đặt mật khẩu mới, nên "reset token" chính là mã OTP.
+  @override
+  Future<String> verifyResetOtp(String phone, String otp) async => otp;
+
+  @override
+  Future<void> resetPassword(String phone, String resetToken, String newPassword) => _call(() => _api.post(
+        '/api/auth/reset-password',
+        body: {'phone': phone.trim(), 'otpCode': resetToken, 'newPassword': newPassword, 'confirmPassword': newPassword},
+        auth: false,
+      ));
+
+  @override
+  Future<String?> resendOtp(String phone, OtpPurpose purpose) => _sendOtp(phone, purpose);
+
+  /// Đăng ký: POST send-otp (REGISTER). Quên mật khẩu: POST forgot-password (BE tự gửi OTP FORGOT_PASSWORD).
+  /// Trả về devOtp (chỉ có ở môi trường thử nghiệm).
+  Future<String?> _sendOtp(String phone, OtpPurpose purpose) async {
+    final data = await _call(() => purpose == OtpPurpose.register
+        ? _api.post('/api/auth/send-otp', body: {'phone': phone.trim(), 'type': 'REGISTER'}, auth: false)
+        : _api.post('/api/auth/forgot-password', body: {'identifier': phone.trim()}, auth: false));
+    final raw = data is Map<String, dynamic> ? data['devOtp']?.toString() : null;
+    final devOtp = raw == null || raw.isEmpty ? null : raw;
+    if (purpose == OtpPurpose.register) {
+      _registerOtp = (phone: normalizePhone(phone), sentAt: _now(), devOtp: devOtp);
+    }
+    return devOtp;
+  }
+
+  /// Giống BE (AccountRules.NormalizePhone): bỏ dấu cách / - / . rồi đổi +84… / 84… về 0….
+  static String normalizePhone(String phone) {
+    final p = phone.replaceAll(RegExp(r'[\s.\-]'), '');
+    if (p.startsWith('+84')) return '0${p.substring(3)}';
+    if (p.startsWith('84') && p.length > 9) return '0${p.substring(2)}';
+    return p;
   }
 
   @override
@@ -156,7 +233,7 @@ class ApiAuthRepository implements AuthRepository {
     if (token == null || user == null) return null;
     // Không "Ghi nhớ đăng nhập": bắt đăng nhập lại.
     if (!await SessionStore.rememberMe()) {
-      await logout();
+      await logout(revoke: false);
       return null;
     }
     // Access token hết hạn: thử refresh token, không được thì bắt đăng nhập lại.
@@ -168,35 +245,24 @@ class ApiAuthRepository implements AuthRepository {
         refreshed = false; // mất mạng lúc mở app: không vào được phiên cũ
       }
       if (!refreshed) {
-        await logout();
+        await logout(revoke: false);
         return null;
       }
     }
     return user;
   }
 
+  /// Thu hồi phiên trên BE là phụ: lỗi mạng / token đã hết hạn vẫn đăng xuất trên máy.
   @override
-  Future<void> logout() async {
+  Future<void> logout({bool revoke = true}) async {
+    if (revoke && await _tokens.read() != null) {
+      try {
+        await _api.post('/api/auth/logout', refreshOnUnauthorized: false).timeout(logoutTimeout);
+      } catch (_) {
+        // bỏ qua: phiên trên máy vẫn bị xóa
+      }
+    }
     await _tokens.clear();
     await SessionStore.clear();
   }
-
-  // ---------------- Chưa có trên BE ----------------
-
-  Never _notSupported() => throw const AuthException(AuthStrings.featureInDevelopment);
-
-  @override
-  Future<void> verifyRegisterOtp(String email, String otp) async => _notSupported();
-
-  @override
-  Future<void> requestPasswordReset(String email) async => _notSupported();
-
-  @override
-  Future<String> verifyResetOtp(String email, String otp) async => _notSupported();
-
-  @override
-  Future<void> resetPassword(String email, String resetToken, String newPassword) async => _notSupported();
-
-  @override
-  Future<void> resendOtp(String email, OtpPurpose purpose) async => _notSupported();
 }

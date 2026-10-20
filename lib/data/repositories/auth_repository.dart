@@ -42,28 +42,34 @@ abstract class AuthRepository {
   /// [rememberMe] = false thì lần mở app sau phải đăng nhập lại.
   Future<AppUser> login(String identifier, String password, {bool rememberMe = true});
 
-  /// Tạo tài khoản. BE chưa có OTP nên tài khoản dùng được ngay (đăng nhập lại sau khi đăng ký).
-  Future<void> register(RegisterRequest request);
+  /// Bắt đầu đăng ký: gửi OTP về số điện thoại của [request]; tài khoản được tạo ở [verifyRegisterOtp].
+  /// Không có OTP ([supportsOtp] = false) thì tạo tài khoản ngay.
+  /// Trả về mã OTP khi máy chủ đang ở môi trường thử nghiệm (devOtp), ngoài ra `null`.
+  Future<String?> register(RegisterRequest request);
 
-  /// BE đã có OTP xác thực đăng ký / quên mật khẩu chưa. `false`: các màn đó báo "đang phát triển".
+  /// Có xác thực OTP khi đăng ký / quên mật khẩu không. `false`: đăng ký xong dùng được ngay, quên mật khẩu báo
+  /// "đang phát triển".
   bool get supportsOtp;
 
-  Future<void> verifyRegisterOtp(String email, String otp);
+  Future<void> verifyRegisterOtp(String phone, String otp);
 
-  /// Gửi OTP đặt lại mật khẩu về email đã đăng ký.
-  Future<void> requestPasswordReset(String email);
+  /// Gửi OTP đặt lại mật khẩu về số điện thoại đã đăng ký. Trả về devOtp như [register].
+  Future<String?> requestPasswordReset(String phone);
 
   /// Trả về reset token dùng cho [resetPassword].
-  Future<String> verifyResetOtp(String email, String otp);
+  Future<String> verifyResetOtp(String phone, String otp);
 
-  Future<void> resetPassword(String email, String resetToken, String newPassword);
+  Future<void> resetPassword(String phone, String resetToken, String newPassword);
 
-  Future<void> resendOtp(String email, OtpPurpose purpose);
+  /// Gửi lại OTP. Trả về devOtp như [register].
+  Future<String?> resendOtp(String phone, OtpPurpose purpose);
 
   /// Người dùng của phiên đã ghi nhớ, `null` nếu chưa đăng nhập.
   Future<AppUser?> getCurrentUser();
 
-  Future<void> logout();
+  /// Xóa phiên trên máy. [revoke] = true (người dùng bấm Đăng xuất): báo máy chủ thu hồi phiên đăng nhập;
+  /// false khi phiên đã hết hạn hoặc chỉ cần thoát trên máy này.
+  Future<void> logout({bool revoke = true});
 
   // ---------------- Hồ sơ của chính mình ----------------
 

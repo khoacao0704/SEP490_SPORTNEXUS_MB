@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/strings/wallet_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
@@ -13,6 +14,7 @@ import '../../theme/app_colors.dart';
 
 /// Màn chờ chuyển khoản VietQR cho một lệnh nạp.
 /// Pop về `true` khi BE xác nhận đã nhận tiền, `false` khi hết hạn / bị hủy.
+/// Hết giờ mà lệnh vẫn chờ thì app tự hủy lệnh (BE không tự đóng lệnh quá hạn).
 class VietQrPaymentScreen extends StatefulWidget {
   final TopUpOrder order;
 
@@ -50,7 +52,7 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
     _secondsLeft = _remainingSeconds();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _secondsLeft = _remainingSeconds());
-      if (_secondsLeft == 0) _checkStatus();
+      if (_secondsLeft == 0) _checkStatus(timeUp: true);
     });
     _pollTimer = Timer.periodic(widget.pollInterval, (_) => _checkStatus());
   }
@@ -71,30 +73,41 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
     _pollTimer?.cancel();
   }
 
-  Future<void> _checkStatus() async {
+  /// [timeUp]: đã hết thời gian chờ; lệnh còn chờ thanh toán thì hủy.
+  Future<void> _checkStatus({bool timeUp = false}) async {
     if (_finished) return;
-    WalletTransaction tx;
+    TransactionStatus status;
     try {
-      tx = await _wallet.getTransaction(_order.transactionId);
+      status = await _wallet.getTopUpStatus(_order.transactionId);
     } catch (_) {
-      return; // lỗi mạng tạm thời: lần hỏi sau thử lại
+      if (!timeUp) return; // lỗi mạng tạm thời: lần hỏi sau thử lại
+      status = TransactionStatus.pending;
     }
     if (!mounted || _finished) return;
 
-    switch (tx.status) {
-      case TransactionStatus.pending:
-        return;
-      case TransactionStatus.success:
-        _finish();
-        await _showResultDialog(success: true);
-        if (mounted) Navigator.pop(context, true);
-      case TransactionStatus.expired:
-      case TransactionStatus.failed:
-      case TransactionStatus.cancelled:
-      case TransactionStatus.notRefunded:
-        _finish();
-        await _showResultDialog(success: false);
-        if (mounted) Navigator.pop(context, false);
+    if (status == TransactionStatus.pending) {
+      if (!timeUp) return;
+      _finish();
+      try {
+        await _wallet.cancelTopUp(_order.transactionId);
+      } catch (_) {
+        // không hủy được (mất mạng): lệnh chưa thanh toán thì không cộng tiền
+      }
+      status = await _paidJustNow() ? TransactionStatus.success : TransactionStatus.expired;
+      if (!mounted) return;
+    }
+    _finish();
+    final success = status == TransactionStatus.success;
+    await _showResultDialog(success: success, expired: status == TransactionStatus.expired);
+    if (mounted) Navigator.pop(context, success);
+  }
+
+  /// Sau khi hủy: người dùng có thể vừa chuyển khoản xong ngay trước đó (BE bỏ qua lệnh hủy) → hỏi lại một lần.
+  Future<bool> _paidJustNow() async {
+    try {
+      return await _wallet.getTopUpStatus(_order.transactionId) == TransactionStatus.success;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -119,6 +132,8 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
   }
 
   Future<void> _confirmCancel() async {
+    // Đang hủy / đã có kết quả: bỏ qua lần bấm quay lại tiếp theo (tránh đóng màn hai lần).
+    if (_finished) return;
     final cancel = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -133,13 +148,33 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
         ],
       ),
     );
-    if (cancel != true || !mounted) return;
+    if (cancel != true || !mounted || _finished) return;
     _finish();
-    await _wallet.cancelTopUp(_order.transactionId);
+    try {
+      await _wallet.cancelTopUp(_order.transactionId);
+    } on WalletException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+      }
+    }
+    if (await _paidJustNow() && mounted) {
+      await _showResultDialog(success: true);
+      if (mounted) Navigator.pop(context, true);
+      return;
+    }
     if (mounted) Navigator.pop(context, false);
   }
 
-  Future<void> _showResultDialog({required bool success}) {
+  Future<void> _openCheckout() async {
+    final url = Uri.tryParse(_order.checkoutUrl ?? '');
+    final opened = url != null && await launchUrl(url, mode: LaunchMode.externalApplication).catchError((_) => false);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(WalletStrings.cannotOpenCheckout)));
+    }
+  }
+
+  /// [expired]: hết giờ chờ; ngược lại thất bại là do lệnh bị hủy / thanh toán lỗi.
+  Future<void> _showResultDialog({required bool success, bool expired = true}) {
     return showDialog(
       context: context,
       barrierDismissible: false,
@@ -162,14 +197,20 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              success ? WalletStrings.topUpSuccessTitle : WalletStrings.topUpExpiredTitle,
+              success
+                  ? WalletStrings.topUpSuccessTitle
+                  : expired
+                  ? WalletStrings.topUpExpiredTitle
+                  : WalletStrings.topUpFailedTitle,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain),
             ),
             const SizedBox(height: 8),
             Text(
               success
                   ? WalletStrings.topUpSuccessMessage(Formatters.vnd(_order.amount))
-                  : WalletStrings.topUpExpiredMessage,
+                  : expired
+                  ? WalletStrings.topUpExpiredMessage
+                  : WalletStrings.topUpFailedMessage,
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
@@ -254,8 +295,29 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
               const SizedBox(height: 16),
               _buildQrCard(),
               const SizedBox(height: 16),
-              _buildTransferInfo(),
-              const SizedBox(height: 16),
+              if (_order.checkoutUrl != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: _openCheckout,
+                    icon: const Icon(Icons.open_in_new, color: AppColors.primaryGreen),
+                    label: const Text(
+                      WalletStrings.openCheckout,
+                      style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.primaryGreen),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (_order.hasTransferInfo) ...[
+                _buildTransferInfo(),
+                const SizedBox(height: 16),
+              ],
               const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -393,18 +455,18 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textMain),
           ),
           const SizedBox(height: 4),
-          row(WalletStrings.bank, _order.receiverBankName),
+          row(WalletStrings.bank, _order.receiverBankName ?? ''),
           row(
             WalletStrings.accountNumber,
-            _order.receiverAccountNumber,
-            copyValue: _order.receiverAccountNumber.replaceAll(' ', ''),
+            _order.receiverAccountNumber ?? '',
+            copyValue: (_order.receiverAccountNumber ?? '').replaceAll(' ', ''),
           ),
-          row(WalletStrings.accountName, _order.receiverAccountName),
+          row(WalletStrings.accountName, _order.receiverAccountName ?? ''),
           row(WalletStrings.amount, Formatters.vnd(_order.amount), copyValue: '${_order.amount}'),
           row(
             WalletStrings.transferContent,
-            _order.transferContent,
-            copyValue: _order.transferContent,
+            _order.transferContent ?? '',
+            copyValue: _order.transferContent ?? '',
             highlight: true,
           ),
           const Padding(
