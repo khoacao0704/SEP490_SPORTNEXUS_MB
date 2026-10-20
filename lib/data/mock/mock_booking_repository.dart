@@ -167,7 +167,68 @@ class MockBookingRepository implements BookingRepository {
   }
 
   @override
-  Future<Booking> cancelBooking(String bookingId) async {
+  bool get supportsDeposit => true;
+
+  @override
+  bool get supportsSplitPayment => true;
+
+  /// Mã vé giả lập cố định theo lượt đặt.
+  @override
+  Duration? get ticketRefreshInterval => null;
+
+  @override
+  Future<String> getTicketCode(Booking booking) async => booking.ticketCode;
+
+  /// Giống danh sách lý do của BE.
+  @override
+  Future<List<CancelReason>> getCancelReasons() async => const [
+        CancelReason(code: 1, label: 'Thay đổi lịch trình / Bận việc đột xuất'),
+        CancelReason(code: 2, label: 'Không đủ người chơi / Đồng đội hủy kèo'),
+        CancelReason(code: 3, label: 'Thời tiết xấu / Không thuận lợi di chuyển'),
+        CancelReason(code: 4, label: 'Đặt nhầm ngày, khung giờ hoặc nhầm sân'),
+        CancelReason(code: 5, label: 'Vấn đề sức khỏe / Chấn thương'),
+        CancelReason(code: 6, label: 'Khác (Tự nhập lý do)', isCustom: true),
+      ];
+
+  // ---- Chia tiền mời bạn: bản giả lập dùng luồng mã/link của MockSplitPaymentRepository ----
+
+  @override
+  bool get supportsSplitInvite => false;
+
+  Never _inviteUnsupported() => throw const BookingException(BookingStrings.splitUnavailable);
+
+  @override
+  Future<PlayerLookup> findPlayerByPhone(String phone) async => _inviteUnsupported();
+
+  @override
+  Future<List<Booking>> createSplitBooking({
+    required SlotHold hold,
+    required List<String> inviteeIds,
+    required String facilityName,
+    required String sportLabel,
+    required String location,
+  }) async =>
+      _inviteUnsupported();
+
+  @override
+  Future<Booking> getBooking(String bookingId) async {
+    final booking = (await _all()).where((b) => b.id == bookingId).firstOrNull;
+    if (booking == null) throw const BookingException(BookingStrings.notFound);
+    return booking;
+  }
+
+  @override
+  Future<Booking> joinSplit(String bookingId) async => _inviteUnsupported();
+
+  @override
+  Future<Booking> inviteMore(String bookingId, List<String> inviteeIds) async => _inviteUnsupported();
+
+  @override
+  Future<Booking> payRemaining(String bookingId) async => _inviteUnsupported();
+
+  /// Bản giả lập không lưu lý do hủy.
+  @override
+  Future<Booking> cancelBooking(String bookingId, {int? reasonCode, String? reason}) async {
     await _delay();
     final me = await _requireUser();
     final now = _now();

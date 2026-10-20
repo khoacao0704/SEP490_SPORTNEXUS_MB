@@ -7,6 +7,16 @@ import '../../theme/app_colors.dart';
 import '../facility/sport_icon.dart';
 
 String lfgStatusLabel(LfgMatch match, DateTime now) {
+  if (match.cancelReason == null && match.end.isAfter(now)) {
+    switch (match.myStatus) {
+      case LfgMyStatus.pendingApproval:
+        return LfgStrings.statusPendingApproval;
+      case LfgMyStatus.invited:
+        return LfgStrings.statusInvited;
+      case null:
+        break;
+    }
+  }
   switch (match.status(now)) {
     case LfgStatus.open:
       return LfgStrings.statusOpen;
@@ -20,6 +30,8 @@ String lfgStatusLabel(LfgMatch match, DateTime now) {
           return LfgStrings.statusCancelledMutual;
         case LfgCancelReason.everyoneLeft:
           return LfgStrings.statusCancelledEveryoneLeft;
+        case LfgCancelReason.cancelled:
+          return LfgStrings.statusCancelled;
       }
     case LfgStatus.completed:
       return LfgStrings.statusCompleted;

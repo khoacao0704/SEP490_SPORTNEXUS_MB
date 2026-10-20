@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../data/app_repositories.dart';
 import '../../core/constants/booking_rules.dart';
 import '../../core/constants/split_payment_rules.dart';
+import '../../core/strings/booking_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
 import '../../data/repositories/booking_repository.dart';
 import '../../data/repositories/split_payment_repository.dart';
@@ -13,8 +13,11 @@ import '../../data/repositories/wallet_repository.dart';
 import '../../models/booking.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/booking/booking_ticket_qr.dart';
+import '../../widgets/booking/invite_by_phone.dart';
 import '../main/main_navigation_screen.dart';
 import '../wallet/vietqr_payment_screen.dart';
+import 'split_booking_screen.dart';
 import 'split_payment_screen.dart';
 
 class BookingCheckoutScreen extends StatefulWidget {
@@ -50,6 +53,27 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   int _paymentTypeIndex = 0; // 0: Full Payment (100%), 1: Partial Deposit (1/4), 2: Chia tiền nhóm
   int _splitParts = SplitPaymentRules.allowedParts.last;
 
+  /// Chia tiền theo cách mời bạn (BE thật) thay cho chia mã/link.
+  bool get _splitByInvite => AppRepositories.booking.supportsSplitInvite;
+
+  /// Những người được mời góp (luồng mời bạn).
+  final List<PlayerLookup> _invitees = [];
+
+  /// Số người chia tiền mỗi ca (gồm người đặt).
+  int get _people => _invitees.length + 1;
+
+  /// Phần người đặt trả ngay khi mời bạn: cộng phần của mình ở từng ca (mỗi ca là một đơn).
+  int get _inviteHostAmount {
+    final prices = widget.hold?.slots.map((s) => s.price) ?? [widget.totalAmount];
+    return prices.fold(0, (sum, p) => sum + SplitPaymentRules.hostShare(p, _people));
+  }
+
+  /// Phần mỗi người được mời góp (tổng các ca).
+  int get _inviteeAmount {
+    final prices = widget.hold?.slots.map((s) => s.price) ?? [widget.totalAmount];
+    return prices.fold(0, (sum, p) => sum + SplitPaymentRules.inviteeShare(p, _people));
+  }
+
   int get _payAmount {
     switch (_paymentTypeIndex) {
       case 0:
@@ -61,14 +85,14 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
             ? BookingRules.depositAmount(widget.totalAmount)
             : BookingRules.depositFor(hold.slots.map((s) => s.price));
       default:
-        return SplitPaymentRules.bookerAmount(widget.totalAmount, _splitParts);
+        return _splitByInvite ? _inviteHostAmount : SplitPaymentRules.bookerAmount(widget.totalAmount, _splitParts);
     }
   }
 
   String get _payLabel => switch (_paymentTypeIndex) {
     0 => 'Thanh toán 100% tiền sân',
     1 => 'Ký quỹ 1 phần (1/4) tiền sân',
-    _ => SplitPaymentStrings.payNow(_splitParts),
+    _ => _splitByInvite ? SplitPaymentStrings.invitePay : SplitPaymentStrings.payNow(_splitParts),
   };
   int _selectedPaymentMethod = 0; // 0: SportNexus Wallet, 1: VietQR
 
@@ -84,7 +108,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   }
 
   Future<void> _loadWalletBalance() async {
-    final balance = await AppRepositories.paymentWallet.getBalance();
+    final balance = await AppRepositories.bookingWallet.getBalance();
     if (!mounted) return;
     setState(() => _walletBalance = balance);
   }
@@ -146,7 +170,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   }
 
   Future<void> _handleConfirmPayment() async {
-    if (_paymentTypeIndex == 2) return _startSplit();
+    if (_paymentTypeIndex == 2) return _splitByInvite ? _startInviteSplit() : _startSplit();
     final hold = widget.hold;
     if (hold == null) return;
     final payAmount = _payAmount;
@@ -221,12 +245,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                 ),
                 child: Column(
                   children: [
-                    QrImageView(data: bookings.single.ticketCode, size: 140, backgroundColor: Colors.white),
-                    const SizedBox(height: 4),
-                    Text(
-                      'MÃ CHECK-IN: ${bookings.single.ticketCode}',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
-                    ),
+                    BookingTicketQr(booking: bookings.single, size: 140),
                   ],
                 ),
               ),
@@ -302,19 +321,89 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     }
   }
 
+  /// Chia tiền theo cách mời bạn: trả phần của mình (ví hoặc VietQR), mỗi ca một đơn chờ bạn bè góp.
+  Future<void> _startInviteSplit() async {
+    final hold = widget.hold!;
+    if (_invitees.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(SplitPaymentStrings.inviteRequired), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    final amount = _payAmount;
+    if (_selectedPaymentMethod == 0 && _walletBalance < amount) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(SplitPaymentStrings.insufficient), backgroundColor: Colors.red));
+      return;
+    }
+    setState(() => _isLoading = true);
+    final List<Booking> bookings;
+    try {
+      if (_selectedPaymentMethod == 1 && !await _payByVietQr(amount)) return;
+      bookings = await AppRepositories.booking.createSplitBooking(
+        hold: hold,
+        inviteeIds: _invitees.map((p) => p.id).toList(),
+        facilityName: widget.courtName,
+        sportLabel: widget.sport,
+        location: widget.location,
+      );
+    } on BookingException catch (e) {
+      _fail(e.message);
+      return;
+    } on WalletException catch (e) {
+      _fail(e.message);
+      return;
+    }
+    if (!mounted) return;
+    _timer?.cancel();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(SplitPaymentStrings.invitedMessage), backgroundColor: AppColors.primaryGreen),
+    );
+    // Một ca: mở màn chia tiền của đơn đó; nhiều ca: mỗi ca một đơn trong Lịch Đặt.
+    if (bookings.length == 1) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => SplitBookingScreen(bookingId: bookings.single.id)),
+      );
+    } else {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 3)),
+        (route) => false,
+      );
+    }
+  }
+
   /// Chuyển khoản đúng số tiền vào ví qua VietQR (BE xác nhận) để trừ ví ở bước sau.
   /// Trả về false nếu người dùng thoát / hết hạn (đã tắt trạng thái đang xử lý).
   Future<bool> _payByVietQr(int amount) async {
-    final order = await AppRepositories.paymentWallet.createTopUp(amount);
+    final order = await AppRepositories.bookingWallet.createTopUp(amount);
     if (!mounted) return false;
     final paid = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order, wallet: AppRepositories.paymentWallet)),
+      MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order, wallet: AppRepositories.bookingWallet)),
     );
     if (paid == true) return true;
     if (mounted) setState(() => _isLoading = false);
     _loadWalletBalance();
     return false;
+  }
+
+  /// Cọc 1/4 / chia tiền BE chưa hỗ trợ thì báo "đang phát triển", giữ lựa chọn hiện tại.
+  void _selectPaymentType(int index) {
+    final booking = AppRepositories.booking;
+    final unavailable = switch (index) {
+      1 when !booking.supportsDeposit => BookingStrings.depositUnavailable,
+      2 when !booking.supportsSplitPayment && !booking.supportsSplitInvite => BookingStrings.splitUnavailable,
+      _ => null,
+    };
+    if (unavailable != null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(unavailable)));
+      return;
+    }
+    setState(() => _paymentTypeIndex = index);
   }
 
   void _fail(String message) {
@@ -500,7 +589,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setState(() => _paymentTypeIndex = 1),
+                          onTap: () => _selectPaymentType(1),
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                             decoration: BoxDecoration(
@@ -694,24 +783,28 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'TỔNG THANH TOÁN KỲ NÀY',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF64748B),
-                          letterSpacing: 0.5,
+                  // Nhãn dài (vd. chia tiền) xuống dòng thay vì đẩy số tiền ra ngoài màn hình hẹp.
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'TỔNG THANH TOÁN KỲ NÀY',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF64748B),
+                            letterSpacing: 0.5,
+                          ),
                         ),
-                      ),
-                      Text(
-                        _payLabel,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
-                      ),
-                    ],
+                        Text(
+                          _payLabel,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     '${_formatCurrency(payAmount)} đ',
                     style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
@@ -769,7 +862,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   Widget _buildSplitOption() {
     final selected = _paymentTypeIndex == 2;
     return GestureDetector(
-      onTap: () => setState(() => _paymentTypeIndex = 2),
+      onTap: () => _selectPaymentType(2),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(12),
@@ -802,8 +895,12 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
               ],
             ),
             const SizedBox(height: 4),
-            const Text(SplitPaymentStrings.optionHint, style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-            if (selected) ...[
+            Text(
+              _splitByInvite ? SplitPaymentStrings.inviteHint : SplitPaymentStrings.optionHint,
+              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            ),
+            if (selected && _splitByInvite) ..._buildInviteSection(),
+            if (selected && !_splitByInvite) ...[
               const SizedBox(height: 10),
               const Text(
                 SplitPaymentStrings.partsTitle,
@@ -845,6 +942,32 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
       ),
     );
   }
+
+  List<Widget> _buildInviteSection() => [
+        const SizedBox(height: 10),
+        InviteByPhoneField(
+          excludeIds: _invitees.map((p) => p.id).toSet(),
+          onFound: (player) => setState(() => _invitees.add(player)),
+        ),
+        for (final p in _invitees)
+          InviteeTile(
+            name: p.fullName,
+            subtitle: p.phoneMasked,
+            onRemove: () => setState(() => _invitees.remove(p)),
+          ),
+        if (_invitees.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            SplitPaymentStrings.inviteExplain(_people, _inviteeAmount, _inviteHostAmount),
+            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
+          ),
+        ],
+        const SizedBox(height: 4),
+        const Text(
+          SplitPaymentStrings.inviteByLinkSoon,
+          style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+        ),
+      ];
 
   Widget _buildSummaryRow(IconData icon, String label, String value) {
     return Row(

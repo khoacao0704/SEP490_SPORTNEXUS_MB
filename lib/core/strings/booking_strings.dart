@@ -24,6 +24,12 @@ class BookingStrings {
   static const String ticket = 'Vé QR';
   static const String ticketTitle = 'VÉ QR CHECK-IN';
   static const String ticketNote = 'Xuất trình mã này cho chủ sân khi check-in và check-out.';
+  static const String ticketRefreshNote = 'Mã tự đổi sau mỗi 30 giây, không cần chụp lại.';
+  static const String ticketLoadError = 'Không tải được vé. Vui lòng thử lại.';
+  static const String cancelReasonTitle = 'Lý do hủy';
+  static const String cancelReasonHint = 'Nhập lý do hủy';
+  static const String depositUnavailable = 'Cọc 1/4 đang được phát triển. Vui lòng chọn thanh toán 100%.';
+  static const String splitUnavailable = 'Chia tiền nhóm đang được phát triển.';
   static const String close = 'Đóng';
   static const String cancel = 'Hủy đặt sân';
   static String freeCancelUntil(String t) => 'Hủy miễn phí trước $t';

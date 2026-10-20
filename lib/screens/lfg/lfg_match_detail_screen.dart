@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/strings/lfg_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
@@ -9,6 +8,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/lfg/lfg_actions.dart';
 import '../../widgets/lfg/lfg_match_card.dart';
+import '../../widgets/lfg/lfg_ticket_qr.dart';
 
 class LfgMatchDetailScreen extends StatefulWidget {
   final String matchId;
@@ -98,6 +98,34 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
       _snack(LfgStrings.leftMessage(refund));
     });
   }
+
+  /// Host không rời được (BE): hủy kèo, mọi người được hoàn 100%.
+  Future<void> _hostCancel() async {
+    final m = _match!;
+    if (!await _confirm(LfgStrings.confirmCancelTitle, LfgStrings.hostCancelMessage(m.courtPrice), LfgStrings.cancelMatch)) {
+      return;
+    }
+    await _run(() async {
+      await AppRepositories.lfg.cancelMatch(m.id);
+      _snack(LfgStrings.hostCancelledMessage);
+    });
+  }
+
+  /// Rút yêu cầu vào kèo đang chờ chủ kèo duyệt (chưa trừ tiền).
+  Future<void> _withdraw() => _run(() async {
+        await AppRepositories.lfg.leaveMatch(_match!.id);
+        _snack(LfgStrings.withdrawnMessage);
+      });
+
+  Future<void> _acceptInvite() => _run(() async {
+        await AppRepositories.lfg.acceptInvitation(_match!.id);
+        _snack(LfgStrings.joinSuccess);
+      });
+
+  Future<void> _declineInvite() => _run(() async {
+        await AppRepositories.lfg.declineInvitation(_match!.id);
+        _snack(LfgStrings.declinedMessage);
+      });
 
   Future<void> _requestCancel() async {
     final m = _match!;
@@ -208,7 +236,12 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                   _section(
                     LfgStrings.rulesTitle,
                     Text(
-                      LfgStrings.rules(m.depositPerSlot, m.format.isTeam),
+                      LfgStrings.rules(
+                        m.depositPerSlot,
+                        m.format.isTeam,
+                        hostPaysCourt: AppRepositories.lfg.hostPaysCourt,
+                        hostCanLeave: AppRepositories.lfg.hostCanLeave,
+                      ),
                       style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
                     ),
                   ),
@@ -245,8 +278,15 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
         child: Row(
           children: [
             Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-            const Spacer(),
-            Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color ?? AppColors.textMain)),
+            const SizedBox(width: 12),
+            // Giá trị dài (vd. hạn đủ người) xuống dòng thay vì tràn ra ngoài màn hình hẹp.
+            Expanded(
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color ?? AppColors.textMain),
+              ),
+            ),
           ],
         ),
       );
@@ -269,7 +309,8 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(m.facilityCourtLabel, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain)),
-                    Text('${m.district}, ${m.city}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    Text(m.city.isEmpty ? m.district : '${m.district}, ${m.city}',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     Text(
                       Formatters.slotLabel(m.start, m.end),
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
@@ -345,14 +386,11 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
   }
 
   Widget _buildTicket(LfgMatch m) {
-    final code = m.ticketCode(_myId!);
     return _section(
       LfgStrings.yourTicket,
       Column(
         children: [
-          Center(child: QrImageView(data: code, size: 180, backgroundColor: Colors.white)),
-          const SizedBox(height: 6),
-          SelectableText(code, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryGreen)),
+          LfgTicketQr(match: m, userId: _myId!),
           const SizedBox(height: 6),
           const Text(
             LfgStrings.ticketNote,
@@ -484,8 +522,52 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     final isMember = _myId != null && m.isMember(_myId!);
     final status = m.status(now);
 
+    final active = (status == LfgStatus.open || status == LfgStatus.confirmed) && now.isBefore(m.start);
+    final repo = AppRepositories.lfg;
+
     Widget? button;
-    if (!isMember && m.isClaimable(now)) {
+    if (m.myStatus == LfgMyStatus.invited && active) {
+      button = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(LfgStrings.invitedNote, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _redButton(LfgStrings.declineInvite, _declineInvite)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _isBusy ? null : _acceptInvite,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.authPrimary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: Text(LfgStrings.acceptInvite(m.depositPerSlot), style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    } else if (m.myStatus == LfgMyStatus.pendingApproval && active) {
+      button = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(LfgStrings.pendingApprovalNote,
+              textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity, child: _redButton(LfgStrings.withdrawRequest, _withdraw)),
+        ],
+      );
+    } else if (isMember && active && m.isHostedBy(_myId!) && !repo.hostCanLeave) {
+      // Host (BE): không rời được; trước T−48h hủy kèo, sau đó như mọi người.
+      button = now.isBefore(m.leaveDeadline)
+          ? _redButton(LfgStrings.cancelMatch, _hostCancel)
+          : _lateActions(m, now, status);
+    } else if (!isMember && m.isClaimable(now)) {
       button = ElevatedButton.icon(
         onPressed: _isBusy ? null : _claim,
         icon: const Icon(Icons.flash_on, color: Colors.white),
@@ -498,27 +580,12 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
-    } else if (isMember && status == LfgStatus.open) {
-      // Host còn một mình: rời cũng là hủy kèo.
+    } else if (isMember && active && now.isBefore(m.leaveDeadline)) {
+      // Trước T−48h ai cũng rời được (hoàn 100%). Host còn một mình: rời cũng là hủy kèo.
       final alone = m.members.length == 1;
       button = _redButton(alone ? LfgStrings.cancelMatch : LfgStrings.leave, _leave);
-    } else if (isMember && status == LfgStatus.confirmed) {
-      final canRequest = now.isBefore(m.cancelRequestDeadline);
-      final hasRequest = m.activeCancelRequest(now) != null;
-      button = Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            canRequest ? LfgStrings.confirmedNote : LfgStrings.tooLateNote,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
-          if (canRequest && !hasRequest) ...[
-            const SizedBox(height: 8),
-            SizedBox(width: double.infinity, child: _redButton(LfgStrings.requestCancel, _requestCancel)),
-          ],
-        ],
-      );
+    } else if (isMember && active) {
+      button = _lateActions(m, now, status);
     }
     if (button == null) return null;
     return SafeArea(
@@ -527,6 +594,26 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
         decoration: const BoxDecoration(color: AppColors.white, border: Border(top: BorderSide(color: AppColors.divider))),
         child: SizedBox(width: double.infinity, child: button),
       ),
+    );
+  }
+
+  /// Sau T−48h: từ T−48h tới T−24h kèo đã chốt chỉ hủy được khi tất cả đồng ý; sau T−24h không hủy được.
+  Widget _lateActions(LfgMatch m, DateTime now, LfgStatus status) {
+    final canRequest = status == LfgStatus.confirmed && now.isBefore(m.cancelRequestDeadline);
+    final hasRequest = m.activeCancelRequest(now) != null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          canRequest ? LfgStrings.confirmedNote : LfgStrings.tooLateNote,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        if (canRequest && !hasRequest) ...[
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity, child: _redButton(LfgStrings.requestCancel, _requestCancel)),
+        ],
+      ],
     );
   }
 

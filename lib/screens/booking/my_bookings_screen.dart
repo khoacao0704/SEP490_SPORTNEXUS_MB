@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/strings/booking_strings.dart';
+import '../../core/strings/split_payment_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/booking_repository.dart';
 import '../../models/booking.dart';
 import '../../models/split_payment.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/booking/booking_ticket_qr.dart';
 import '../../widgets/main_drawer.dart';
 import '../../widgets/review/pending_review_banner.dart';
 import '../lfg/lfg_screen.dart';
+import 'split_booking_screen.dart';
 import 'split_payment_screen.dart';
 
 /// Tab "Lịch Đặt & QR": sân đã đặt (vé QR, hủy đặt) và kèo LFG của tôi (rời / yêu cầu hủy trong chi tiết kèo).
@@ -142,26 +144,78 @@ class _BookingsViewState extends State<_BookingsView> {
             ? BookingStrings.confirmCancelFree(refund)
             : BookingStrings.confirmCancelLate(b.cancelFee(now), refund)) +
         (b.paymentType == BookingPaymentType.split ? BookingStrings.splitCancelNote : '');
+    // Không tải được danh sách lý do thì vẫn cho hủy (BE dùng lý do mặc định).
+    var reasons = const <CancelReason>[];
+    try {
+      reasons = await AppRepositories.booking.getCancelReasons();
+    } catch (_) {
+      // bỏ qua: hủy không cần lý do
+    }
+    if (!mounted) return;
+    CancelReason? picked;
+    final noteController = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text(BookingStrings.confirmCancelTitle),
-        content: Text(message),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(BookingStrings.keep)),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            child: const Text(BookingStrings.cancel),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text(BookingStrings.confirmCancelTitle),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(message),
+                if (reasons.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text(BookingStrings.cancelReasonTitle, style: TextStyle(fontWeight: FontWeight.bold)),
+                  RadioGroup<CancelReason>(
+                    groupValue: picked,
+                    onChanged: (r) => setDialogState(() => picked = r),
+                    child: Column(
+                      children: [
+                        for (final r in reasons)
+                          RadioListTile<CancelReason>(
+                            value: r,
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(r.label, style: const TextStyle(fontSize: 13)),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (picked?.isCustom ?? false)
+                    TextField(
+                      controller: noteController,
+                      maxLength: 200,
+                      decoration: const InputDecoration(hintText: BookingStrings.cancelReasonHint, isDense: true),
+                    ),
+                ],
+              ],
+            ),
           ),
-        ],
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(BookingStrings.keep)),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+              child: const Text(BookingStrings.cancel),
+            ),
+          ],
+        ),
       ),
     );
+    final note = noteController.text;
+    noteController.dispose();
     if (ok != true || !mounted) return;
 
     setState(() => _cancellingId = b.id);
     try {
-      final cancelled = await AppRepositories.booking.cancelBooking(b.id);
+      final reason = picked;
+      final cancelled = await AppRepositories.booking.cancelBooking(
+        b.id,
+        reasonCode: reason == null || reason.isCustom ? null : reason.code,
+        reason: reason == null ? null : (reason.isCustom ? note : reason.label),
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(BookingStrings.cancelledMessage(cancelled.refunded))),
@@ -185,9 +239,7 @@ class _BookingsViewState extends State<_BookingsView> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            QrImageView(data: b.ticketCode, size: 200, backgroundColor: Colors.white),
-            const SizedBox(height: 8),
-            SelectableText(b.ticketCode, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen)),
+            BookingTicketQr(booking: b),
             const SizedBox(height: 8),
             Text('${b.facilityName}\n${b.sportCourtLabel}\n${b.schedule}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 8),
@@ -203,6 +255,11 @@ class _BookingsViewState extends State<_BookingsView> {
         ],
       ),
     );
+  }
+
+  Future<void> _openSplitBooking(Booking b) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => SplitBookingScreen(bookingId: b.id)));
+    _load();
   }
 
   Future<void> _openSplit(SplitPayment s) async {
@@ -287,11 +344,14 @@ class _BookingsViewState extends State<_BookingsView> {
   Widget _buildCard(Booking b, DateTime now) {
     final status = b.status(now);
     final isBooker = b.bookerId == _myId;
-    final (label, bg, fg) = switch (status) {
-      BookingStatus.upcoming => (BookingStrings.statusUpcoming, AppColors.tagGreenBg, AppColors.tagGreenText),
-      BookingStatus.cancelled => (BookingStrings.statusCancelled, const Color(0xFFFFEBEE), const Color(0xFFC62828)),
-      BookingStatus.completed => (BookingStrings.statusCompleted, AppColors.divider, AppColors.textSecondary),
-    };
+    final awaiting = b.awaitingPayment && status == BookingStatus.upcoming;
+    final (label, bg, fg) = awaiting
+        ? (SplitPaymentStrings.awaiting, AppColors.tagOrangeBg, AppColors.tagOrangeText)
+        : switch (status) {
+            BookingStatus.upcoming => (BookingStrings.statusUpcoming, AppColors.tagGreenBg, AppColors.tagGreenText),
+            BookingStatus.cancelled => (BookingStrings.statusCancelled, const Color(0xFFFFEBEE), const Color(0xFFC62828)),
+            BookingStatus.completed => (BookingStrings.statusCompleted, AppColors.divider, AppColors.textSecondary),
+          };
     final deadline = '${Formatters.time(b.freeCancelDeadline)} ${Formatters.weekdayDayMonth(b.freeCancelDeadline)}';
 
     return Container(
@@ -335,6 +395,8 @@ class _BookingsViewState extends State<_BookingsView> {
             _row('', BookingStrings.remainingAtCourt(b.remainingAtCourt), color: AppColors.tagOrangeText),
           if (status == BookingStatus.cancelled && b.refunded > 0)
             _row('', BookingStrings.refunded(b.refunded), color: AppColors.primaryGreen),
+          if (awaiting && b.myShare > 0)
+            _row('', SplitPaymentStrings.yourShare(b.myShare), color: AppColors.tagOrangeText),
           if (!isBooker) _row('', BookingStrings.contributor, color: AppColors.textSecondary),
           if (status == BookingStatus.upcoming) ...[
             const SizedBox(height: 8),
@@ -364,9 +426,10 @@ class _BookingsViewState extends State<_BookingsView> {
                 ],
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => _showTicket(b),
-                    icon: const Icon(Icons.qr_code_2, size: 18),
-                    label: const Text(BookingStrings.ticket),
+                    // Đơn chia tiền chưa đủ thì chưa có vé: mở màn chia tiền (góp / theo dõi).
+                    onPressed: () => awaiting ? _openSplitBooking(b) : _showTicket(b),
+                    icon: Icon(awaiting ? Icons.groups_outlined : Icons.qr_code_2, size: 18),
+                    label: Text(awaiting ? SplitPaymentStrings.openSplit : BookingStrings.ticket),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primaryGreen,
                       foregroundColor: Colors.white,

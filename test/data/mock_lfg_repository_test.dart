@@ -183,11 +183,20 @@ void main() {
   });
 
   group('kèo đã chốt (đủ người)', () {
-    test('đủ người là chốt ngay: không rời được, hết nhận người', () async {
+    test('đủ người là chốt: hết nhận người; trước T−48h vẫn rời được (hoàn 100%), chỗ mở lại', () async {
       final full = await repo.simulatePlayerJoined(seedId(3));
       expect(full.status(clock), LfgStatus.confirmed);
       expect(full.isClaimable(clock), isFalse);
-      expect(() => repo.leaveMatch(seedId(3)), lfgError(LfgStrings.cannotLeaveConfirmed));
+      expect(clock.isBefore(full.leaveDeadline), isTrue);
+
+      expect(await repo.leaveMatch(seedId(3)), full.depositPerSlot);
+      expect((await repo.getMatch(seedId(3))).isClaimable(clock), isTrue);
+    });
+
+    test('hạn tự rời kèo là 48 giờ trước giờ chơi (trùng hạn đủ người)', () async {
+      final match = await repo.getMatch(seedId(3));
+      expect(match.leaveDeadline, match.start.subtract(const Duration(hours: 48)));
+      expect(match.leaveDeadline, match.fillDeadline);
     });
 
     test('kèo chưa đủ người thì không gửi yêu cầu hủy (rời kèo là được hoàn)', () async {

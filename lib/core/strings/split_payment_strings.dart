@@ -55,6 +55,40 @@ class SplitPaymentStrings {
   static const String createdMessage = 'Đã trả phần của bạn. Gửi link cho nhóm để trả nốt trong 30 phút.';
   static const String paidMessage = 'Thanh toán thành công!';
 
+  // Mời bạn góp tiền theo tài khoản (BE thật)
+  static const String inviteHint = 'Mời bạn bè bằng số điện thoại; mọi người (gồm bạn) chia đều tiền sân.';
+  static const String invitePhoneHint = 'SĐT của bạn bè';
+  static const String inviteAdd = 'Thêm';
+  static const String inviteByLinkSoon = 'Mời bằng link chia sẻ: đang phát triển.';
+  static String inviteExplain(int people, int each, int mine) =>
+      'Chia $people người: mỗi bạn góp ${Formatters.vnd(each)}, bạn trả ${Formatters.vnd(mine)} ngay. '
+      'Mọi người có 30 phút (không quá giờ chơi) để góp; chưa đủ thì đơn tự hủy và hoàn tiền cho người đã góp.';
+  static const String invitePay = 'Phần của bạn (chia tiền nhóm)';
+  static const String invitedMessage = 'Đã trả phần của bạn và gửi lời mời góp tiền.';
+  static const String playerNotFound = 'Không tìm thấy tài khoản với số điện thoại này.';
+  static const String inviteRequired = 'Vui lòng mời ít nhất 1 người.';
+  static const String alreadyInvited = 'Người này đã có trong danh sách.';
+
+  // Màn chia tiền của một đơn
+  static const String awaiting = 'Chờ góp tiền';
+  static String deadlineIn(String t) => 'Hạn góp còn $t';
+  static const String deadlinePassed = 'Đã hết hạn góp: đơn sẽ tự hủy và hoàn tiền trong ít phút.';
+  static const String hostLabel = 'Người đặt';
+  static const String contributed = 'Đã góp';
+  static const String notContributed = 'Chưa góp';
+  static String payMyShare(int amount) => 'GÓP ${Formatters.vnd(amount)} TỪ VÍ';
+  static const String joinedMessage = 'Đã góp phần của bạn.';
+  static String payRemaining(int amount) => 'Trả nốt phần còn lại (${Formatters.vnd(amount)})';
+  static const String payRemainingConfirm =
+      'Bạn trả thay phần của những người chưa góp; họ sẽ bị bỏ khỏi đơn và đơn được xác nhận ngay.';
+  static const String payRemainingDone = 'Đã trả nốt, đặt sân thành công.';
+  static const String inviteMore = 'Mời thêm bạn';
+  static const String inviteMoreNote = 'Chỉ mời thêm được khi chưa ai góp; phần tiền sẽ được chia lại.';
+  static const String openSplit = 'Xem chia tiền';
+  static const String confirm = 'Xác nhận';
+  static const String cancel = 'Để sau';
+  static const String fullyPaidNote = 'Đã đủ tiền • đặt sân thành công. Vé QR ở mục Lịch Đặt & QR.';
+
   // Lỗi
   static const String loginRequired = 'Vui lòng đăng nhập để chia tiền.';
   static const String invalidParts = 'Chỉ chia được 2 hoặc 4 phần.';

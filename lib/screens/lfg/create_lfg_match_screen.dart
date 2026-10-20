@@ -32,7 +32,14 @@ class CreateLfgMatchScreen extends StatefulWidget {
 class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
   Sport _sport = Sport.badminton;
   late LfgFormat _format = LfgFormat.forSport(_sport).last;
-  late CourtType _courtType = CourtType.forSport(_sport).first;
+  late CourtType _courtType = _courtTypesFor(_sport).first;
+
+  /// Sân chưa phân loại (dữ liệu BE) thì chỉ có sân tiêu chuẩn: ẩn bước chọn số người mỗi đội.
+  static List<CourtType> _courtTypesFor(Sport sport) =>
+      AppRepositories.lfgFacility.supportsCourtTypes ? CourtType.forSport(sport) : const [CourtType.standard];
+
+  /// Địa chỉ ngắn của cơ sở: quận nếu có, không thì địa chỉ đầy đủ (dữ liệu BE không tách quận).
+  static String _area(Facility f) => f.district.isEmpty ? f.address : f.district;
   String _city = VietnamCities.hoChiMinh.name;
   String? _district;
   List<String> _districts = [];
@@ -134,7 +141,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     setState(() {
       _sport = sport;
       _format = LfgFormat.forSport(sport).last;
-      _courtType = CourtType.forSport(sport).first;
+      _courtType = _courtTypesFor(sport).first;
     });
     _loadFacilities();
   }
@@ -199,11 +206,12 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             format: _format,
             courtType: slot.courtType,
             facilityName: '${facility.name} • ${slot.courtName}',
-            district: facility.district,
+            district: _area(facility),
             start: slot.start,
             end: slot.end,
           ),
-          amount: LfgRules.depositPerSlot(slot.price, _format.totalSlots),
+          amount: AppRepositories.lfg.createCost(slot.price, _format),
+          amountLabel: AppRepositories.lfg.hostPaysCourt ? LfgStrings.amountToPayCourt : LfgStrings.amountToPay,
           expiresAt: hold.expiresAt,
           onConfirm: () => AppRepositories.lfg.createMatch(
             hold: hold,
@@ -271,7 +279,9 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            LfgStrings.depositExplain(_format.label, _format.totalSlots, _format.isTeam),
+            AppRepositories.lfg.hostPaysCourt
+                ? LfgStrings.hostPaysCourtNote
+                : LfgStrings.depositExplain(_format.label, _format.totalSlots, _format.isTeam),
             style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
           if (!_courtType.isStandard) ...[
@@ -281,7 +291,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final t in CourtType.forSport(_sport))
+                for (final t in _courtTypesFor(_sport))
                   CourtTypeChip(
                     type: t,
                     selected: t == _courtType,
@@ -298,6 +308,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
           ],
           const SizedBox(height: 18),
           _title(LfgStrings.stepFacility),
+          if (AppRepositories.lfgFacility.supportsAreaFilter)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -431,7 +442,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                           children: [
                             Text(f.name, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain)),
                             Text(
-                              '${f.district} • ★ ${f.rating}',
+                              '${_area(f)} • ★ ${f.rating}',
                               style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                             ),
                           ],
@@ -452,7 +463,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
   }
 
   Widget _buildBottomBar(TimeSlot slot) {
-    final deposit = LfgRules.depositPerSlot(slot.price, _format.totalSlots);
+    final deposit = AppRepositories.lfg.createCost(slot.price, _format);
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -488,7 +499,10 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
               ),
               child: _isSubmitting
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text(LfgStrings.continueToPay, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  : Text(
+                      AppRepositories.lfg.hostPaysCourt ? LfgStrings.continueToPayCourt : LfgStrings.continueToPay,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
             ),
           ],
         ),

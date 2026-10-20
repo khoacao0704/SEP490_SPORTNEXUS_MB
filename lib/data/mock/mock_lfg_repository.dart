@@ -202,6 +202,34 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     return match;
   }
 
+  // ---- Khác biệt với BE thật ----
+
+  @override
+  bool get supportsAreaFilter => true;
+
+  @override
+  bool get hostCanLeave => true;
+
+  /// Host chỉ cọc phần của mình.
+  @override
+  bool get hostPaysCourt => false;
+
+  @override
+  int createCost(int courtPrice, LfgFormat format) => LfgRules.depositPerSlot(courtPrice, format.totalSlots);
+
+  /// Bản giả lập: host rời kèo thay cho hủy kèo; không có lời mời.
+  @override
+  Future<LfgMatch> cancelMatch(String matchId) async => throw const LfgException(LfgStrings.notFound);
+
+  @override
+  Future<LfgMatch> acceptInvitation(String matchId) async => throw const LfgException(LfgStrings.notFound);
+
+  @override
+  Future<void> declineInvitation(String matchId) async => throw const LfgException(LfgStrings.notFound);
+
+  @override
+  Future<String> getTicketCode(LfgMatch match, String userId) async => match.ticketCode(userId);
+
   @override
   Future<int> leaveMatch(String matchId) async {
     await _delay();
@@ -209,7 +237,8 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     final match = await _find(matchId, me.id);
     if (!match.isMember(me.id)) throw const LfgException(LfgStrings.notMember);
     _ensureNotEnded(match);
-    if (match.status(_now()) == LfgStatus.confirmed) throw const LfgException(LfgStrings.cannotLeaveConfirmed);
+    // Trước T−48h ai cũng rời được (kể cả kèo đã đủ người); sau đó phải gửi yêu cầu hủy.
+    if (!_now().isBefore(match.leaveDeadline)) throw const LfgException(LfgStrings.leaveTooLate);
 
     final payments = await _payments();
     final refund = payments[matchId]?.remove(me.id) ?? match.depositPerSlot;

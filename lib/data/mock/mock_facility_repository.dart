@@ -36,6 +36,9 @@ class MockFacilityRepository implements FacilityRepository {
   bool get supportsAreaFilter => true;
 
   @override
+  bool get supportsCourtTypes => true;
+
+  @override
   Future<List<FacilitySearchResult>> searchFacilities(FacilitySearchQuery query) async {
     await _delay();
     final sport = query.sport;
@@ -47,6 +50,13 @@ class MockFacilityRepository implements FacilityRepository {
         .where((f) =>
             TextUtils.containsIgnoringDiacritics(f.name, query.keyword) ||
             TextUtils.containsIgnoringDiacritics(f.address, query.keyword))
+        // Như BE: có ít nhất một loại sân (đúng môn nếu có) giá nằm trong khoảng.
+        .where((f) => f.offerings.any((o) =>
+            (sport == null || o.sport == sport) &&
+            (query.minPrice == null || o.priceFrom >= query.minPrice!) &&
+            (query.maxPrice == null || o.priceFrom <= query.maxPrice!)))
+        .where((f) => query.minRating == null || f.rating >= query.minRating!)
+        .where((f) => query.amenityIds.every(f.amenities.contains))
         .map((f) => FacilitySearchResult(
               facility: f,
               distanceKm: query.userLocation == null ? null : GeoUtils.distanceKm(query.userLocation!, f.location),
@@ -65,10 +75,21 @@ class MockFacilityRepository implements FacilityRepository {
         }
       case FacilitySort.priceLowToHigh:
         results.sort((a, b) => priceOf(a).compareTo(priceOf(b)));
+      case FacilitySort.priceHighToLow:
+        results.sort((a, b) => priceOf(b).compareTo(priceOf(a)));
       case FacilitySort.rating:
         results.sort((a, b) => b.facility.rating.compareTo(a.facility.rating));
+      case FacilitySort.newest:
+        break; // dữ liệu mẫu không có ngày tạo: giữ thứ tự sẵn có
     }
     return results;
+  }
+
+  /// Dữ liệu mẫu chỉ có tên tiện ích: dùng tên làm id.
+  @override
+  Future<List<Amenity>> getAmenities() async {
+    final names = _facilities.expand((f) => f.amenities).toSet().toList()..sort();
+    return names.map((n) => Amenity(id: n, name: n)).toList();
   }
 
   @override

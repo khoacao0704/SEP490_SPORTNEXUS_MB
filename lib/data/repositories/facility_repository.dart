@@ -18,7 +18,13 @@ abstract class FacilityRepository {
   /// false: không lọc được theo tỉnh/quận (UI ẩn bộ lọc khu vực, [getDistricts] trả rỗng).
   bool get supportsAreaFilter;
 
+  /// false: sân con không phân loại (sân 5/7/11, 3x3/5x5...) — mọi sân là [CourtType.standard], UI ẩn chọn loại sân.
+  bool get supportsCourtTypes;
+
   Future<List<FacilitySearchResult>> searchFacilities(FacilitySearchQuery query);
+
+  /// Danh mục tiện ích cho bộ lọc tìm sân.
+  Future<List<Amenity>> getAmenities();
 
   /// Các quận/huyện trong [city] đang có cơ sở hoạt động (dùng cho bộ lọc).
   Future<List<String>> getDistricts(String city);

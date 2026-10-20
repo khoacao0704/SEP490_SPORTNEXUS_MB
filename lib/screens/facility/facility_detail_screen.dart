@@ -9,6 +9,7 @@ import '../../models/facility.dart';
 import '../../models/sport.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/facility/amenity_icon.dart';
 import '../../widgets/facility/court_type_selector.dart';
 import '../../widgets/facility/facility_card.dart';
 import '../../widgets/facility/facility_map.dart';
@@ -165,7 +166,8 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
         builder: (_) => BookingCheckoutScreen(
           sport: _courtType.isStandard ? _sport.label : '${_sport.label} • ${_courtType.label}',
           courtName: _facility.name,
-          location: '${_facility.district}, ${_facility.city}',
+          // Dữ liệu BE không tách quận / thành phố: dùng địa chỉ đầy đủ.
+          location: _facility.city.isEmpty ? _facility.address : '${_facility.district}, ${_facility.city}',
           dateTime: describeSlotSchedule(hold.slots),
           totalAmount: hold.totalPrice,
           initialSecondsRemaining: hold.secondsRemaining(DateTime.now()),
@@ -477,6 +479,18 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
             freeSlots: freeSlotsByCourt(_slots, _now),
             onSelected: (court) => setState(() => _court = court),
           ),
+          if (_facility.courtDetailOf(_sport, _court) case final detail?) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.info_outline, size: 14, color: AppColors.textSecondary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(detail, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
         ],
         const Padding(
@@ -525,7 +539,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.check_circle, size: 14, color: AppColors.primaryGreen),
+                            Icon(amenityIcon(_facility.amenityIcons[a]), size: 14, color: AppColors.primaryGreen),
                             const SizedBox(width: 4),
                             Text(a, style: const TextStyle(fontSize: 12, color: AppColors.textMain)),
                           ],

@@ -76,6 +76,45 @@ void main() {
       final prices = results.map((r) => r.facility.offeringFor(Sport.badminton)!.priceFrom).toList();
       expect(prices, orderedEquals([...prices]..sort()));
     });
+
+    test('giá cao → thấp', () async {
+      final results = await repo.searchFacilities(const FacilitySearchQuery(
+        city: 'Hồ Chí Minh',
+        sport: Sport.badminton,
+        sort: FacilitySort.priceHighToLow,
+      ));
+      final prices = results.map((r) => r.facility.offeringFor(Sport.badminton)!.priceFrom).toList();
+      expect(prices, orderedEquals([...prices]..sort((a, b) => b.compareTo(a))));
+    });
+
+    test('lọc khoảng giá (theo loại sân của môn), số sao tối thiểu, đủ tiện ích', () async {
+      final byPrice = await repo.searchFacilities(const FacilitySearchQuery(
+        city: 'Hồ Chí Minh',
+        sport: Sport.badminton,
+        minPrice: 100000,
+        maxPrice: 130000,
+      ));
+      expect(byPrice, isNotEmpty);
+      expect(
+        byPrice.every((r) => r.facility.offeringsFor(Sport.badminton).any((o) => o.priceFrom >= 100000 && o.priceFrom <= 130000)),
+        isTrue,
+      );
+
+      final byRating = await repo.searchFacilities(const FacilitySearchQuery(city: 'Hồ Chí Minh', minRating: 4.7));
+      expect(byRating, isNotEmpty);
+      expect(byRating.every((r) => r.facility.rating >= 4.7), isTrue);
+
+      final byAmenities = await repo.searchFacilities(
+          const FacilitySearchQuery(city: 'Hồ Chí Minh', amenityIds: {'Trong nhà', 'Căn tin'}));
+      expect(byAmenities, isNotEmpty);
+      expect(byAmenities.every((r) => r.facility.amenities.toSet().containsAll(['Trong nhà', 'Căn tin'])), isTrue);
+    });
+  });
+
+  test('danh mục tiện ích lấy từ dữ liệu mẫu, không trùng', () async {
+    final amenities = await repo.getAmenities();
+    expect(amenities.map((a) => a.name), containsAll(['Bãi giữ xe', 'Căn tin', 'Wifi']));
+    expect(amenities.map((a) => a.id).toSet().length, amenities.length);
   });
 
   test('getDistricts trả về các quận có cơ sở, không trùng', () async {
