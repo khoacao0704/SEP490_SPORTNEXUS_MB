@@ -50,7 +50,7 @@ class AppRepositories {
   /// chuyển sang [facility] khi nối LFG.
   static FacilityRepository lfgFacility = _mockFacility;
 
-  /// Ví người chơi: số dư + lịch sử giao dịch thật (nạp / rút BE chưa có → báo đang phát triển).
+  /// Ví người chơi: số dư, lịch sử, nạp tiền PayOS. Rút tiền tạm tắt (BE chỉ mở cho Chủ sân) → báo đang phát triển.
   static WalletRepository wallet = ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api);
 
   /// Ví mà các luồng chưa nối API (đặt sân, chia tiền, LFG, giải đấu) kiểm tra số dư / trừ tiền / nạp thêm.

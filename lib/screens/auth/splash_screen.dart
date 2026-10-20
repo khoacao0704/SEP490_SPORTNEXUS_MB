@@ -22,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(const Duration(seconds: 1)); // Short delay for splash
     var user = await AppRepositories.auth.getCurrentUser();
     if (user != null && !isRoleAllowedOnMobile(user.role)) {
-      await AppRepositories.auth.logout();
+      await AppRepositories.auth.logout(revoke: false);
       user = null;
     }
 

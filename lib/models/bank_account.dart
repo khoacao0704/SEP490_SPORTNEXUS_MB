@@ -43,27 +43,36 @@ class BankAccount {
 
 /// Lệnh nạp tiền qua VietQR: người dùng chuyển khoản đúng số tiền + nội dung, BE xác nhận rồi mới cộng ví.
 class TopUpOrder {
+  /// Mã lệnh nạp (BE: orderCode của PayOS) để hỏi trạng thái / hủy.
   final String transactionId;
   final int amount;
 
-  /// Nội dung chuyển khoản bắt buộc để BE đối soát, ví dụ "SPN 8F3K2Q".
-  final String transferContent;
-  final String receiverBankName;
-  final String receiverAccountNumber;
-  final String receiverAccountName;
+  /// Thông tin chuyển khoản thủ công; `null` khi cổng thanh toán không cung cấp (PayOS chỉ trả mã QR + trang thanh toán).
+  final String? transferContent;
+  final String? receiverBankName;
+  final String? receiverAccountNumber;
+  final String? receiverAccountName;
 
-  /// Chuỗi dữ liệu vẽ mã QR (do BE cung cấp khi nối API).
+  /// Chuỗi dữ liệu vẽ mã QR.
   final String qrData;
+
+  /// Trang thanh toán của cổng PayOS (mở bằng trình duyệt); `null` nếu không có.
+  final String? checkoutUrl;
+
+  /// Hết thời gian này mà chưa nhận được tiền thì app hủy lệnh.
   final DateTime expiresAt;
 
   const TopUpOrder({
     required this.transactionId,
     required this.amount,
-    required this.transferContent,
-    required this.receiverBankName,
-    required this.receiverAccountNumber,
-    required this.receiverAccountName,
+    this.transferContent,
+    this.receiverBankName,
+    this.receiverAccountNumber,
+    this.receiverAccountName,
     required this.qrData,
+    this.checkoutUrl,
     required this.expiresAt,
   });
+
+  bool get hasTransferInfo => receiverAccountNumber != null;
 }

@@ -62,6 +62,10 @@ class WalletStrings {
   static const String done = 'Hoàn tất';
   static const String understood = 'Đã hiểu';
   static const String onlyVietQr = 'Hiện tại chỉ hỗ trợ nạp tiền qua VietQR';
+  static const String openCheckout = 'Mở trang thanh toán PayOS';
+  static const String cannotOpenCheckout = 'Không mở được trang thanh toán. Vui lòng quét mã QR.';
+  static const String topUpFailedTitle = 'Nạp tiền không thành công';
+  static const String topUpFailedMessage = 'Lệnh nạp đã bị hủy hoặc thanh toán thất bại. Ví của bạn không bị trừ tiền.';
   static const String minTopUpError = 'Số tiền nạp tối thiểu là';
   static const String maxTopUpError = 'Số tiền nạp tối đa là';
 
@@ -95,7 +99,9 @@ class WalletStrings {
   static const String accountHolderNote = 'In hoa, không dấu, trùng với tên chủ tài khoản ngân hàng.';
   static const String saveAccount = 'LƯU TÀI KHOẢN';
   static const String bankRequired = 'Vui lòng chọn ngân hàng';
-  static const String invalidAccountNumber = 'Số tài khoản gồm 6–19 chữ số';
+  static const String invalidAccountNumber = 'Số tài khoản gồm 6–20 chữ số';
+  static const String changeBankAccount = 'Đổi tài khoản ngân hàng';
+  static String withdrawTo(String bankName) => 'Rút tiền về $bankName';
   static const String invalidAccountHolder = 'Chỉ gồm chữ cái in hoa không dấu và khoảng trắng';
 
   // Lỗi

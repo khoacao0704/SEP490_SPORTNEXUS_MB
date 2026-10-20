@@ -13,10 +13,13 @@ import 'reset_password_screen.dart';
 /// Xác thực OTP 6 số, dùng chung cho đăng ký và quên mật khẩu.
 /// Pop về `true` khi toàn bộ luồng (kể cả đặt lại mật khẩu) hoàn tất.
 class OtpVerificationScreen extends StatefulWidget {
-  final String email;
+  final String phone;
   final OtpPurpose purpose;
 
-  const OtpVerificationScreen({super.key, required this.email, required this.purpose});
+  /// Mã OTP máy chủ thử nghiệm trả về (chưa có SMS thật); `null` thì không hiện.
+  final String? devOtp;
+
+  const OtpVerificationScreen({super.key, required this.phone, required this.purpose, this.devOtp});
 
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
@@ -33,10 +36,12 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   int _resendSecondsLeft = _resendCooldownSeconds;
   bool _isVerifying = false;
   bool _isResending = false;
+  String? _devOtp;
 
   @override
   void initState() {
     super.initState();
+    _devOtp = widget.devOtp;
     _startResendCooldown();
     _otpController.addListener(() => setState(() {}));
   }
@@ -63,8 +68,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   Future<void> _handleResend() async {
     setState(() => _isResending = true);
     try {
-      await AppRepositories.auth.resendOtp(widget.email, widget.purpose);
+      final devOtp = await AppRepositories.auth.resendOtp(widget.phone, widget.purpose);
       if (!mounted) return;
+      _devOtp = devOtp;
       _otpController.clear();
       _startResendCooldown();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(AuthStrings.otpResent)));
@@ -85,16 +91,16 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     setState(() => _isVerifying = true);
     try {
       if (widget.purpose == OtpPurpose.register) {
-        await AppRepositories.auth.verifyRegisterOtp(widget.email, otp);
+        await AppRepositories.auth.verifyRegisterOtp(widget.phone, otp);
         if (mounted) Navigator.pop(context, true);
       } else {
-        final token = await AppRepositories.auth.verifyResetOtp(widget.email, otp);
+        final token = await AppRepositories.auth.verifyResetOtp(widget.phone, otp);
         if (!mounted) return;
         setState(() => _isVerifying = false);
         final done = await Navigator.push<bool>(
           context,
           MaterialPageRoute(
-            builder: (_) => ResetPasswordScreen(email: widget.email, resetToken: token),
+            builder: (_) => ResetPasswordScreen(phone: widget.phone, resetToken: token),
           ),
         );
         if (done == true && mounted) Navigator.pop(context, true);
@@ -112,8 +118,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   Widget build(BuildContext context) {
     return AuthCardScaffold(
       title: AuthStrings.otpTitle,
-      subtitle: AuthStrings.otpSubtitle(widget.email),
-      icon: Icons.mark_email_read_outlined,
+      subtitle: AuthStrings.otpSubtitle(widget.phone),
+      icon: Icons.sms_outlined,
       showBackButton: true,
       child: Column(
         children: [
@@ -127,6 +133,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           ),
           const SizedBox(height: 20),
           _buildResendRow(),
+          if (_devOtp != null) ...[
+            const SizedBox(height: 12),
+            Text(AuthStrings.devOtpHint(_devOtp!), style: const TextStyle(fontSize: 13, color: AppColors.authSubtle)),
+          ],
         ],
       ),
     );

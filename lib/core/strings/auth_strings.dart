@@ -50,7 +50,10 @@ class AuthStrings {
 
   // OTP
   static const String otpTitle = 'Xác Thực OTP';
-  static String otpSubtitle(String email) => 'Mã xác thực gồm 6 chữ số đã được gửi đến\n$email';
+  static String otpSubtitle(String phone) => 'Mã xác thực gồm 6 chữ số đã được gửi đến số điện thoại\n$phone';
+
+  /// Chỉ hiện khi máy chủ thử nghiệm trả mã OTP (chưa có SMS thật).
+  static String devOtpHint(String code) => 'Mã OTP thử nghiệm: $code';
   static const String otpVerifyButton = 'XÁC THỰC';
   static const String otpNotReceived = 'Chưa nhận được mã? ';
   static const String otpResend = 'Gửi lại mã';
@@ -60,7 +63,7 @@ class AuthStrings {
 
   // Quên / đặt lại mật khẩu
   static const String forgotTitle = 'Quên Mật Khẩu';
-  static const String forgotSubtitle = 'Nhập email đã đăng ký, chúng tôi sẽ gửi mã OTP để đặt lại mật khẩu';
+  static const String forgotSubtitle = 'Nhập số điện thoại đã đăng ký, chúng tôi sẽ gửi mã OTP để đặt lại mật khẩu';
   static const String sendOtpButton = 'GỬI MÃ OTP';
   static const String resetTitle = 'Đặt Lại Mật Khẩu';
   static const String resetSubtitle = 'Tạo mật khẩu mới cho tài khoản của bạn';
@@ -83,9 +86,10 @@ class AuthStrings {
   static const String phoneTaken = 'Số điện thoại đã được sử dụng';
   static const String usernameTaken = 'Tên đăng nhập đã tồn tại.';
   static const String featureInDevelopment = 'Chức năng đang được phát triển. Vui lòng thử lại sau.';
-  static const String emailNotFound = 'Không tìm thấy tài khoản với email này';
+  static const String phoneNotFound = 'Không tìm thấy tài khoản với số điện thoại này';
   static const String wrongOtp = 'Mã OTP không đúng';
   static const String sessionExpired = 'Phiên đặt lại mật khẩu đã hết hạn. Vui lòng thử lại.';
+  static const String registerExpired = 'Phiên đăng ký đã hết hạn. Vui lòng đăng ký lại.';
 
   // Phân luồng theo vai trò
   static const String ownerPendingTitle = 'Giao diện Chủ sân';

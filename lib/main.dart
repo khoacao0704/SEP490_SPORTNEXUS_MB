@@ -19,7 +19,7 @@ Future<void> _onSessionExpired() async {
   if (_handlingExpiry) return; // nhiều request cùng bị 401 một lúc
   _handlingExpiry = true;
   try {
-    await AppRepositories.auth.logout();
+    await AppRepositories.auth.logout(revoke: false); // phiên đã bị thu hồi trên BE
     appNavigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,

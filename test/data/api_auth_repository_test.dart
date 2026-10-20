@@ -192,34 +192,69 @@ void main() {
       role: UserRole.courtOwner,
     );
 
-    test('gửi đúng dữ liệu, Chủ sân gửi role "owner"', () async {
-      server.routes['POST /api/auth/register'] = (
-        200,
-        {'statusCode': 200, 'message': 'Registration successful', 'data': null},
+    Map<String, dynamic> ok(Object? data) => {'statusCode': 200, 'message': 'OK', 'data': data};
+    Matcher authError(String message) => throwsA(isA<AuthException>().having((e) => e.message, 'message', message));
+
+    void otpSent({String? devOtp}) => server.routes['POST /api/auth/send-otp'] = (
+      200,
+      ok({'phone': '0912345678', 'type': 'REGISTER', 'expiresInSeconds': 300, 'devOtp': devOtp}),
+    );
+
+    test('bước 1 chỉ gửi OTP REGISTER về SĐT (chưa tạo tài khoản), trả devOtp của máy chủ thử nghiệm', () async {
+      otpSent(devOtp: '482913');
+      expect(repo.supportsOtp, isTrue);
+      expect(await repo.register(request), '482913');
+      expect(server.requests.single.path, '/api/auth/send-otp');
+      expect(server.requests.single.data, {'phone': '0912345678', 'type': 'REGISTER'});
+      expect(server.requests.single.headers['Authorization'], isNull);
+    });
+
+    test('máy chủ thật không trả devOtp → null', () async {
+      otpSent();
+      expect(await repo.register(request), isNull);
+    });
+
+    test('SĐT đã có tài khoản: BE báo ngay ở bước gửi OTP', () async {
+      server.routes['POST /api/auth/send-otp'] = (
+        400,
+        {'statusCode': 400, 'message': 'Số điện thoại này đã được sử dụng bởi một tài khoản khác.', 'data': null},
       );
+      await expectLater(repo.register(request), authError('Số điện thoại này đã được sử dụng bởi một tài khoản khác.'));
+    });
+
+    test('nhập OTP: gửi thông tin đăng ký kèm otpCode, Chủ sân gửi role "owner"', () async {
+      otpSent();
+      server.routes['POST /api/auth/register'] = (200, ok(null));
       await repo.register(request);
-      expect(server.requests.single.data, {
+      await repo.verifyRegisterOtp('0912345678', '482913');
+      expect(server.requests.last.path, '/api/auth/register');
+      expect(server.requests.last.data, {
         'username': 'nguyenvana',
         'password': 'Matkhau123',
         'fullName': 'Nguyễn Văn A',
         'phone': '0912345678',
         'email': 'a@gmail.com',
         'role': 'owner',
+        'otpCode': '482913',
       });
     });
 
-    test('trùng tên đăng nhập: hiện nguyên câu tiếng Việt của BE', () async {
+    test('sai OTP / trùng tên đăng nhập: hiện nguyên câu tiếng Việt của BE, nhập lại được', () async {
+      otpSent();
+      await repo.register(request);
       server.routes['POST /api/auth/register'] = (
         400,
         {'statusCode': 400, 'message': 'Tên đăng nhập đã tồn tại.', 'data': null},
       );
-      await expectLater(
-        repo.register(request),
-        throwsA(isA<AuthException>().having((e) => e.message, 'message', 'Tên đăng nhập đã tồn tại.')),
-      );
+      await expectLater(repo.verifyRegisterOtp('0912345678', '000000'), authError('Tên đăng nhập đã tồn tại.'));
+
+      server.routes['POST /api/auth/register'] = (200, ok(null));
+      await repo.verifyRegisterOtp('0912345678', '482913');
     });
 
     test('lỗi validate kiểu ProblemDetails: lấy câu lỗi đầu tiên', () async {
+      otpSent();
+      await repo.register(request);
       server.routes['POST /api/auth/register'] = (
         400,
         {
@@ -230,18 +265,113 @@ void main() {
           },
         },
       );
+      await expectLater(repo.verifyRegisterOtp('0912345678', '482913'), authError('The Password field is required.'));
+    });
+
+    test('chưa gửi OTP cho SĐT đó thì không tạo tài khoản', () async {
+      await expectLater(repo.verifyRegisterOtp('0912345678', '482913'), authError(AuthStrings.registerExpired));
+      expect(server.requests, isEmpty);
+    });
+
+    test('trùng tên đăng nhập → sửa rồi đăng ký lại cùng SĐT trong 4 phút: dùng lại mã cũ, không xin mã mới', () async {
+      var now = DateTime(2026, 10, 20, 9);
+      repo = ApiAuthRepository(api: api, tokens: tokens, now: () => now);
+      otpSent(devOtp: '482913');
+      server.routes['POST /api/auth/register'] = (200, ok(null));
+
+      expect(await repo.register(request), '482913');
+      now = now.add(const Duration(minutes: 2));
+      const fixed = RegisterRequest(
+        username: 'nguyenvana2',
+        fullName: 'Nguyễn Văn A',
+        email: 'a@gmail.com',
+        phone: '+84912345678', // cùng số, khác cách viết
+        password: 'Matkhau123',
+      );
+      expect(await repo.register(fixed), '482913');
+      expect(server.requests.where((r) => r.path == '/api/auth/send-otp'), hasLength(1));
+
+      await repo.verifyRegisterOtp('+84912345678', '482913');
+      expect((server.requests.last.data as Map)['username'], 'nguyenvana2');
+
+      // Đã đăng ký xong: lần sau xin mã mới.
+      now = now.add(const Duration(minutes: 6));
+      await repo.register(request);
+      expect(server.requests.where((r) => r.path == '/api/auth/send-otp'), hasLength(2));
+    });
+
+    test('mã đã gửi quá 4 phút (sắp hết hạn 5 phút) thì xin mã mới', () async {
+      var now = DateTime(2026, 10, 20, 9);
+      repo = ApiAuthRepository(api: api, tokens: tokens, now: () => now);
+      otpSent();
+      await repo.register(request);
+      now = now.add(const Duration(minutes: 4, seconds: 30));
+      await repo.register(request);
+      expect(server.requests.where((r) => r.path == '/api/auth/send-otp'), hasLength(2));
+    });
+
+    test('đổi sang SĐT khác thì gửi mã mới', () async {
+      otpSent();
+      await repo.register(request);
+      await repo.register(const RegisterRequest(
+        username: 'nguyenvana',
+        fullName: 'Nguyễn Văn A',
+        email: 'a@gmail.com',
+        phone: '0987654321',
+        password: 'Matkhau123',
+      ));
+      expect(server.requests.where((r) => r.path == '/api/auth/send-otp'), hasLength(2));
+    });
+
+    test('gửi lại OTP đăng ký', () async {
+      otpSent(devOtp: '111222');
+      expect(await repo.resendOtp('0912345678', OtpPurpose.register), '111222');
+      expect(server.requests.single.path, '/api/auth/send-otp');
+    });
+  });
+
+  group('quên mật khẩu', () {
+    test('gửi OTP qua forgot-password bằng SĐT; OTP kiểm tra cùng lúc đặt mật khẩu mới', () async {
+      server.routes['POST /api/auth/forgot-password'] = (
+        200,
+        {'statusCode': 200, 'message': 'Nếu thông tin khớp...', 'data': {'expiresInSeconds': 300, 'devOtp': '654321'}},
+      );
+      server.routes['POST /api/auth/reset-password'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
+
+      expect(await repo.requestPasswordReset(' 0912345678 '), '654321');
+      expect(server.requests.single.data, {'identifier': '0912345678'});
+
+      final token = await repo.verifyResetOtp('0912345678', '654321');
+      expect(server.requests, hasLength(1)); // chưa gọi BE ở bước nhập OTP
+
+      await repo.resetPassword('0912345678', token, 'MatKhauMoi1');
+      expect(server.requests.last.path, '/api/auth/reset-password');
+      expect(server.requests.last.data, {
+        'phone': '0912345678',
+        'otpCode': '654321',
+        'newPassword': 'MatKhauMoi1',
+        'confirmPassword': 'MatKhauMoi1',
+      });
+    });
+
+    test('sai OTP: hiện câu của BE', () async {
+      server.routes['POST /api/auth/reset-password'] = (
+        400,
+        {'statusCode': 400, 'message': 'Mã OTP không chính xác hoặc đã hết hạn.', 'data': null},
+      );
       await expectLater(
-        repo.register(request),
-        throwsA(isA<AuthException>().having((e) => e.message, 'message', 'The Password field is required.')),
+        repo.resetPassword('0912345678', '000000', 'MatKhauMoi1'),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', 'Mã OTP không chính xác hoặc đã hết hạn.')),
       );
     });
 
-    test('OTP / quên mật khẩu: báo đang phát triển', () async {
-      expect(repo.supportsOtp, isFalse);
-      await expectLater(
-        repo.requestPasswordReset('a@gmail.com'),
-        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.featureInDevelopment)),
+    test('gửi lại OTP quên mật khẩu gọi lại forgot-password', () async {
+      server.routes['POST /api/auth/forgot-password'] = (
+        200,
+        {'statusCode': 200, 'message': 'OK', 'data': {'expiresInSeconds': 300, 'devOtp': null}},
       );
+      expect(await repo.resendOtp('0912345678', OtpPurpose.resetPassword), isNull);
+      expect(server.requests.single.path, '/api/auth/forgot-password');
     });
   });
 
@@ -338,11 +468,37 @@ void main() {
       expect(unauthorizedCalls, 1);
     });
 
-    test('đăng xuất xóa token và phiên', () async {
+    test('đăng xuất: báo BE thu hồi phiên (có Bearer token), xóa token và phiên', () async {
       await loggedIn(token: validToken);
+      server.routes['POST /api/auth/logout'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
       await repo.logout();
+      expect(server.requests.last.path, '/api/auth/logout');
+      expect(server.requests.last.headers['Authorization'], 'Bearer $validToken');
       expect(await tokens.read(), isNull);
       expect(await repo.getCurrentUser(), isNull);
+    });
+
+    test('đăng xuất khi token đã bị thu hồi / mất mạng: không refresh, không báo hết phiên, vẫn xóa phiên', () async {
+      await loggedIn(token: validToken);
+      server.routes['POST /api/auth/logout'] = (401, {'statusCode': 401, 'message': 'Hết hạn', 'data': null});
+      server.requests.clear();
+      await repo.logout();
+      expect(server.requests.map((r) => r.path), ['/api/auth/logout']);
+      expect(unauthorizedCalls, 0);
+      expect(await tokens.read(), isNull);
+
+      await loggedIn(token: validToken);
+      server.failWith = DioExceptionType.connectionError;
+      await repo.logout();
+      expect(await tokens.read(), isNull);
+    });
+
+    test('phiên hết hạn / Admin bị chặn: chỉ xóa trên máy, không gọi BE', () async {
+      await loggedIn(token: validToken);
+      server.requests.clear();
+      await repo.logout(revoke: false);
+      expect(server.requests, isEmpty);
+      expect(await tokens.read(), isNull);
     });
   });
 

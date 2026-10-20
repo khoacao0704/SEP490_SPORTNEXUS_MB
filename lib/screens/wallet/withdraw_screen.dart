@@ -64,11 +64,12 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
         _selectedAccount ??= accounts.isEmpty ? null : accounts.first;
         _isLoading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _loadError = WalletStrings.loadError;
+        // Câu lỗi của BE (vd. tài khoản chưa được phép rút tiền); lỗi khác thì báo chung.
+        _loadError = e is WalletException ? e.message : WalletStrings.loadError;
       });
     }
   }
@@ -95,7 +96,8 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     );
     if (account == null || !mounted) return;
     setState(() {
-      _accounts = [..._accounts, account];
+      // Chỉ một tài khoản: tài khoản mới thay cho tài khoản cũ.
+      _accounts = _wallet.singleBankAccount ? [account] : [..._accounts, account];
       _selectedAccount = account;
     });
   }
@@ -347,6 +349,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   }
 
   Widget _buildAccountsCard() {
+    final replaceAccount = _wallet.singleBankAccount && _accounts.isNotEmpty;
     return _card(
       title: WalletStrings.receiveAccount,
       child: Column(
@@ -382,11 +385,13 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   subtitle: Text(a.accountHolder, style: const TextStyle(fontSize: 12)),
-                  trailing: IconButton(
-                    tooltip: WalletStrings.removeAccount,
-                    icon: const Icon(Icons.delete_outline, color: AppColors.textSecondary),
-                    onPressed: () => _removeAccount(a),
-                  ),
+                  trailing: _wallet.singleBankAccount
+                      ? null
+                      : IconButton(
+                          tooltip: WalletStrings.removeAccount,
+                          icon: const Icon(Icons.delete_outline, color: AppColors.textSecondary),
+                          onPressed: () => _removeAccount(a),
+                        ),
                 ),
               ),
             );
@@ -395,10 +400,10 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: _addAccount,
-              icon: const Icon(Icons.add, color: AppColors.primaryGreen),
-              label: const Text(
-                WalletStrings.addBankAccount,
-                style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold),
+              icon: Icon(replaceAccount ? Icons.edit_outlined : Icons.add, color: AppColors.primaryGreen),
+              label: Text(
+                replaceAccount ? WalletStrings.changeBankAccount : WalletStrings.addBankAccount,
+                style: const TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold),
               ),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: AppColors.primaryGreen),

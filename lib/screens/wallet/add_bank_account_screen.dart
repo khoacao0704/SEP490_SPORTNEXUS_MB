@@ -28,7 +28,7 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
   bool _bankError = false;
   bool _isSaving = false;
 
-  static final RegExp _accountNumberPattern = RegExp(r'^\d{6,19}$');
+  static final RegExp _accountNumberPattern = RegExp(r'^\d{6,20}$');
   static final RegExp _holderPattern = RegExp(r'^[A-Z ]+$');
 
   @override
@@ -156,7 +156,7 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
             TextFormField(
               controller: _accountNumberController,
               keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(19)],
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(20)],
               decoration: _decoration(WalletStrings.accountNumberHint),
               validator: (v) =>
                   _accountNumberPattern.hasMatch(v?.trim() ?? '') ? null : WalletStrings.invalidAccountNumber,

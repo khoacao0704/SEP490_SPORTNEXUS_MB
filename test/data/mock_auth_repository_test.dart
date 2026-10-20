@@ -87,9 +87,9 @@ void main() {
 
     test('sai OTP bị từ chối, đúng OTP thì đăng nhập được với role Player', () async {
       await repo.register(request);
-      expect(() => repo.verifyRegisterOtp('nguyena@gmail.com', '000000'), throwsA(isA<AuthException>()));
+      expect(() => repo.verifyRegisterOtp('0912345678', '000000'), throwsA(isA<AuthException>()));
 
-      await repo.verifyRegisterOtp('nguyena@gmail.com', MockAuthRepository.mockOtp);
+      await repo.verifyRegisterOtp('0912345678', MockAuthRepository.mockOtp);
       final user = await repo.login('0912345678', 'Matkhau123');
       expect(user.role, UserRole.player);
       expect(user.fairPlayScore, 100);
@@ -97,7 +97,7 @@ void main() {
 
     test('tài khoản mới vẫn còn sau khi khởi động lại app', () async {
       await repo.register(request);
-      await repo.verifyRegisterOtp('nguyena@gmail.com', MockAuthRepository.mockOtp);
+      await repo.verifyRegisterOtp('0912345678', MockAuthRepository.mockOtp);
 
       final restarted = MockAuthRepository(latency: Duration.zero);
       final user = await restarted.login('nguyena@gmail.com', 'Matkhau123');
@@ -115,7 +115,7 @@ void main() {
         password: 'Matkhau123',
         role: UserRole.courtOwner,
       ));
-      await repo.verifyRegisterOtp('chusan@gmail.com', MockAuthRepository.mockOtp);
+      await repo.verifyRegisterOtp('0933334444', MockAuthRepository.mockOtp);
       expect((await repo.login('chusanmoi', 'Matkhau123')).role, UserRole.courtOwner);
 
       expect(
@@ -156,25 +156,25 @@ void main() {
 
   group('quên mật khẩu', () {
     test('đặt lại mật khẩu xong thì đăng nhập bằng mật khẩu mới', () async {
-      await repo.requestPasswordReset('player@sportnexus.vn');
-      final token = await repo.verifyResetOtp('player@sportnexus.vn', MockAuthRepository.mockOtp);
-      await repo.resetPassword('player@sportnexus.vn', token, 'MatKhauMoi1');
+      await repo.requestPasswordReset('0901234567');
+      final token = await repo.verifyResetOtp('0901234567', MockAuthRepository.mockOtp);
+      await repo.resetPassword('0901234567', token, 'MatKhauMoi1');
 
       expect(() => repo.login('player@sportnexus.vn', 'Player@123'), throwsA(isA<AuthException>()));
       final user = await repo.login('player@sportnexus.vn', 'MatKhauMoi1');
       expect(user.email, 'player@sportnexus.vn');
     });
 
-    test('email chưa đăng ký thì báo lỗi', () async {
+    test('số điện thoại chưa đăng ký thì báo lỗi', () async {
       expect(
-        () => repo.requestPasswordReset('khongco@gmail.com'),
-        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.emailNotFound)),
+        () => repo.requestPasswordReset('0999000111'),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.phoneNotFound)),
       );
     });
 
     test('token sai thì không cho đặt lại', () async {
       expect(
-        () => repo.resetPassword('player@sportnexus.vn', 'token-gia', 'MatKhauMoi1'),
+        () => repo.resetPassword('0901234567', 'token-gia', 'MatKhauMoi1'),
         throwsA(isA<AuthException>()),
       );
     });
@@ -218,7 +218,7 @@ void main() {
         phone: '0911111111',
         password: 'MatKhau9',
       ));
-      await repo.verifyRegisterOtp('xoa@gmail.com', MockAuthRepository.mockOtp);
+      await repo.verifyRegisterOtp('0911111111', MockAuthRepository.mockOtp);
       await repo.login('xoa.tk', 'MatKhau9');
 
       expect(

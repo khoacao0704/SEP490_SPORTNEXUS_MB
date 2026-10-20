@@ -58,6 +58,9 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
   @override
   bool get supportsWithdrawal => true;
 
+  @override
+  bool get singleBankAccount => false;
+
   // ---------------- Số dư & lịch sử ----------------
 
   @override
@@ -86,6 +89,9 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
     final txs = await _transactions();
     return [...txs]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
+
+  @override
+  Future<TransactionStatus> getTopUpStatus(String orderId) async => (await getTransaction(orderId)).status;
 
   @override
   Future<WalletTransaction> getTransaction(String transactionId) async {

@@ -9,10 +9,10 @@ import '../../widgets/auth/auth_text_field.dart';
 
 /// Pop về `true` khi đặt lại mật khẩu thành công.
 class ResetPasswordScreen extends StatefulWidget {
-  final String email;
+  final String phone;
   final String resetToken;
 
-  const ResetPasswordScreen({super.key, required this.email, required this.resetToken});
+  const ResetPasswordScreen({super.key, required this.phone, required this.resetToken});
 
   @override
   State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
@@ -36,7 +36,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await AppRepositories.auth.resetPassword(widget.email, widget.resetToken, _passwordController.text);
+      await AppRepositories.auth.resetPassword(widget.phone, widget.resetToken, _passwordController.text);
       if (mounted) Navigator.pop(context, true);
     } on AuthException catch (e) {
       if (mounted) showAuthError(context, e.message);

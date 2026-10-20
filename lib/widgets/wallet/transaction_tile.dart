@@ -8,7 +8,7 @@ import '../../theme/app_colors.dart';
 String transactionStatusLabel(WalletTransaction tx) {
   switch (tx.status) {
     case TransactionStatus.pending:
-      return tx.type == TransactionType.topUp
+      return tx.type == TransactionType.topUp || tx.type == TransactionType.deposit
           ? WalletStrings.statusPendingTopUp
           : WalletStrings.statusPendingWithdrawal;
     case TransactionStatus.success:

@@ -10,7 +10,7 @@ import '../../widgets/auth/auth_primary_button.dart';
 import '../../widgets/auth/auth_text_field.dart';
 import 'otp_verification_screen.dart';
 
-/// Pop về tên đăng nhập khi đăng ký xong (BE chưa có OTP) hoặc khi xác thực OTP thành công (bản giả lập).
+/// Pop về tên đăng nhập khi đăng ký xong: nhập đúng OTP gửi về số điện thoại (hoặc ngay khi không dùng OTP).
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -50,19 +50,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     setState(() => _isLoading = true);
-    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
     final username = _usernameController.text.trim();
     try {
-      await AppRepositories.auth.register(RegisterRequest(
+      final devOtp = await AppRepositories.auth.register(RegisterRequest(
         username: username,
         fullName: _fullNameController.text.trim(),
-        email: email,
-        phone: _phoneController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: phone,
         password: _passwordController.text,
         role: _role,
       ));
       if (!mounted) return;
-      // BE chưa có OTP: tài khoản dùng được ngay, về màn Login với tên đăng nhập điền sẵn.
+      // Không dùng OTP: tài khoản dùng được ngay, về màn Login với tên đăng nhập điền sẵn.
       if (!AppRepositories.auth.supportsOtp) {
         Navigator.pop(context, username);
         return;
@@ -71,7 +71,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final verified = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
-          builder: (_) => OtpVerificationScreen(email: email, purpose: OtpPurpose.register),
+          builder: (_) => OtpVerificationScreen(phone: phone, purpose: OtpPurpose.register, devOtp: devOtp),
         ),
       );
       if (verified == true && mounted) Navigator.pop(context, username);

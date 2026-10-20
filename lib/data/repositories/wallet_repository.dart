@@ -18,6 +18,9 @@ abstract class WalletRepository {
   /// false: rút tiền / tài khoản ngân hàng chưa dùng được (UI báo "đang phát triển").
   bool get supportsWithdrawal;
 
+  /// true: chỉ lưu MỘT tài khoản ngân hàng nhận tiền (thêm mới = thay thế, không xóa được).
+  bool get singleBankAccount;
+
   /// Số dư khả dụng (đã trừ các lệnh rút đang chờ xử lý).
   Future<int> getBalance();
 
@@ -44,9 +47,13 @@ abstract class WalletRepository {
   /// Tạo lệnh nạp ở trạng thái chờ; ví chỉ được cộng khi BE xác nhận đã nhận tiền.
   Future<TopUpOrder> createTopUp(int amount);
 
-  /// Hỏi lại trạng thái lệnh nạp (UI gọi định kỳ trong lúc chờ).
+  /// Hỏi lại trạng thái lệnh nạp [TopUpOrder.transactionId] (UI gọi định kỳ trong lúc chờ).
+  Future<TransactionStatus> getTopUpStatus(String orderId);
+
+  /// Chi tiết một giao dịch trong lịch sử.
   Future<WalletTransaction> getTransaction(String transactionId);
 
+  /// Hủy lệnh nạp đang chờ; lệnh đã xong (đã nhận tiền / đã hủy) thì bỏ qua.
   Future<void> cancelTopUp(String transactionId);
 
   // ---------- Rút tiền ----------
