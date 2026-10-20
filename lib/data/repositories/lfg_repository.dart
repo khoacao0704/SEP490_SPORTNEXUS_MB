@@ -1,3 +1,4 @@
+import '../../core/constants/lfg_rules.dart';
 import '../../models/facility.dart';
 import '../../models/lfg_match.dart';
 import '../../models/time_slot.dart';
@@ -50,6 +51,34 @@ abstract class LfgRepository {
   /// Trả lời yêu cầu hủy. Một người từ chối là bác yêu cầu; tất cả đồng ý thì hủy kèo,
   /// hoàn 100% cho mọi người và không trừ Fair Play.
   Future<LfgMatch> respondCancel(String matchId, {required bool approve});
+
+  // ---------- Khác biệt giữa bản giả lập và BE thật ----------
+
+  /// false: không lọc bảng tin theo tỉnh/quận (UI ẩn chọn khu vực).
+  bool get supportsAreaFilter;
+
+  /// true: host rời kèo thì chuyển quyền host ([leaveMatch]); false: host chỉ hủy kèo ([cancelMatch]).
+  bool get hostCanLeave;
+
+  /// true: host trả trước cả tiền sân khi tạo kèo, người vào trả phần của mình cho host (BE);
+  /// false: host chỉ cọc phần của mình như mọi người.
+  bool get hostPaysCourt;
+
+  /// Số tiền host trả khi tạo kèo.
+  int createCost(int courtPrice, LfgFormat format) =>
+      hostPaysCourt ? courtPrice : LfgRules.depositPerSlot(courtPrice, format.totalSlots);
+
+  /// Host hủy kèo: mọi người được hoàn 100%, tiền sân của host hoàn theo chính sách đặt sân.
+  Future<LfgMatch> cancelMatch(String matchId);
+
+  /// Chấp nhận lời mời vào kèo: trả phần của mình từ ví, nhận vé.
+  Future<LfgMatch> acceptInvitation(String matchId);
+
+  /// Từ chối lời mời; chỗ mở lại cho người khác.
+  Future<void> declineInvitation(String matchId);
+
+  /// Chuỗi vẽ mã QR vé của [userId] trong kèo [match].
+  Future<String> getTicketCode(LfgMatch match, String userId);
 }
 
 /// Chỉ bản giả lập cài đặt: các nút giả lập hành động của người chơi khác khi demo.

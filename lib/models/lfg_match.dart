@@ -44,7 +44,10 @@ enum LfgCancelReason {
   mutualAgreement('MutualAgreement'),
 
   /// Người cuối cùng (host) rời kèo chưa đủ người.
-  everyoneLeft('EveryoneLeft');
+  everyoneLeft('EveryoneLeft'),
+
+  /// Đã hủy (BE không cho biết lý do cụ thể, vd. chủ kèo hủy).
+  cancelled('Cancelled');
 
   const LfgCancelReason(this.apiValue);
 
@@ -92,6 +95,15 @@ class LfgCancelRequest {
         'createdAt': createdAt.toIso8601String(),
         'approvals': approvals,
       };
+}
+
+/// Trạng thái của người dùng hiện tại với một kèo mà họ CHƯA vào hẳn.
+enum LfgMyStatus {
+  /// Đã xin vào kèo cần chủ kèo duyệt (chưa trừ tiền).
+  pendingApproval,
+
+  /// Được mời vào kèo (đang giữ chỗ), cần chấp nhận và trả phần của mình.
+  invited,
 }
 
 class LfgMember {
@@ -163,6 +175,26 @@ class LfgMatch {
   /// Yêu cầu hủy đang chờ mọi người đồng ý (chỉ có ở kèo đã chốt).
   final LfgCancelRequest? cancelRequest;
 
+  // ---- Dữ liệu BE (kèo có số người / giá / định dạng tùy chủ kèo); bản giả lập để trống ----
+
+  /// Tổng số người trong kèo (kể cả chủ kèo) khi khác [LfgFormat.totalSlots].
+  final int? totalSlotsOverride;
+
+  /// Số chỗ còn trống do BE tính.
+  final int? slotsLeftOverride;
+
+  /// Tiền mỗi người vào kèo trả (chủ kèo tự đặt hoặc BE tính).
+  final int? pricePerPersonOverride;
+
+  /// Nhãn định dạng của BE, vd. "5v5" / "Ghép 3 người".
+  final String? formatLabelOverride;
+
+  /// Người dùng hiện tại đang chờ duyệt / được mời (chưa vào hẳn).
+  final LfgMyStatus? myStatus;
+
+  /// Đơn đặt sân của chủ kèo (vé QR của chủ kèo là vé đặt sân).
+  final String? bookingId;
+
   const LfgMatch({
     required this.id,
     required this.facilityId,
@@ -183,6 +215,12 @@ class LfgMatch {
     this.note = '',
     this.cancelReason,
     this.cancelRequest,
+    this.totalSlotsOverride,
+    this.slotsLeftOverride,
+    this.pricePerPersonOverride,
+    this.formatLabelOverride,
+    this.myStatus,
+    this.bookingId,
   });
 
   LfgMember get host => members.firstWhere((m) => m.isHost, orElse: () => members.first);
@@ -190,17 +228,21 @@ class LfgMatch {
   /// "Sân Cầu Lông Thiên Triều • Sân 2" (chưa có sân con thì chỉ có tên cơ sở).
   String get facilityCourtLabel => courtName == null ? facilityName : '$facilityName • $courtName';
 
-  int get totalSlots => format.totalSlots;
+  int get totalSlots => totalSlotsOverride ?? format.totalSlots;
 
   /// "Ghép 4 (2 vs 2)" hoặc "Team vs Team • 7 vs 7".
-  String get formatLabel => courtType.isStandard ? format.label : '${format.label} • ${courtType.matchup}';
+  String get formatLabel =>
+      formatLabelOverride ?? (courtType.isStandard ? format.label : '${format.label} • ${courtType.matchup}');
 
   /// Chỗ còn có thể Flash Claim (đã trừ chỗ đang được giữ).
-  int get slotsLeft => (totalSlots - members.length - heldSlots).clamp(0, totalSlots);
+  int get slotsLeft => slotsLeftOverride ?? (totalSlots - members.length - heldSlots).clamp(0, totalSlots);
 
-  bool get isFull => members.length >= totalSlots;
+  bool get isFull => slotsLeftOverride != null ? slotsLeftOverride! <= 0 : members.length >= totalSlots;
 
-  int get depositPerSlot => LfgRules.depositPerSlot(courtPrice, totalSlots);
+  int get depositPerSlot => pricePerPersonOverride ?? LfgRules.depositPerSlot(courtPrice, totalSlots);
+
+  /// Hạn tự rời kèo (hoàn 100%); từ mốc này tới T−24h muốn hủy phải tất cả đồng ý.
+  DateTime get leaveDeadline => start.subtract(LfgRules.fillDeadlineBeforeStart);
 
   DateTime get fillDeadline => start.subtract(LfgRules.fillDeadlineBeforeStart);
 
@@ -253,6 +295,12 @@ class LfgMatch {
         note: note,
         cancelReason: cancelReason ?? this.cancelReason,
         cancelRequest: clearCancelRequest ? null : (cancelRequest ?? this.cancelRequest),
+        totalSlotsOverride: totalSlotsOverride,
+        slotsLeftOverride: slotsLeftOverride,
+        pricePerPersonOverride: pricePerPersonOverride,
+        formatLabelOverride: formatLabelOverride,
+        myStatus: myStatus,
+        bookingId: bookingId,
       );
 
   factory LfgMatch.fromJson(Map<String, dynamic> json) => LfgMatch(

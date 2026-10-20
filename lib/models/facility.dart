@@ -27,6 +27,17 @@ class SportOffering {
       );
 }
 
+/// Tiện ích dùng cho bộ lọc tìm sân (danh mục do Admin quản lý).
+class Amenity {
+  final String id;
+  final String name;
+
+  /// Mã icon của BE (parking, wifi, air_conditioner...); `null` thì dùng icon chung.
+  final String? iconCode;
+
+  const Amenity({required this.id, required this.name, this.iconCode});
+}
+
 /// Cơ sở thể thao (một địa điểm có thể có nhiều môn, mỗi môn nhiều sân).
 class Facility {
   final String id;
@@ -46,6 +57,16 @@ class Facility {
   final String phone;
   final String description;
 
+  /// Cơ sở đang mua gói đẩy tin (BE đã xếp lên đầu kết quả tìm kiếm).
+  final bool isPromoted;
+
+  /// Mã icon theo tên tiện ích trong [amenities]; tiện ích không có mã thì dùng icon chung.
+  final Map<String, String> amenityIcons;
+
+  /// Thông tin thêm của từng sân con theo môn rồi theo tên (vd. "Sân 5 người · Trong nhà · Cỏ nhân tạo");
+  /// sân chủ sân chưa khai báo thì không có trong map. Tách theo môn vì hai môn có thể cùng tên "Sân 1".
+  final Map<Sport, Map<String, String>> courtDetails;
+
   const Facility({
     required this.id,
     required this.name,
@@ -63,12 +84,18 @@ class Facility {
     required this.closeTime,
     required this.phone,
     this.description = '',
+    this.isPromoted = false,
+    this.amenityIcons = const {},
+    this.courtDetails = const {},
   });
 
   /// Tọa độ của cơ sở chưa được chủ sân ghim vị trí.
   static const GeoPoint noLocation = GeoPoint(0, 0);
 
   bool get hasLocation => location != noLocation;
+
+  /// Thông tin thêm của sân con [court] thuộc môn [sport]; `null` khi chủ sân chưa khai báo.
+  String? courtDetailOf(Sport sport, String? court) => court == null ? null : courtDetails[sport]?[court];
 
   /// Địa chỉ kèm thành phố (dữ liệu BE chỉ có địa chỉ đầy đủ, không tách thành phố).
   String get fullAddress => city.isEmpty ? address : '$address, $city';

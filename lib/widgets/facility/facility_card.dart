@@ -86,11 +86,31 @@ class FacilityCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      facility.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            facility.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain),
+                          ),
+                        ),
+                        if (facility.isPromoted) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.tagOrangeBg,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              FacilityStrings.promoted,
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Row(

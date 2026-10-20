@@ -43,6 +43,9 @@ enum _Method { wallet, vietQr }
 class LfgPaymentScreen extends StatefulWidget {
   final LfgPaymentSummary summary;
   final int amount;
+
+  /// Nhãn số tiền (vd. "Tiền sân cần trả" khi host trả cả sân).
+  final String amountLabel;
   final DateTime expiresAt;
 
   /// Trừ ví và xác nhận chỗ (repository làm trong một giao dịch).
@@ -53,6 +56,7 @@ class LfgPaymentScreen extends StatefulWidget {
     super.key,
     required this.summary,
     required this.amount,
+    this.amountLabel = LfgStrings.amountToPay,
     required this.expiresAt,
     required this.onConfirm,
     required this.onRelease,
@@ -95,7 +99,7 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
 
   Future<void> _loadBalance() async {
     try {
-      final balance = await AppRepositories.paymentWallet.getBalance();
+      final balance = await AppRepositories.lfgWallet.getBalance();
       if (mounted) setState(() => _balance = balance);
     } catch (_) {
       // Không có số dư thì vẫn cho chọn VietQR.
@@ -131,11 +135,11 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
     try {
       if (_method == _Method.vietQr) {
         // Chuyển khoản đúng số tiền cọc vào ví rồi trừ ví (BE xác nhận chuyển khoản).
-        final order = await AppRepositories.paymentWallet.createTopUp(widget.amount);
+        final order = await AppRepositories.lfgWallet.createTopUp(widget.amount);
         if (!mounted) return;
         final paid = await Navigator.push<bool>(
           context,
-          MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order, wallet: AppRepositories.paymentWallet)),
+          MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order, wallet: AppRepositories.lfgWallet)),
         );
         if (paid != true) {
           if (mounted) setState(() => _isPaying = false);
@@ -281,9 +285,9 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      LfgStrings.amountToPay,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                    Text(
+                      widget.amountLabel,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
                     ),
                     FittedBox(
                       fit: BoxFit.scaleDown,

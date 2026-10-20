@@ -15,4 +15,12 @@ class SplitPaymentRules {
   /// Phần người đặt trả trước (cọc): phần còn lại sau khi trừ phần của những người khác,
   /// để tổng các phần đúng bằng tiền sân.
   static int bookerAmount(int total, int parts) => total - shareAmount(total, parts) * (parts - 1);
+
+  // ---- Chia tiền bằng cách mời bạn (cách BE tính) ----
+
+  /// Phần của mỗi người được mời trong một ca: tiền ca chia đều cho [people] người (gồm người đặt), làm tròn xuống.
+  static int inviteeShare(int slotPrice, int people) => slotPrice ~/ people;
+
+  /// Phần người đặt trong một ca: phần còn lại (gồm cả số lẻ).
+  static int hostShare(int slotPrice, int people) => slotPrice - inviteeShare(slotPrice, people) * (people - 1);
 }

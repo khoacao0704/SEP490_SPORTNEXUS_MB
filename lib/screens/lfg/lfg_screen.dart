@@ -191,7 +191,9 @@ class _LfgFeedViewState extends State<LfgFeedView> {
   @override
   Widget build(BuildContext context) {
     final formats = _sport == null ? LfgFormat.values : LfgFormat.forSport(_sport!);
-    final courtTypes = _sport == null ? const <CourtType>[] : CourtType.forSport(_sport!).where((t) => !t.isStandard).toList();
+    final courtTypes = _sport == null || !AppRepositories.lfgFacility.supportsCourtTypes
+        ? const <CourtType>[]
+        : CourtType.forSport(_sport!).where((t) => !t.isStandard).toList();
     return Column(
       children: [
         Container(
@@ -205,13 +207,16 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
-                    _chip(
-                      label: _district == null ? _city : '$_district, $_city',
-                      icon: Icons.location_on,
-                      selected: true,
-                      onTap: _pickLocation,
-                    ),
-                    const SizedBox(width: 8),
+                    // BE chưa lọc được theo tỉnh/quận: ẩn chọn khu vực.
+                    if (AppRepositories.lfg.supportsAreaFilter) ...[
+                      _chip(
+                        label: _district == null ? _city : '$_district, $_city',
+                        icon: Icons.location_on,
+                        selected: true,
+                        onTap: _pickLocation,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     if (courtTypes.isNotEmpty) ...[
                       // Bóng đá / bóng rổ: chỉ có Team vs Team, lọc theo số người mỗi đội.
                       _chip(

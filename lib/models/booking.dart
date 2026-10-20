@@ -1,4 +1,5 @@
 import '../core/constants/booking_rules.dart';
+import '../core/constants/split_payment_rules.dart';
 
 enum BookingPaymentType {
   full('Full', 'Thanh toán 100%'),
@@ -14,6 +15,46 @@ enum BookingPaymentType {
 }
 
 enum BookingStatus { upcoming, cancelled, completed }
+
+/// Một người trong đơn chia tiền (người đặt + những người được mời góp).
+class BookingParticipant {
+  final String userId;
+  final String name;
+
+  /// Phần phải góp.
+  final int amount;
+  final bool isPaid;
+  final bool isHost;
+
+  const BookingParticipant({
+    required this.userId,
+    required this.name,
+    required this.amount,
+    required this.isPaid,
+    this.isHost = false,
+  });
+}
+
+/// Tài khoản tìm theo số điện thoại để mời góp tiền.
+class PlayerLookup {
+  final String id;
+  final String fullName;
+
+  /// SĐT đã che, vd. "******9952".
+  final String phoneMasked;
+  final String? avatarUrl;
+
+  const PlayerLookup({required this.id, required this.fullName, required this.phoneMasked, this.avatarUrl});
+}
+
+/// Lý do hủy chọn sẵn; [isCustom] = mục "Khác" (người dùng tự nhập lý do).
+class CancelReason {
+  final int code;
+  final String label;
+  final bool isCustom;
+
+  const CancelReason({required this.code, required this.label, this.isCustom = false});
+}
 
 /// Một khoản đã trả cho lần đặt sân (chia tiền thì có nhiều người trả).
 class BookingPayment {
@@ -60,6 +101,18 @@ class Booking {
   /// Tổng tiền đã hoàn khi hủy.
   final int refunded;
 
+  /// Đã check-in tại sân (không hủy được nữa).
+  final bool isCheckedIn;
+
+  /// Đơn chia tiền đang chờ mọi người góp đủ (chưa có vé, hết hạn thì tự hủy và hoàn tiền).
+  final bool awaitingPayment;
+
+  /// Phần tiền của người dùng hiện tại trong đơn chia tiền (0 = không chia).
+  final int myShare;
+
+  /// Người đặt + người được mời góp; chỉ có khi tải chi tiết một đơn.
+  final List<BookingParticipant> participants;
+
   const Booking({
     required this.id,
     required this.bookerId,
@@ -76,7 +129,20 @@ class Booking {
     required this.createdAt,
     this.cancelledAt,
     this.refunded = 0,
+    this.isCheckedIn = false,
+    this.awaitingPayment = false,
+    this.myShare = 0,
+    this.participants = const [],
   });
+
+  /// Hạn góp tiền của đơn chia tiền: 30 phút sau khi tạo, nhưng không quá giờ bắt đầu.
+  DateTime get splitDeadline {
+    final byWindow = createdAt.add(SplitPaymentRules.window);
+    return byWindow.isBefore(start) ? byWindow : start;
+  }
+
+  /// Người dùng [userId] còn phải góp phần của mình.
+  bool owesShare(String userId) => participants.any((p) => p.userId == userId && !p.isPaid);
 
   /// "Cầu Lông • Sân 2" (chưa có sân con thì chỉ có môn).
   String get sportCourtLabel => courtName == null ? sportLabel : '$sportLabel • $courtName';
@@ -108,7 +174,7 @@ class Booking {
   }
 
   bool canCancel(DateTime now, String userId) =>
-      bookerId == userId && status(now) == BookingStatus.upcoming && now.isBefore(start);
+      bookerId == userId && !isCheckedIn && status(now) == BookingStatus.upcoming && now.isBefore(start);
 
   /// Mã QR check-in, tạo mới cho mỗi lần đặt; dùng tới khi chủ sân check-out.
   String get ticketCode => 'SPN-BK-$id';
@@ -129,6 +195,10 @@ class Booking {
         createdAt: createdAt,
         cancelledAt: cancelledAt ?? this.cancelledAt,
         refunded: refunded ?? this.refunded,
+        isCheckedIn: isCheckedIn,
+        awaitingPayment: cancelledAt == null && awaitingPayment,
+        myShare: myShare,
+        participants: participants,
       );
 
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(

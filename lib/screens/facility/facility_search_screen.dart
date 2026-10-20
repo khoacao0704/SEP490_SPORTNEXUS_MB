@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/vietnam_cities.dart';
 import '../../core/services/location_service.dart';
 import '../../core/strings/facility_strings.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/utils/geo_utils.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/facility_repository.dart';
@@ -12,6 +13,7 @@ import '../../models/facility_search.dart';
 import '../../models/geo_point.dart';
 import '../../models/sport.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/facility/amenity_icon.dart';
 import '../../widgets/facility/facility_card.dart';
 import '../../widgets/facility/facility_map.dart';
 import '../../widgets/facility/sport_icon.dart';
@@ -43,6 +45,23 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
   Sport? _sport;
   FacilitySort _sort = FacilitySort.distance;
   _ViewMode _viewMode = _ViewMode.list;
+
+  /// Khoảng giá đang lọc ([_priceRanges]); `null` = mọi mức giá.
+  (int?, int?)? _priceRange;
+  double? _minRating;
+  Set<String> _amenityIds = {};
+
+  /// Danh mục tiện ích cho bảng lọc, tải lần đầu mở bảng.
+  Future<List<Amenity>>? _amenitiesFuture;
+
+  /// Các mức giá để chọn nhanh (đ/giờ): (từ, đến), `null` = không giới hạn.
+  static const List<(int?, int?)> _priceRanges = [
+    (null, 100000),
+    (100000, 200000),
+    (200000, 300000),
+    (300000, null),
+  ];
+  static const List<double> _ratingOptions = [3, 4, 4.5];
 
   LocationResult? _location;
   bool _isLocating = true;
@@ -116,6 +135,10 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
         keyword: _keywordController.text,
         sort: _sort,
         userLocation: _location?.point,
+        minPrice: _priceRange?.$1,
+        maxPrice: _priceRange?.$2,
+        minRating: _minRating,
+        amenityIds: _amenityIds,
       ));
       if (!mounted || generation != _searchGeneration) return;
       setState(() {
@@ -200,7 +223,11 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
   }
 
   Widget _buildSearchHeader() {
-    final hasActiveFilter = _district != null || _sort != FacilitySort.distance;
+    final hasActiveFilter = _district != null ||
+        _sort != FacilitySort.distance ||
+        _priceRange != null ||
+        _minRating != null ||
+        _amenityIds.isNotEmpty;
 
     return Container(
       color: AppColors.white,
@@ -525,10 +552,29 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
     );
   }
 
+  String _priceRangeLabel((int?, int?) range) => switch (range) {
+        (null, final max?) => FacilityStrings.priceBelow(Formatters.vnd(max)),
+        (final min?, null) => FacilityStrings.priceAbove(Formatters.vnd(min)),
+        (final min, final max) => FacilityStrings.priceBetween(Formatters.currency(min ?? 0), Formatters.vnd(max ?? 0)),
+      };
+
+  /// 4.5 → "4,5", 4 → "4".
+  static String _stars(double value) =>
+      value == value.roundToDouble() ? value.toInt().toString() : value.toString().replaceAll('.', ',');
+
   void _showFilterSheet() {
     var sort = _sort;
     String? district = _district;
+    var priceRange = _priceRange;
+    var minRating = _minRating;
+    final amenityIds = {..._amenityIds};
     final hasLocation = _location?.point != null;
+    final amenitiesFuture = _amenitiesFuture ??= AppRepositories.facility.getAmenities();
+    // Lỗi tải danh mục tiện ích: lần mở sau thử lại.
+    amenitiesFuture.catchError((_) {
+      _amenitiesFuture = null;
+      return <Amenity>[];
+    });
 
     showModalBottomSheet(
       context: context,
@@ -552,79 +598,181 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
                 side: BorderSide(color: selected ? AppColors.primaryGreen : AppColors.cardBorder),
               );
 
+          Widget heading(String text) => Padding(
+                padding: const EdgeInsets.only(top: 16, bottom: 8),
+                child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold)),
+              );
+
           return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Text(
-                        FacilityStrings.filterTitle,
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () => setSheetState(() {
-                          sort = FacilitySort.distance;
-                          district = null;
-                        }),
-                        child: const Text(FacilityStrings.resetFilter),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(FacilityStrings.sortBy, style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      optionChip(
-                        FacilityStrings.sortDistance,
-                        sort == FacilitySort.distance,
-                        hasLocation ? () => setSheetState(() => sort = FacilitySort.distance) : null,
-                      ),
-                      optionChip(FacilityStrings.sortPrice, sort == FacilitySort.priceLowToHigh,
-                          () => setSheetState(() => sort = FacilitySort.priceLowToHigh)),
-                      optionChip(FacilityStrings.sortRating, sort == FacilitySort.rating,
-                          () => setSheetState(() => sort = FacilitySort.rating)),
-                    ],
-                  ),
-                  if (_hasAreaFilter) ...[
-                    const SizedBox(height: 16),
-                    const Text(FacilityStrings.district, style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
                       children: [
-                        optionChip(FacilityStrings.allDistricts, district == null,
-                            () => setSheetState(() => district = null)),
-                        ..._districts.map((d) => optionChip(d, district == d, () => setSheetState(() => district = d))),
+                        const Text(
+                          FacilityStrings.filterTitle,
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => setSheetState(() {
+                            sort = FacilitySort.distance;
+                            district = null;
+                            priceRange = null;
+                            minRating = null;
+                            amenityIds.clear();
+                          }),
+                          child: const Text(FacilityStrings.resetFilter),
+                        ),
                       ],
                     ),
-                  ],
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(sheetContext);
-                        setState(() {
-                          _sort = sort;
-                          _district = district;
-                        });
-                        _search();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.authPrimary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
+                          const Text(FacilityStrings.sortBy, style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              optionChip(
+                                FacilityStrings.sortDistance,
+                                sort == FacilitySort.distance,
+                                hasLocation ? () => setSheetState(() => sort = FacilitySort.distance) : null,
+                              ),
+                              optionChip(FacilityStrings.sortPrice, sort == FacilitySort.priceLowToHigh,
+                                  () => setSheetState(() => sort = FacilitySort.priceLowToHigh)),
+                              optionChip(FacilityStrings.sortPriceDesc, sort == FacilitySort.priceHighToLow,
+                                  () => setSheetState(() => sort = FacilitySort.priceHighToLow)),
+                              optionChip(FacilityStrings.sortRating, sort == FacilitySort.rating,
+                                  () => setSheetState(() => sort = FacilitySort.rating)),
+                              optionChip(FacilityStrings.sortNewest, sort == FacilitySort.newest,
+                                  () => setSheetState(() => sort = FacilitySort.newest)),
+                            ],
+                          ),
+                          heading(FacilityStrings.priceRange),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              optionChip(FacilityStrings.any, priceRange == null,
+                                  () => setSheetState(() => priceRange = null)),
+                              ..._priceRanges.map((r) => optionChip(
+                                  _priceRangeLabel(r), priceRange == r, () => setSheetState(() => priceRange = r))),
+                            ],
+                          ),
+                          heading(FacilityStrings.minRating),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              optionChip(FacilityStrings.any, minRating == null,
+                                  () => setSheetState(() => minRating = null)),
+                              ..._ratingOptions.map((r) => optionChip(FacilityStrings.ratingAtLeast(_stars(r)),
+                                  minRating == r, () => setSheetState(() => minRating = r))),
+                            ],
+                          ),
+                          FutureBuilder<List<Amenity>>(
+                            future: amenitiesFuture,
+                            builder: (context, snapshot) {
+                              final amenities = snapshot.data ?? const <Amenity>[];
+                              if (snapshot.connectionState != ConnectionState.done) {
+                                return const Padding(
+                                  padding: EdgeInsets.only(top: 16),
+                                  child: LinearProgressIndicator(minHeight: 2),
+                                );
+                              }
+                              if (amenities.isEmpty) return const SizedBox.shrink();
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  heading(FacilityStrings.amenities),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: amenities.map((a) {
+                                      final selected = amenityIds.contains(a.id);
+                                      return FilterChip(
+                                        avatar: Icon(amenityIcon(a.iconCode), size: 16,
+                                            color: selected ? Colors.white : AppColors.primaryGreen),
+                                        label: Text(a.name),
+                                        selected: selected,
+                                        showCheckmark: false,
+                                        selectedColor: AppColors.primaryGreen,
+                                        backgroundColor: AppColors.white,
+                                        labelStyle: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: selected ? Colors.white : AppColors.textMain,
+                                        ),
+                                        side: BorderSide(
+                                            color: selected ? AppColors.primaryGreen : AppColors.cardBorder),
+                                        onSelected: (on) => setSheetState(
+                                            () => on ? amenityIds.add(a.id) : amenityIds.remove(a.id)),
+                                      );
+                                    }).toList(),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    FacilityStrings.amenitiesHint,
+                                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                          if (_hasAreaFilter) ...[
+                            heading(FacilityStrings.district),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                optionChip(FacilityStrings.allDistricts, district == null,
+                                    () => setSheetState(() => district = null)),
+                                ..._districts
+                                    .map((d) => optionChip(d, district == d, () => setSheetState(() => district = d))),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                        ],
                       ),
-                      child: const Text(FacilityStrings.applyFilter, style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          setState(() {
+                            _sort = sort;
+                            _district = district;
+                            _priceRange = priceRange;
+                            _minRating = minRating;
+                            _amenityIds = amenityIds;
+                          });
+                          _search();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.authPrimary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text(FacilityStrings.applyFilter, style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
                     ),
                   ),
                 ],

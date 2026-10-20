@@ -7,11 +7,14 @@ import 'package:test1/core/utils/formatters.dart';
 import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_facility_data.dart';
 import 'package:test1/data/mock/mock_facility_repository.dart';
+import 'package:test1/models/facility.dart';
+import 'package:test1/models/facility_search.dart';
 import 'package:test1/models/geo_point.dart';
 import 'package:test1/models/sport.dart';
 import 'package:test1/screens/booking/booking_checkout_screen.dart';
 import 'package:test1/screens/facility/facility_detail_screen.dart';
 import 'package:test1/screens/facility/facility_search_screen.dart';
+import 'package:test1/widgets/facility/facility_card.dart';
 
 class _FakeLocationService extends LocationService {
   final LocationResult result;
@@ -52,6 +55,66 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(FacilityStrings.resultCount(5)), findsOneWidget);
     expect(find.text('Trung Tâm TDTT Kỳ Hòa'), findsNothing); // không có cầu lông
+  });
+
+  testWidgets('Tìm sân: bảng lọc có khoảng giá / số sao / tiện ích; áp dụng thì lọc kết quả, đặt lại thì bỏ hết', (tester) async {
+    await pumpScreen(
+      tester,
+      const FacilitySearchScreen(
+        locationService: _FakeLocationService(LocationResult(LocationStatus.denied)),
+      ),
+    );
+    final repo = AppRepositories.facility;
+    final expected = await repo.searchFacilities(
+        const FacilitySearchQuery(city: 'Hồ Chí Minh', minRating: 4.5, amenityIds: {'Bãi giữ xe'}));
+
+    await tester.tap(find.text(FacilityStrings.filterTitle));
+    await tester.pumpAndSettle();
+    expect(find.text(FacilityStrings.priceRange), findsOneWidget);
+    expect(find.text(FacilityStrings.sortNewest), findsOneWidget);
+
+    await tester.tap(find.text(FacilityStrings.ratingAtLeast('4,5')));
+    await tester.pumpAndSettle();
+    final amenity = find.widgetWithText(FilterChip, 'Bãi giữ xe');
+    await tester.ensureVisible(amenity);
+    await tester.tap(amenity);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(FacilityStrings.applyFilter));
+    await tester.pumpAndSettle();
+
+    expect(find.text(FacilityStrings.resultCount(expected.length)), findsOneWidget);
+
+    await tester.tap(find.text(FacilityStrings.filterTitle));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(FacilityStrings.resetFilter));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(FacilityStrings.applyFilter));
+    await tester.pumpAndSettle();
+    expect(find.text(FacilityStrings.resultCount(8)), findsOneWidget);
+  });
+
+  testWidgets('Thẻ cơ sở: cơ sở đẩy tin có nhãn Nổi bật', (tester) async {
+    final facility = MockFacilityData.facilities.first;
+    Widget card(Facility f) => FacilityCard(result: FacilitySearchResult(facility: f), onTap: () {});
+    final promoted = Facility(
+      id: facility.id,
+      name: facility.name,
+      address: facility.address,
+      city: facility.city,
+      district: facility.district,
+      location: facility.location,
+      offerings: facility.offerings,
+      rating: facility.rating,
+      reviewCount: facility.reviewCount,
+      imageUrls: const [],
+      openTime: facility.openTime,
+      closeTime: facility.closeTime,
+      phone: facility.phone,
+      isPromoted: true,
+    );
+
+    await pumpScreen(tester, Scaffold(body: Column(children: [card(promoted), card(facility)])));
+    expect(find.text(FacilityStrings.promoted), findsOneWidget);
   });
 
   testWidgets('Tìm sân: có GPS ở Hà Nội thì tự chọn Hà Nội và hiện khoảng cách', (tester) async {

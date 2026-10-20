@@ -28,7 +28,7 @@ void main() {
     final review = MockReviewRepository(latency: Duration.zero);
     lfg = MockLfgRepository(latency: Duration.zero, wallet: wallet, review: review);
     AppRepositories.wallet = wallet;
-    AppRepositories.paymentWallet = wallet;
+    AppRepositories.paymentWallet = AppRepositories.bookingWallet = wallet;
     AppRepositories.review = review;
     AppRepositories.lfg = lfg;
     AppRepositories.auth = MockAuthRepository(latency: Duration.zero);
@@ -141,25 +141,19 @@ void main() {
     expect(find.text(LfgStrings.yourTicket), findsOneWidget);
   });
 
-  testWidgets('kèo đã chốt: không có nút rời, gửi yêu cầu hủy rồi chờ người khác', (tester) async {
+  testWidgets('kèo đã chốt nhưng còn trước T−48h: vẫn rời được, không cần gửi yêu cầu hủy', (tester) async {
     final match = await tester.runAsync(() => lfg.getMyMatches());
-    final full = match!.firstWhere((m) => m.facilityName == 'Pickleball Thảo Điền');
+    final full = match!.firstWhere((m) => m.facilityName == 'Pickleball Thảo Điền' && m.cancelRequest == null);
     await pump(tester, LfgMatchDetailScreen(matchId: full.id));
-    expect(find.text(LfgStrings.leave), findsNothing);
-    expect(find.text(LfgStrings.confirmedNote), findsOneWidget);
+    expect(find.text(LfgStrings.statusConfirmed), findsOneWidget);
+    expect(find.text(LfgStrings.requestCancel), findsNothing);
 
-    await tester.tap(find.text(LfgStrings.requestCancel));
+    await tester.tap(find.text(LfgStrings.leave));
     await tester.pumpAndSettle();
-    expect(find.text(LfgStrings.confirmRequestTitle), findsOneWidget);
-    await tester.tap(find.text(LfgStrings.sendRequest));
+    expect(find.text(LfgStrings.confirmLeaveTitle), findsOneWidget);
+    await tester.tap(find.widgetWithText(ElevatedButton, LfgStrings.leave));
     await tester.pumpAndSettle();
-    expect(find.text(LfgStrings.waitingOthers), findsOneWidget);
-    expect(find.text(LfgStrings.approvalsCount(1, 4)), findsOneWidget);
-
-    await tester.tap(find.text(LfgStrings.simulateApprove));
-    await tester.pumpAndSettle();
-    expect(find.text(LfgStrings.statusCancelledMutual), findsOneWidget);
-    expect(find.text(LfgStrings.yourTicket), findsNothing);
+    expect(find.text(LfgStrings.leftMessage(full.depositPerSlot)), findsOneWidget);
   });
 
   testWidgets('người khác xin hủy: mình đồng ý cuối cùng thì kèo hủy', (tester) async {
