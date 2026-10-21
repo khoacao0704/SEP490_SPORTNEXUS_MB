@@ -164,15 +164,137 @@ class ApiOwnerRepository implements OwnerRepository {
     }
   }
 
+  List<CourtSession> _parseSessions(dynamic data) {
+    if (data == null) return [];
+
+    // BE may return a plain list or a paged object { items: [...], total: n }
+    final List list;
+    if (data is List) {
+      list = data;
+    } else if (data is Map && data['items'] is List) {
+      list = data['items'] as List;
+    } else if (data is Map && data['data'] is List) {
+      list = data['data'] as List;
+    } else {
+      return [];
+    }
+
+    return list
+        .whereType<Map>()
+        .map((e) => _mapSession(Map<String, dynamic>.from(e)))
+        .toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+  }
+
+  CourtSession _mapSession(Map<String, dynamic> json) {
+    // Prefer CourtSession.fromJson if BE shape matches the model.
+    // Fallback mapper for common BE field names.
+    try {
+      return CourtSession.fromJson(json);
+    } catch (_) {
+      // Flexible mapping when BE fields differ
+      final id = (json['id'] ?? json['bookingId'] ?? '').toString();
+      final facilityId = (json['facilityId'] ?? '').toString();
+      final facilityName = (json['facilityName'] ?? json['facility']?['name'] ?? '').toString();
+
+      final start = DateTime.parse(
+        (json['start'] ?? json['startTime'] ?? json['slotStart'] ?? DateTime.now().toIso8601String()).toString(),
+      );
+      final end = DateTime.parse(
+        (json['end'] ?? json['endTime'] ?? json['slotEnd'] ?? start.add(const Duration(hours: 1)).toIso8601String())
+            .toString(),
+      );
+
+      final sportRaw = (json['sport'] ?? json['sportName'] ?? 'Football').toString();
+      final courtTypeRaw = json['courtType'] as String?;
+
+      final playersRaw = json['players'] ?? json['participants'] ?? [];
+      final players = (playersRaw is List)
+          ? playersRaw.whereType<Map>().map((p) {
+        final m = Map<String, dynamic>.from(p);
+        return SessionPlayer(
+          userId: (m['userId'] ?? m['id'] ?? '').toString(),
+          name: (m['name'] ?? m['fullName'] ?? m['username'] ?? '—').toString(),
+          ticketCode: (m['ticketCode'] ?? m['qrCode'] ?? m['code'] ?? '').toString(),
+          checkedInAt: m['checkedInAt'] != null ? DateTime.tryParse(m['checkedInAt'].toString()) : null,
+        );
+      }).toList()
+          : <SessionPlayer>[];
+
+      // If BE only returns booker info (no players array)
+      if (players.isEmpty && (json['userId'] != null || json['bookerName'] != null)) {
+        players.add(SessionPlayer(
+          userId: (json['userId'] ?? json['bookerId'] ?? '').toString(),
+          name: (json['bookerName'] ?? json['fullName'] ?? json['username'] ?? '—').toString(),
+          ticketCode: (json['ticketCode'] ?? json['qrCode'] ?? '').toString(),
+          checkedInAt: json['checkedInAt'] != null ? DateTime.tryParse(json['checkedInAt'].toString()) : null,
+        ));
+      }
+
+      final kindRaw = (json['kind'] ?? json['type'] ?? 'Booking').toString();
+      final kind = kindRaw.toLowerCase().contains('lfg') ? SessionKind.lfg : SessionKind.booking;
+
+      return CourtSession(
+        id: id,
+        kind: kind,
+        facilityId: facilityId,
+        facilityName: facilityName.isEmpty ? '—' : facilityName,
+        sport: _safeSport(sportRaw),
+        courtType: CourtType.fromApi(courtTypeRaw),
+        start: start,
+        end: end,
+        totalPrice: (json['totalPrice'] as num?)?.toInt() ?? (json['price'] as num?)?.toInt() ?? 0,
+        paidViaApp: (json['paidViaApp'] as num?)?.toInt() ?? (json['paidAmount'] as num?)?.toInt() ?? 0,
+        players: players,
+        assignedCourt: (json['assignedCourt'] ?? json['courtName'] ?? json['court']?['name'] ?? '—').toString(),
+        checkedOutAt: json['checkedOutAt'] != null ? DateTime.tryParse(json['checkedOutAt'].toString()) : null,
+        cancelledAt: json['cancelledAt'] != null ? DateTime.tryParse(json['cancelledAt'].toString()) : null,
+      );
+    }
+  }
+
+  Sport _safeSport(String value) {
+    try {
+      return Sport.fromApi(value);
+    } catch (_) {
+      return Sport.football; // safe fallback
+    }
+  }
   // ==================== Chưa nối (làm sau) ====================
 
   Never _todo() => throw Exception('Tính năng đang phát triển');
 
   @override
-  Future<List<CourtSession>> getSessions({required DateTime day, String? facilityId}) async => _todo();
+  Future<List<CourtSession>> getSessions({required DateTime day, String? facilityId}) async {
+    try {
+      // BE expects date-time; we send start of day
+      final dateStr = DateTime(day.year, day.month, day.day).toIso8601String();
+
+      final query = <String, dynamic>{
+        'Date': dateStr,
+        'PageSize': 100,
+        if (facilityId != null && facilityId.isNotEmpty) 'FacilityId': facilityId,
+      };
+
+      final data = await _api.get('/api/v1/bookings/owner', query: query);
+      return _parseSessions(data);
+    } on ApiException catch (e) {
+      throw OwnerException(e.message);
+    }
+  }
 
   @override
-  Future<CourtSession> getSession(String sessionId) async => _todo();
+  Future<CourtSession> getSession(String sessionId) async {
+    try {
+      final data = await _api.get('/api/v1/bookings/owner/$sessionId');
+      if (data is! Map<String, dynamic>) {
+        throw const OwnerException(OwnerStrings.loadError);
+      }
+      return _mapSession(data);
+    } on ApiException catch (e) {
+      throw OwnerException(e.message);
+    }
+  }
 
   @override
   Future<TicketLookup> lookupTicket(String code) async => _todo();
