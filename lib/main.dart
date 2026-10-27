@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'core/strings/api_strings.dart';
 import 'data/app_repositories.dart';
 import 'screens/auth/login_screen.dart';
@@ -7,7 +8,10 @@ import 'screens/auth/splash_screen.dart';
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<ScaffoldMessengerState> appMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Android đọc cấu hình từ android/app/google-services.json.
+  await Firebase.initializeApp();
   AppRepositories.api.onUnauthorized = _onSessionExpired;
   runApp(const SportNexusApp());
 }

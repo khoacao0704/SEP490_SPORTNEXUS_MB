@@ -3,6 +3,7 @@ import '../../core/strings/auth_strings.dart';
 import '../../core/utils/validators.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../models/app_user.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/auth/auth_card_scaffold.dart';
 import '../../widgets/auth/auth_primary_button.dart';
@@ -25,6 +26,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _rememberMe = true;
   bool _isLoading = false;
+  /// Nút mạng xã hội đang đăng nhập ('google' / 'facebook'), `null` khi không có.
+  String? _socialLoading;
 
   @override
   void dispose() {
@@ -34,16 +37,31 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_socialLoading != null || !_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+    await _signIn(() => AppRepositories.auth.login(
+          _usernameController.text.trim(),
+          _passwordController.text,
+          rememberMe: _rememberMe,
+        ));
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _handleSocialLogin(String provider, Future<AppUser?> Function() request) async {
+    if (_isLoading || _socialLoading != null) return;
+
+    setState(() => _socialLoading = provider);
+    await _signIn(request);
+    if (mounted) setState(() => _socialLoading = null);
+  }
+
+  /// [request] trả `null` khi người dùng tự hủy đăng nhập Google / Facebook.
+  Future<void> _signIn(Future<AppUser?> Function() request) async {
     try {
       // Role do BE trả về quyết định màn hình chính.
-      final user = await AppRepositories.auth.login(
-        _usernameController.text.trim(),
-        _passwordController.text,
-        rememberMe: _rememberMe,
-      );
+      final user = await request();
+      if (user == null) return;
       if (!isRoleAllowedOnMobile(user.role)) {
         await AppRepositories.auth.logout(revoke: false); // không thu hồi phiên Web của Admin
         if (mounted) showAuthError(context, AuthStrings.roleNotAllowed);
@@ -53,8 +71,6 @@ class _LoginScreenState extends State<LoginScreen> {
       goToHome(context, user);
     } on AuthException catch (e) {
       if (mounted) showAuthError(context, e.message);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -67,12 +83,6 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(successMessage), backgroundColor: AppColors.primaryGreen),
     );
-  }
-
-  void _showSocialComingSoon() {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text(AuthStrings.socialComingSoon)));
   }
 
   @override
@@ -180,6 +190,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: _buildSocialButton(
                       icon: const Icon(Icons.g_mobiledata, color: Colors.red, size: 24),
                       label: 'Google',
+                      provider: 'google',
+                      onPressed: () => _handleSocialLogin(
+                        'google',
+                        () => AppRepositories.auth.loginWithGoogle(rememberMe: _rememberMe),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -187,6 +202,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: _buildSocialButton(
                       icon: const Icon(Icons.facebook, color: Color(0xFF1877F2), size: 20),
                       label: 'Facebook',
+                      provider: 'facebook',
+                      onPressed: () => _handleSocialLogin(
+                        'facebook',
+                        () => AppRepositories.auth.loginWithFacebook(rememberMe: _rememberMe),
+                      ),
                     ),
                   ),
                 ],
@@ -208,10 +228,16 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildSocialButton({required Widget icon, required String label}) {
+  Widget _buildSocialButton({
+    required Widget icon,
+    required String label,
+    required String provider,
+    required VoidCallback onPressed,
+  }) {
+    final loading = _socialLoading == provider;
     return OutlinedButton.icon(
-      onPressed: _showSocialComingSoon,
-      icon: icon,
+      onPressed: _socialLoading == null ? onPressed : null,
+      icon: loading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : icon,
       label: Text(label, style: const TextStyle(color: AppColors.authLabel, fontWeight: FontWeight.bold)),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 10),

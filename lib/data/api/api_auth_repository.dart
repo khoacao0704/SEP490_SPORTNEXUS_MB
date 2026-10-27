@@ -1,5 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
+import '../../core/config/api_config.dart';
 import '../../core/strings/auth_strings.dart';
 import '../../core/strings/profile_strings.dart';
 import '../../core/utils/jwt_utils.dart';
@@ -17,6 +21,8 @@ import 'token_store.dart';
 /// - Hồ sơ: chỉ đổi được họ tên và ảnh đại diện; đổi mật khẩu / xóa tài khoản thu hồi mọi phiên.
 /// - OTP gửi qua SMS về số điện thoại (BE chưa có cổng SMS: chỉ môi trường thử nghiệm trả mã trong `devOtp`).
 ///   Đăng ký: gửi OTP trước, nhập đúng mã mới tạo tài khoản. Quên mật khẩu: OTP kiểm tra ở bước đặt lại mật khẩu.
+/// - Google: lấy idToken (ký cho Web Client ID) rồi đổi lấy phiên qua POST /api/auth/google.
+/// - Facebook: lấy access token rồi đổi lấy phiên qua POST /api/auth/facebook (BE kiểm tra token thuộc đúng App ID).
 /// - Đăng xuất: BE thu hồi phiên trên MỌI thiết bị của tài khoản.
 class ApiAuthRepository implements AuthRepository {
   static const int maxAvatarBytes = 5 * 1024 * 1024;
@@ -40,6 +46,12 @@ class ApiAuthRepository implements AuthRepository {
   /// Thời điểm hiện tại; test thay để giả lập thời gian trôi.
   final DateTime Function() _now;
 
+  /// GoogleSignIn chỉ được khởi tạo một lần; `null` khi chưa dùng đăng nhập Google.
+  Future<void>? _googleInit;
+
+  /// Đã đăng nhập Facebook trong lần chạy này (đăng xuất thì đăng xuất luôn khỏi Facebook).
+  bool _usedFacebook = false;
+
   ApiAuthRepository({required this._api, required this._tokens, DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
@@ -60,6 +72,59 @@ class ApiAuthRepository implements AuthRepository {
       throw AuthException(e.isUnauthorized ? AuthStrings.wrongCredentials : e.message);
     }
 
+    return _startSession(data, fallbackUsername: identifier.trim(), rememberMe: rememberMe);
+  }
+
+  @override
+  Future<AppUser?> loginWithGoogle({bool rememberMe = true}) async {
+    final String? idToken;
+    try {
+      await (_googleInit ??= GoogleSignIn.instance.initialize(serverClientId: ApiConfig.googleServerClientId));
+      final account = await GoogleSignIn.instance.authenticate();
+      idToken = account.authentication.idToken;
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) return null;
+      throw const AuthException(AuthStrings.googleLoginFailed);
+    }
+    if (idToken == null) throw const AuthException(AuthStrings.googleLoginFailed);
+
+    return _socialLogin('/api/auth/google', idToken, rememberMe: rememberMe);
+  }
+
+  @override
+  Future<AppUser?> loginWithFacebook({bool rememberMe = true}) async {
+    final result = await FacebookAuth.instance.login(permissions: const ['email', 'public_profile']);
+    switch (result.status) {
+      case LoginStatus.cancelled:
+      case LoginStatus.operationInProgress:
+        return null;
+      case LoginStatus.failed:
+        throw const AuthException(AuthStrings.facebookLoginFailed);
+      case LoginStatus.success:
+        break;
+    }
+    final token = result.accessToken?.tokenString;
+    if (token == null) throw const AuthException(AuthStrings.facebookLoginFailed);
+    _usedFacebook = true;
+
+    return _socialLogin('/api/auth/facebook', token, rememberMe: rememberMe);
+  }
+
+  /// Đổi token Google / Facebook lấy phiên của BE.
+  Future<AppUser> _socialLogin(String path, String token, {required bool rememberMe}) async {
+    // BE: "owner" tạo Chủ sân, giá trị khác là Người chơi (chỉ dùng khi email chưa có tài khoản).
+    // Email trùng tài khoản chưa xác thực → 409, hiển thị nguyên văn câu của BE.
+    final data = await _call(() async =>
+        await _api.post(path, body: {'token': token, 'role': 'player'}, auth: false) as Map<String, dynamic>);
+    return _startSession(data, fallbackUsername: data['email'] as String? ?? '', rememberMe: rememberMe);
+  }
+
+  /// Lưu token từ kết quả đăng nhập rồi lấy hồ sơ đầy đủ.
+  Future<AppUser> _startSession(
+    Map<String, dynamic> data, {
+    required String fallbackUsername,
+    required bool rememberMe,
+  }) async {
     await _tokens.write(data['token'] as String, refreshToken: data['refreshToken'] as String?);
 
     AppUser user;
@@ -67,7 +132,7 @@ class ApiAuthRepository implements AuthRepository {
       user = await _fetchProfile();
     } on ApiException {
       // Không lấy được hồ sơ: vẫn vào app bằng thông tin trong kết quả đăng nhập (thiếu ảnh và Fair Play).
-      final username = data['username'] as String? ?? identifier.trim();
+      final username = data['username'] as String? ?? fallbackUsername;
       user = AppUser(
         id: data['userId'] as String,
         username: username,
@@ -260,6 +325,21 @@ class ApiAuthRepository implements AuthRepository {
         await _api.post('/api/auth/logout', refreshOnUnauthorized: false).timeout(logoutTimeout);
       } catch (_) {
         // bỏ qua: phiên trên máy vẫn bị xóa
+      }
+    }
+    if (_googleInit != null) {
+      try {
+        await GoogleSignIn.instance.signOut(); // lần sau được chọn lại tài khoản Google
+      } catch (_) {
+        // bỏ qua: không ảnh hưởng phiên của app
+      }
+    }
+    if (_usedFacebook) {
+      _usedFacebook = false;
+      try {
+        await FacebookAuth.instance.logOut();
+      } catch (_) {
+        // bỏ qua: không ảnh hưởng phiên của app
       }
     }
     await _tokens.clear();

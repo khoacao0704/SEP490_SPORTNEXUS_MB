@@ -13,6 +13,8 @@ class AuthStrings {
   static const String orLoginWith = 'HOẶC ĐĂNG NHẬP BẰNG';
   static const String noAccount = 'Chưa có tài khoản? ';
   static const String registerNow = 'Đăng ký ngay';
+  static const String googleLoginFailed = 'Không đăng nhập được bằng Google. Vui lòng thử lại.';
+  static const String facebookLoginFailed = 'Không đăng nhập được bằng Facebook. Vui lòng thử lại.';
   static const String socialComingSoon = 'Đăng nhập bằng mạng xã hội sẽ sớm được hỗ trợ';
 
   // Đăng ký
