@@ -42,6 +42,14 @@ abstract class AuthRepository {
   /// [rememberMe] = false thì lần mở app sau phải đăng nhập lại.
   Future<AppUser> login(String identifier, String password, {bool rememberMe = true});
 
+  /// Đăng nhập bằng tài khoản Google; email chưa có tài khoản thì BE tạo tài khoản Người chơi.
+  /// Trả `null` khi người dùng đóng hộp chọn tài khoản.
+  Future<AppUser?> loginWithGoogle({bool rememberMe = true});
+
+  /// Đăng nhập bằng tài khoản Facebook, quy tắc như [loginWithGoogle].
+  /// Trả `null` khi người dùng hủy đăng nhập.
+  Future<AppUser?> loginWithFacebook({bool rememberMe = true});
+
   /// Bắt đầu đăng ký: gửi OTP về số điện thoại của [request]; tài khoản được tạo ở [verifyRegisterOtp].
   /// Không có OTP ([supportsOtp] = false) thì tạo tài khoản ngay.
   /// Trả về mã OTP khi máy chủ đang ở môi trường thử nghiệm (devOtp), ngoài ra `null`.

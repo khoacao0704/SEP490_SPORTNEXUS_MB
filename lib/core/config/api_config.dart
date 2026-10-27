@@ -13,6 +13,13 @@ class ApiConfig {
   static const Duration connectTimeout = Duration(seconds: 60);
   static const Duration receiveTimeout = Duration(seconds: 60);
 
+  /// Web Client ID (OAuth client type 3 trong google-services.json): Google ký idToken cho client này
+  /// và BE kiểm tra token theo đúng ID đó.
+  static const String googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+    defaultValue: '427346774153-gssv9kie90n28i719e28ia0ar6gjq295.apps.googleusercontent.com',
+  );
+
   /// `true`: đăng nhập / đăng ký dùng dữ liệu giả như trước khi nối API.
   static const bool useMockAuth = bool.fromEnvironment('USE_MOCK_AUTH');
 }

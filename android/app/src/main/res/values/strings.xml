@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Đăng nhập Facebook: App ID và Client Token của ứng dụng Facebook mà BE đang dùng
+         (Meta for Developers → App settings → Basic / Advanced). -->
+    <string name="facebook_app_id">1573930264020137</string>
+    <string name="fb_login_protocol_scheme">fb1573930264020137</string>
+    <string name="facebook_client_token">e701958732749c0246494f7e6cfd7889</string>
+</resources>

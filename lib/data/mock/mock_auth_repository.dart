@@ -88,6 +88,14 @@ class MockAuthRepository implements AuthRepository {
   bool get supportsOtp => true;
 
   @override
+  Future<AppUser?> loginWithGoogle({bool rememberMe = true}) async =>
+      throw const AuthException(AuthStrings.socialComingSoon);
+
+  @override
+  Future<AppUser?> loginWithFacebook({bool rememberMe = true}) async =>
+      throw const AuthException(AuthStrings.socialComingSoon);
+
+  @override
   Future<AppUser> login(String identifier, String password, {bool rememberMe = true}) async {
     await _delay();
     final account = _findByIdentifier(await _loadAccounts(), identifier);
