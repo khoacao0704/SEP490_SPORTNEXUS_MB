@@ -14,6 +14,9 @@ class AppUser {
   /// Ảnh đại diện; `null` khi chưa có ảnh (BE trả null hoặc chuỗi rỗng đều coi là chưa có).
   final String? avatarUrl;
   final bool isPhoneVerified;
+
+  /// `false`: tài khoản tạo bằng Google / Facebook, chưa đặt mật khẩu (đổi mật khẩu → đặt mật khẩu).
+  final bool hasPassword;
   final DateTime? createdAt;
 
   const AppUser({
@@ -26,8 +29,12 @@ class AppUser {
     this.fairPlayScore = 100,
     this.avatarUrl,
     this.isPhoneVerified = false,
+    this.hasPassword = true,
     this.createdAt,
   });
+
+  /// Tài khoản tạo bằng Google / Facebook chưa có SĐT (BE: login trả null, /auth/me trả "") → phải thêm SĐT.
+  bool get needsPhone => phone.trim().isEmpty;
 
   /// Chữ cái đầu của tên, hiện thay ảnh đại diện khi chưa có ảnh.
   String get initial {
@@ -51,6 +58,7 @@ class AppUser {
       fairPlayScore: (json['fairPlayScore'] as num?)?.toInt() ?? 100,
       avatarUrl: _avatar(json['avatarUrl']),
       isPhoneVerified: json['isPhoneVerified'] as bool? ?? false,
+      hasPassword: json['hasPassword'] as bool? ?? true,
       createdAt: json['createdAt'] == null ? null : DateTime.tryParse(json['createdAt'] as String)?.toLocal(),
     );
   }
@@ -68,11 +76,12 @@ class AppUser {
       fairPlayScore: (json['fairPlayScore'] as num?)?.round() ?? 100,
       avatarUrl: _avatar(json['avatarUrl']),
       isPhoneVerified: json['isPhoneVerified'] as bool? ?? false,
+      hasPassword: json['hasPassword'] as bool? ?? true,
       createdAt: createdAt == null ? null : DateTime.tryParse(createdAt)?.toLocal(),
     );
   }
 
-  AppUser copyWith({String? fullName, String? avatarUrl, bool clearAvatar = false}) => AppUser(
+  AppUser copyWith({String? fullName, String? avatarUrl, bool clearAvatar = false, bool? hasPassword}) => AppUser(
         id: id,
         username: username,
         fullName: fullName ?? this.fullName,
@@ -82,6 +91,7 @@ class AppUser {
         fairPlayScore: fairPlayScore,
         avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
         isPhoneVerified: isPhoneVerified,
+        hasPassword: hasPassword ?? this.hasPassword,
         createdAt: createdAt,
       );
 
@@ -95,6 +105,7 @@ class AppUser {
         'fairPlayScore': fairPlayScore,
         'avatarUrl': avatarUrl,
         'isPhoneVerified': isPhoneVerified,
+        'hasPassword': hasPassword,
         'createdAt': createdAt?.toUtc().toIso8601String(),
       };
 }

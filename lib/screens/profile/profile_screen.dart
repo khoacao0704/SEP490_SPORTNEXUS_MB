@@ -91,6 +91,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Tài khoản Google / Facebook chưa có mật khẩu: "Đặt mật khẩu" thay cho "Đổi mật khẩu".
+    final hasPassword = _user?.hasPassword ?? true;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -140,8 +142,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             _menuTile(
               icon: Icons.lock_outline,
-              title: ProfileStrings.changePassword,
-              screen: const ChangePasswordScreen(),
+              title: hasPassword ? ProfileStrings.changePassword : ProfileStrings.setPassword,
+              screen: ChangePasswordScreen(hasPassword: hasPassword),
             ),
           ],
         ),

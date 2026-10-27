@@ -10,8 +10,9 @@ import '../../widgets/auth/auth_card_scaffold.dart';
 import '../../widgets/auth/auth_primary_button.dart';
 import 'reset_password_screen.dart';
 
-/// Xác thực OTP 6 số, dùng chung cho đăng ký và quên mật khẩu.
+/// Xác thực OTP 6 số, dùng chung cho đăng ký, quên mật khẩu và thêm SĐT.
 /// Pop về `true` khi toàn bộ luồng (kể cả đặt lại mật khẩu) hoàn tất.
+/// SĐT đã được xác thực sẵn (Android tự đọc SMS, hoặc vừa xác thực cùng SĐT) thì tự đi tiếp, không cần nhập mã.
 class OtpVerificationScreen extends StatefulWidget {
   final String phone;
   final OtpPurpose purpose;
@@ -33,6 +34,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   final _otpFocusNode = FocusNode();
 
   Timer? _resendTimer;
+  StreamSubscription<String>? _autoVerified;
   int _resendSecondsLeft = _resendCooldownSeconds;
   bool _isVerifying = false;
   bool _isResending = false;
@@ -44,10 +46,17 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     _devOtp = widget.devOtp;
     _startResendCooldown();
     _otpController.addListener(() => setState(() {}));
+    _autoVerified = AppRepositories.auth.phoneVerifiedEvents.listen((_) => _verifyIfAlreadyVerified());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _verifyIfAlreadyVerified());
+  }
+
+  void _verifyIfAlreadyVerified() {
+    if (mounted && !_isVerifying && AppRepositories.auth.isPhoneVerified(widget.phone)) _handleVerify(auto: true);
   }
 
   @override
   void dispose() {
+    _autoVerified?.cancel();
     _resendTimer?.cancel();
     _otpController.dispose();
     _otpFocusNode.dispose();
@@ -81,9 +90,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     }
   }
 
-  Future<void> _handleVerify() async {
+  /// [auto]: SĐT đã xác thực sẵn, không cần mã người dùng nhập.
+  Future<void> _handleVerify({bool auto = false}) async {
+    if (_isVerifying) return;
     final otp = _otpController.text;
-    if (otp.length != _otpLength) {
+    if (!auto && otp.length != _otpLength) {
       showAuthError(context, AuthStrings.otpIncomplete);
       return;
     }
@@ -92,6 +103,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     try {
       if (widget.purpose == OtpPurpose.register) {
         await AppRepositories.auth.verifyRegisterOtp(widget.phone, otp);
+        if (mounted) Navigator.pop(context, true);
+      } else if (widget.purpose == OtpPurpose.addPhone) {
+        await AppRepositories.auth.addPhone(widget.phone, otp);
         if (mounted) Navigator.pop(context, true);
       } else {
         final token = await AppRepositories.auth.verifyResetOtp(widget.phone, otp);
