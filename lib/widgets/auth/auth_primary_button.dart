@@ -64,8 +64,10 @@ class AuthFooterLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    // Wrap: màn hẹp / chữ to thì liên kết xuống dòng thay vì tràn ngang.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(prompt, style: const TextStyle(fontSize: 13, color: AppColors.authSubtle)),
         GestureDetector(

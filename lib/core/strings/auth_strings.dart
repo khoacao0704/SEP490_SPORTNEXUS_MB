@@ -16,6 +16,15 @@ class AuthStrings {
   static const String googleLoginFailed = 'Không đăng nhập được bằng Google. Vui lòng thử lại.';
   static const String facebookLoginFailed = 'Không đăng nhập được bằng Facebook. Vui lòng thử lại.';
   static const String socialComingSoon = 'Đăng nhập bằng mạng xã hội sẽ sớm được hỗ trợ';
+  static const String socialLoginFailed = 'Không đăng nhập được. Vui lòng thử lại.';
+  static const String socialEmailUnverified =
+      'Email này đã được dùng để đăng ký tài khoản nhưng chưa xác thực. Vui lòng đăng nhập bằng tên đăng nhập '
+      'và mật khẩu, xác thực email, rồi mới đăng nhập bằng Google / Facebook.';
+  static const String socialSignUpTitle = 'Tạo tài khoản mới?';
+  static const String socialSignUpMessage =
+      'Email này chưa có tài khoản SportNexus. Tạo tài khoản Người chơi mới bằng thông tin trên?';
+  static const String socialSignUpCreate = 'Tạo tài khoản';
+  static const String cancel = 'Hủy';
 
   // Đăng ký
   static const String registerTitle = 'Tạo Tài Khoản';
@@ -62,6 +71,17 @@ class AuthStrings {
   static String otpResendIn(int seconds) => 'Gửi lại sau ${seconds}s';
   static const String otpResent = 'Đã gửi lại mã OTP';
   static const String otpIncomplete = 'Vui lòng nhập đủ 6 chữ số';
+  static const String otpExpired = 'Mã OTP đã hết hạn. Vui lòng gửi lại mã.';
+  static const String otpTooManyRequests = 'Bạn đã yêu cầu mã quá nhiều lần. Vui lòng thử lại sau ít phút.';
+  static const String smsUnavailable = 'Hệ thống tạm thời không gửi được SMS. Vui lòng thử lại sau.';
+  static const String phoneVerifyFailed = 'Không xác thực được số điện thoại. Vui lòng thử lại.';
+
+  // Thêm số điện thoại (tài khoản tạo bằng Google / Facebook)
+  static const String addPhoneTitle = 'Thêm Số Điện Thoại';
+  static const String addPhoneSubtitle =
+      'Tài khoản cần số điện thoại đã xác thực để đặt sân, chia tiền với bạn bè và lấy lại mật khẩu.';
+  static const String logout = 'Đăng xuất';
+  static const String otherAccount = 'Dùng tài khoản khác? ';
 
   // Quên / đặt lại mật khẩu
   static const String forgotTitle = 'Quên Mật Khẩu';
@@ -89,6 +109,8 @@ class AuthStrings {
   static const String usernameTaken = 'Tên đăng nhập đã tồn tại.';
   static const String featureInDevelopment = 'Chức năng đang được phát triển. Vui lòng thử lại sau.';
   static const String phoneNotFound = 'Không tìm thấy tài khoản với số điện thoại này';
+  static const String resetFailed =
+      'Không đặt lại được mật khẩu. Hãy kiểm tra số điện thoại đã đăng ký, hoặc quay lại xác thực lại.';
   static const String wrongOtp = 'Mã OTP không đúng';
   static const String sessionExpired = 'Phiên đặt lại mật khẩu đã hết hạn. Vui lòng thử lại.';
   static const String registerExpired = 'Phiên đăng ký đã hết hạn. Vui lòng đăng ký lại.';

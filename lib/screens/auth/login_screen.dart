@@ -74,6 +74,45 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Email Google / Facebook chưa có tài khoản: hỏi trước khi BE tạo tài khoản mới.
+  Future<bool> _confirmSocialSignUp(SocialSignUpInfo info) async {
+    if (!mounted) return false;
+    final avatar = info.avatarUrl;
+    final create = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(AuthStrings.socialSignUpTitle),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 32,
+              backgroundColor: AppColors.authDivider,
+              backgroundImage: avatar == null ? null : NetworkImage(avatar),
+              child: avatar == null ? const Icon(Icons.person, size: 32, color: AppColors.authHint) : null,
+            ),
+            const SizedBox(height: 12),
+            if (info.fullName.isNotEmpty)
+              Text(info.fullName, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
+            if (info.email.isNotEmpty)
+              Text(info.email, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.authSubtle)),
+            const SizedBox(height: 12),
+            const Text(AuthStrings.socialSignUpMessage, textAlign: TextAlign.center),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(AuthStrings.cancel)),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.authPrimary, foregroundColor: Colors.white),
+            child: const Text(AuthStrings.socialSignUpCreate),
+          ),
+        ],
+      ),
+    );
+    return create == true;
+  }
+
   /// Register / ForgotPassword pop về tên đăng nhập khi hoàn tất (rỗng = không điền sẵn).
   Future<void> _openAuthFlow(Widget screen, String successMessage) async {
     final username = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => screen));
@@ -193,7 +232,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       provider: 'google',
                       onPressed: () => _handleSocialLogin(
                         'google',
-                        () => AppRepositories.auth.loginWithGoogle(rememberMe: _rememberMe),
+                        () => AppRepositories.auth.loginWithGoogle(
+                          rememberMe: _rememberMe,
+                          confirmSignUp: _confirmSocialSignUp,
+                        ),
                       ),
                     ),
                   ),
@@ -205,7 +247,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       provider: 'facebook',
                       onPressed: () => _handleSocialLogin(
                         'facebook',
-                        () => AppRepositories.auth.loginWithFacebook(rememberMe: _rememberMe),
+                        () => AppRepositories.auth.loginWithFacebook(
+                          rememberMe: _rememberMe,
+                          confirmSignUp: _confirmSocialSignUp,
+                        ),
                       ),
                     ),
                   ),
