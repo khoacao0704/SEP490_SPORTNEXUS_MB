@@ -1,6 +1,7 @@
 import '../../core/constants/fair_play_rules.dart';
 import '../../core/constants/lfg_rules.dart';
 import '../../core/strings/lfg_strings.dart';
+import '../../models/booking.dart' show CancelReason;
 import '../../models/facility.dart';
 import '../../models/geo_point.dart';
 import '../../models/lfg_match.dart';
@@ -17,8 +18,13 @@ import 'api_facility_repository.dart';
 ///   tiền tạm giữ rồi chuyển cho host khi check-in / sau giờ chơi.
 /// - `totalSlots` / `remainingSlots` của BE KHÔNG tính host → app cộng thêm 1 chỗ của host.
 /// - Kèo tạo trên app luôn ghép lẻ (không chia phe), không cần duyệt; Team vs Team = 1 vs 1 giữa 2 đại diện.
+/// - Rời kèo: đã vào kèo thì BE bắt buộc lý do. Trước T−48h hoàn 100%; sau đó vẫn rời được tới giờ chơi nhưng
+///   không hoàn (tiền chuyển cho host), trong 24h cuối còn bị −10 Fair Play. Host không rời được, chỉ hủy kèo
+///   trước T−48h (mọi người + host hoàn 100%, host −10 Fair Play).
+/// - Yêu cầu hủy kèo đã chốt: chỉ host gửi; BE cho tới 1 giờ trước giờ chơi nhưng nhóm chốt chỉ trước T−24h
+///   (app chặn). Người tham gia bỏ phiếu; một người từ chối là bác.
 /// - BE chưa có: giữ chỗ khi Flash Claim (app đếm 10 phút trên máy, vào kèo + trừ tiền ở bước xác nhận),
-///   yêu cầu hủy cần tất cả đồng ý, chuyển quyền host (host chỉ hủy kèo), lọc tỉnh/quận.
+///   chuyển quyền host, lọc tỉnh/quận cho bảng tin kèo.
 class ApiLfgRepository implements LfgRepository {
   static const String feedPath = '/api/v1/lfgs';
   static const String myCardsPath = '/api/v1/lfgs/my-cards';
@@ -30,6 +36,10 @@ class ApiLfgRepository implements LfgRepository {
   static String acceptPath(String id) => '/api/v1/lfgs/$id/invitation/accept';
   static String declinePath(String id) => '/api/v1/lfgs/$id/invitation/decline';
   static String ticketPath(String id) => '/api/v1/lfgs/$id/qr-ticket';
+  static const String leaveReasonsPath = '/api/v1/lfgs/cancel-reasons';
+  static String cancelRequestsPath(String id) => '/api/v1/lfgs/$id/cancel-requests';
+  static String latestCancelRequestPath(String id) => '/api/v1/lfgs/$id/cancel-requests/latest';
+  static String votePath(String id, String requestId) => '/api/v1/lfgs/$id/cancel-requests/$requestId/vote';
   static String bookingTicketPath(String bookingId) => '/api/v1/bookings/$bookingId/qr-ticket';
 
   /// Trạng thái của mình trong kèo được giữ lại ở "Kèo của tôi" (rời / bị loại / từ chối thì bỏ).
@@ -56,6 +66,12 @@ class ApiLfgRepository implements LfgRepository {
 
   @override
   bool get hostCanLeave => false;
+
+  @override
+  bool get lateLeaveAllowed => true;
+
+  @override
+  bool get onlyHostRequestsCancel => true;
 
   @override
   bool get hostPaysCourt => true;
@@ -93,9 +109,20 @@ class ApiLfgRepository implements LfgRepository {
 
   @override
   Future<LfgMatch> getMatch(String matchId) async {
-    final match = matchFromApi(await _call(() => _api.get(cardPath(matchId))) as Map<String, dynamic>, myId: await _myId());
+    final myId = await _myId();
+    final match = matchFromApi(await _call(() => _api.get(cardPath(matchId))) as Map<String, dynamic>, myId: myId);
     if (match == null) throw const LfgException(LfgStrings.notFound);
-    return match;
+    // Yêu cầu hủy chỉ có ở kèo đã chốt mà mình ở trong; không tải được thì coi như không có.
+    final now = DateTime.now();
+    if (!match.isMember(myId) || match.status(now) != LfgStatus.confirmed || now.isBefore(match.leaveDeadline)) {
+      return match;
+    }
+    try {
+      final request = cancelRequestFromApi(await _api.get(latestCancelRequestPath(matchId)), match, myId: myId);
+      return request == null ? match : match.copyWith(cancelRequest: request);
+    } on ApiException {
+      return match;
+    }
   }
 
   /// Kèo mình tạo (my-cards) + kèo mình tham gia / được mời / đang chờ duyệt (joined); sắp diễn ra trước.
@@ -178,22 +205,49 @@ class ApiLfgRepository implements LfgRepository {
     return match;
   }
 
-  /// Hoàn 100% số đang tạm giữ (BE chỉ ghi số tiền trong câu thông báo → lấy từ chi tiết trước khi rời).
+  /// Trước T−48h hoàn 100% số đang tạm giữ, sau đó không hoàn. BE chỉ ghi số tiền trong câu thông báo
+  /// → tính từ chi tiết trước khi rời. Đang chờ duyệt / được mời thì chưa trả gì.
   @override
-  Future<int> leaveMatch(String matchId) async {
+  Future<int> leaveMatch(String matchId, {String? reason}) async {
     final match = await getMatch(matchId);
-    if (!DateTime.now().isBefore(match.leaveDeadline)) throw const LfgException(LfgStrings.leaveTooLate);
-    await _call(() => _api.post(leavePath(matchId)));
-    return match.myStatus == null ? match.depositPerSlot : 0;
+    final note = reason?.trim();
+    await _call(() => _api.post(leavePath(matchId), body: {if (note != null && note.isNotEmpty) 'reason': note}));
+    return match.myStatus == null && DateTime.now().isBefore(match.leaveDeadline) ? match.depositPerSlot : 0;
+  }
+
+  /// BE trả [{code, label, isCustom}] như lý do hủy đặt sân; phần tử là chuỗi thì dùng làm nhãn.
+  @override
+  Future<List<CancelReason>> getLeaveReasons() async {
+    final list = await _call(() => _api.get(leaveReasonsPath)) as List? ?? const [];
+    var i = 0;
+    return [
+      for (final r in list)
+        if (r is Map<String, dynamic>)
+          CancelReason(
+            code: (r['code'] as num?)?.toInt() ?? ++i,
+            label: r['label'] as String? ?? '',
+            isCustom: r['isCustom'] == true,
+          )
+        else if (r is String)
+          CancelReason(code: ++i, label: r),
+    ];
   }
 
   @override
-  Future<LfgMatch> requestCancel(String matchId) async =>
-      throw const LfgException(LfgStrings.mutualCancelUnavailable);
+  Future<LfgMatch> requestCancel(String matchId, {String? reason}) async {
+    final note = reason?.trim();
+    await _call(() => _api.post(cancelRequestsPath(matchId), body: {if (note != null && note.isNotEmpty) 'reason': note}));
+    return getMatch(matchId);
+  }
 
   @override
-  Future<LfgMatch> respondCancel(String matchId, {required bool approve}) async =>
-      throw const LfgException(LfgStrings.mutualCancelUnavailable);
+  Future<LfgMatch> respondCancel(String matchId, {required bool approve}) async {
+    final latest = await _call(() => _api.get(latestCancelRequestPath(matchId)));
+    final requestId = latest is Map<String, dynamic> ? (latest['id'] ?? latest['requestId'])?.toString() : null;
+    if (requestId == null) throw const LfgException(LfgStrings.loadError);
+    await _call(() => _api.post(votePath(matchId, requestId), body: {'approve': approve}));
+    return getMatch(matchId);
+  }
 
   @override
   Future<LfgMatch> cancelMatch(String matchId) async {
@@ -309,6 +363,31 @@ class ApiLfgRepository implements LfgRepository {
       formatLabelOverride: formatLabel,
       myStatus: myStatus,
       bookingId: json['bookingId']?.toString(),
+    );
+  }
+
+  /// GET cancel-requests/latest → yêu cầu đang chờ (PENDING), còn lại `null`. Người gửi luôn là host.
+  /// Có danh sách phiếu (votes / approvals) thì lấy người đã đồng ý; không có thì chỉ biết phiếu của mình (myVote).
+  static LfgCancelRequest? cancelRequestFromApi(Object? data, LfgMatch match, {String? myId}) {
+    if (data is! Map<String, dynamic>) return null;
+    if ((data['status'] as String? ?? '').toUpperCase() != 'PENDING') return null;
+    final host = match.host;
+    final votes = (data['votes'] ?? data['approvals']) as List?;
+    final approvals = <String>{
+      host.userId,
+      if (votes != null)
+        for (final v in votes)
+          if (v is String)
+            v
+          else if (v is Map && v['approve'] == true && v['userId'] != null)
+            v['userId'].toString(),
+      if (votes == null && data['myVote'] == true && myId != null) myId,
+    };
+    return LfgCancelRequest(
+      requestedBy: data['requestedById']?.toString() ?? host.userId,
+      requestedByName: data['requestedByName'] as String? ?? host.name,
+      createdAt: _time(data['createdAt']) ?? DateTime.now(),
+      approvals: approvals.toList(),
     );
   }
 

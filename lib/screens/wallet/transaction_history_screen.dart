@@ -54,6 +54,32 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
     }
   }
 
+  Future<void> _cancelWithdrawal(WalletTransaction tx) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(WalletStrings.cancelWithdrawal),
+        content: const Text(WalletStrings.cancelWithdrawalConfirm),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(WalletStrings.keep)),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(WalletStrings.cancelWithdrawal, style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _wallet.cancelWithdrawal(tx);
+      messenger.showSnackBar(const SnackBar(content: Text(WalletStrings.withdrawalCancelled)));
+    } on WalletException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+    }
+    if (mounted) _load();
+  }
+
   List<WalletTransaction> get _filtered {
     switch (_filter) {
       case _Filter.all:
@@ -205,7 +231,15 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
           final tx = row as WalletTransaction;
           return Material(
             color: AppColors.white,
-            child: TransactionTile(transaction: tx, onTap: () => showTransactionDetailSheet(context, tx)),
+            child: TransactionTile(
+              transaction: tx,
+              onTap: () => showTransactionDetailSheet(
+                context,
+                tx,
+                // Chỉ ví Người chơi; ví Chủ sân giữ nguyên như cũ.
+                onCancelWithdrawal: widget.wallet == null && _wallet.supportsWithdrawal ? () => _cancelWithdrawal(tx) : null,
+              ),
+            ),
           );
         },
       ),

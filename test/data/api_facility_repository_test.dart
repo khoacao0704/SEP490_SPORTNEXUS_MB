@@ -96,7 +96,13 @@ void main() {
     expect(ApiFacilityRepository.sportFromName(null), isNull);
   });
 
-  test('tìm sân: gửi đúng tham số, đổi kết quả sang Facility', () async {
+  void locations() => server.ok(ApiFacilityRepository.locationsPath, [
+        {'province': 'TP. Hồ Chí Minh', 'facilityCount': 4, 'districts': ['Quận 7', 'Quận 1', 'TP. Thủ Đức']},
+        {'province': 'Hà Nội', 'facilityCount': 1, 'districts': []},
+      ]);
+
+  test('tìm sân: gửi đúng tham số (tỉnh/quận theo đúng tên của BE), đổi kết quả sang Facility', () async {
+    locations();
     server.ok(ApiFacilityRepository.searchPath, {
       'page': 1, 'pageSize': 50, 'totalItems': 1, 'totalPages': 1,
       'items': [_searchItem()],
@@ -117,6 +123,8 @@ void main() {
       'keyword': 'ABC',
       'lat': 10.7,
       'lng': 106.6,
+      'province': 'TP. Hồ Chí Minh',
+      'district': 'Quận 1',
       'sortBy': 'distance',
       'categoryId': _footballId,
     });
@@ -342,10 +350,98 @@ void main() {
     );
   });
 
-  test('không lọc khu vực', () async {
-    expect(repo.supportsAreaFilter, isFalse);
-    expect(await repo.getDistricts('Hồ Chí Minh'), isEmpty);
+  test('lọc khu vực: quận lấy từ /locations theo tên tỉnh của BE; tải danh sách một lần', () async {
+    locations();
+    expect(repo.supportsAreaFilter, isTrue);
+    expect(await repo.getDistricts('Hồ Chí Minh'), ['Quận 1', 'Quận 7', 'TP. Thủ Đức']);
+    expect(await repo.getDistricts('TP. Hồ Chí Minh'), ['Quận 1', 'Quận 7', 'TP. Thủ Đức']);
+    expect(await repo.getDistricts('Hà Nội'), isEmpty);
+    expect(await repo.getDistricts('Đà Nẵng'), isEmpty);
+    expect(server.requests.where((r) => r.path == ApiFacilityRepository.locationsPath), hasLength(1));
     expect(Facility.noLocation, const GeoPoint(0, 0));
+  });
+
+  test('lọc khu vực: tỉnh chưa có cơ sở nào thì trả rỗng, không gọi tìm kiếm', () async {
+    locations();
+    final page = await repo.searchFacilitiesPage(const FacilitySearchQuery(city: 'Đà Nẵng'));
+    expect(page.items, isEmpty);
+    expect(page.hasMore, isFalse);
+    expect(server.requests.where((r) => r.path == ApiFacilityRepository.searchPath), isEmpty);
+  });
+
+  test('phân trang màn Tìm sân: 20 cơ sở / trang, còn trang sau theo totalItems', () async {
+    server.ok(ApiFacilityRepository.searchPath, {
+      'page': 2, 'pageSize': 20, 'totalItems': 45, 'totalPages': 3,
+      'items': List.generate(20, (i) => {..._searchItem(), 'id': 'f$i'}),
+    });
+    final page = await repo.searchFacilitiesPage(const FacilitySearchQuery(city: ''), page: 2);
+    expect(server.requests.last.queryParameters, {'page': 2, 'pageSize': 20});
+    expect(page.items, hasLength(20));
+    expect(page.total, 45);
+    expect(page.hasMore, isTrue);
+
+    server.ok(ApiFacilityRepository.searchPath, {
+      'page': 3, 'pageSize': 20, 'totalItems': 45, 'totalPages': 3,
+      'items': List.generate(5, (i) => {..._searchItem(), 'id': 'g$i'}),
+    });
+    expect((await repo.searchFacilitiesPage(const FacilitySearchQuery(city: ''), page: 3)).hasMore, isFalse);
+  });
+
+  test('nội quy: mỗi dòng một ý, bỏ ký hiệu đầu dòng và dòng trống', () {
+    expect(
+      ApiFacilityRepository.rulesFromApi('- Mang giày thể thao\r\n\n• Không hút thuốc\n2) Đến trước 10 phút\nGiữ vệ sinh '),
+      ['Mang giày thể thao', 'Không hút thuốc', 'Đến trước 10 phút', 'Giữ vệ sinh'],
+    );
+    expect(ApiFacilityRepository.rulesFromApi(null), isEmpty);
+    expect(ApiFacilityRepository.rulesFromApi('  '), isEmpty);
+  });
+
+  test('loại sân theo teamSize: bóng đá 5/7/11, bóng rổ 3/5; chưa khai báo / số lạ / môn vợt → tiêu chuẩn', () {
+    expect(ApiFacilityRepository.courtTypeOf(Sport.football, 5), CourtType.football5);
+    expect(ApiFacilityRepository.courtTypeOf(Sport.football, 7), CourtType.football7);
+    expect(ApiFacilityRepository.courtTypeOf(Sport.football, 11), CourtType.football11);
+    expect(ApiFacilityRepository.courtTypeOf(Sport.basketball, 3), CourtType.basketballHalf);
+    expect(ApiFacilityRepository.courtTypeOf(Sport.basketball, 5), CourtType.basketballFull);
+    expect(ApiFacilityRepository.courtTypeOf(Sport.football, null), CourtType.standard);
+    expect(ApiFacilityRepository.courtTypeOf(Sport.football, 6), CourtType.standard);
+    expect(ApiFacilityRepository.courtTypeOf(Sport.badminton, 2), CourtType.standard);
+  });
+
+  test('loại sân: chi tiết tách loại theo teamSize; khung giờ chỉ lấy sân con của loại đã chọn', () async {
+    server.ok(ApiFacilityRepository.facilityPath('f1'), {
+      'id': 'f1',
+      'name': 'Sân bóng',
+      'address': '',
+      'rules': 'Mang giày đinh dăm',
+      'courts': [
+        {'id': 'c1', 'categoryId': _footballId, 'categoryName': 'Bóng đá', 'name': 'Sân 5A', 'status': 'Active', 'defaultPrice': 400000, 'teamSize': 5},
+        {'id': 'c2', 'categoryId': _footballId, 'categoryName': 'Bóng đá', 'name': 'Sân 7', 'status': 'Active', 'defaultPrice': 700000, 'teamSize': 7},
+        {'id': 'c3', 'categoryId': _footballId, 'categoryName': 'Bóng đá', 'name': 'Sân cũ', 'status': 'Active', 'defaultPrice': 300000},
+      ],
+    });
+    Map<String, dynamic> court(String id, String slot) => {
+          'courtId': id, 'courtName': id, 'categoryId': _footballId,
+          'slots': [
+            {'id': slot, 'startTime': '2030-01-05T18:00:00+07:00', 'endTime': '2030-01-05T19:00:00+07:00', 'price': 1, 'isBookable': true},
+          ],
+        };
+    server.ok(ApiFacilityRepository.availabilityPath('f1'), {
+      'facilityId': 'f1',
+      'courts': [court('c1', 's1'), court('c2', 's2'), court('c3', 's3')],
+    });
+
+    final f = await repo.getFacility('f1');
+    expect(f.rules, ['Mang giày đinh dăm']);
+    expect(
+      f.offeringsFor(Sport.football).map((o) => (o.courtType, o.courtCount, o.priceFrom)),
+      [(CourtType.standard, 1, 300000), (CourtType.football5, 1, 400000), (CourtType.football7, 1, 700000)],
+    );
+
+    final seven = await repo.getTimeSlots('f1', Sport.football, DateTime(2030, 1, 5), courtType: CourtType.football7);
+    expect(seven.map((s) => (s.id, s.courtType)), [('s2', CourtType.football7)]);
+    final all = await repo.getTimeSlots('f1', Sport.football, DateTime(2030, 1, 5));
+    expect(all.map((s) => s.id), ['s1', 's2', 's3']);
+    expect(server.requests.where((r) => r.path == ApiFacilityRepository.facilityPath('f1')), hasLength(1));
   });
 
   group('giữ chỗ trên máy (BE chưa có API giữ chỗ)', () {

@@ -6,6 +6,7 @@ import '../../core/constants/fair_play_rules.dart';
 import '../../core/constants/lfg_rules.dart';
 import '../../core/strings/lfg_strings.dart';
 import '../../core/utils/geo_utils.dart';
+import '../../models/booking.dart' show CancelReason;
 import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/lfg_match.dart';
@@ -231,7 +232,17 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
   Future<String> getTicketCode(LfgMatch match, String userId) async => match.ticketCode(userId);
 
   @override
-  Future<int> leaveMatch(String matchId) async {
+  bool get lateLeaveAllowed => false;
+
+  @override
+  bool get onlyHostRequestsCancel => false;
+
+  /// Bản giả lập không hỏi lý do.
+  @override
+  Future<List<CancelReason>> getLeaveReasons() async => const [];
+
+  @override
+  Future<int> leaveMatch(String matchId, {String? reason}) async {
     await _delay();
     final me = await _requireUser();
     final match = await _find(matchId, me.id);
@@ -274,7 +285,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
   }
 
   @override
-  Future<LfgMatch> requestCancel(String matchId) async {
+  Future<LfgMatch> requestCancel(String matchId, {String? reason}) async {
     await _delay();
     final me = await _requireUser();
     final now = _now();

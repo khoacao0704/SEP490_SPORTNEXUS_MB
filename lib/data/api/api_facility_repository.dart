@@ -17,12 +17,15 @@ import 'api_client.dart';
 /// - Môn thể thao của BE là danh mục (categoryId) do Admin tạo; app ghép với 5 môn cố định theo TÊN.
 ///   Sân con thuộc môn app không có thì bỏ qua.
 /// - Lọc thêm: khoảng giá (theo giá mặc định của sân con), số sao, tiện ích (phải có đủ). Cơ sở đẩy tin luôn đứng đầu.
-/// - Sân con: courtType / trong nhà / mặt sân / số người là chuỗi tự do chủ sân nhập → chỉ hiển thị
-///   ([Facility.courtDetails]); app vẫn coi mọi sân con là [CourtType.standard].
-/// - BE chưa có: lọc tỉnh/quận ([supportsAreaFilter] = false), nội quy cơ sở, API giữ chỗ
-///   (giữ chỗ 10 phút đếm trên máy, xem [holdSlots]).
+/// - Tỉnh/quận: BE lọc theo TÊN (province / district) khớp đúng chuỗi trong GET /facilities/locations
+///   (chỉ gồm tỉnh có cơ sở hoạt động, vd. "TP. Hồ Chí Minh") → tên thành phố của app được ghép sang tên của BE.
+/// - Loại sân: suy từ teamSize (số người mỗi đội) của sân con — bóng đá 5/7/11, bóng rổ 3 (3x3) / 5 (5x5).
+///   Chưa khai báo teamSize thì là [CourtType.standard]. BE không lọc theo loại sân nên khung giờ lọc trên máy.
+///   Các chữ tự do (courtType / trong nhà / mặt sân / số người) chỉ để hiển thị ([Facility.courtDetails]).
+/// - BE chưa có: API giữ chỗ (giữ chỗ 10 phút đếm trên máy, xem [holdSlots]).
 class ApiFacilityRepository implements FacilityRepository {
   static const String searchPath = '/api/v1/facilities/search';
+  static const String locationsPath = '/api/v1/facilities/locations';
   static const String sportsPath = '/api/v1/master-data/sports';
   static const String amenitiesPath = '/api/v1/master-data/amenities';
   static String facilityPath(String id) => '/api/v1/facilities/$id';
@@ -30,6 +33,9 @@ class ApiFacilityRepository implements FacilityRepository {
 
   /// pageSize tối đa BE cho phép.
   static const int pageSize = 50;
+
+  /// Số cơ sở mỗi trang ở màn Tìm sân (kéo xuống cuối thì tải tiếp).
+  static const int listPageSize = 20;
 
   final ApiClient _api;
 
@@ -39,25 +45,45 @@ class ApiFacilityRepository implements FacilityRepository {
 
   List<Amenity>? _amenities;
 
+  /// Tỉnh (tên của BE) → các quận đang có cơ sở.
+  Map<String, List<String>>? _locations;
+
+  /// Loại sân của từng sân con (id sân con → loại), theo cơ sở; có sau khi tải chi tiết cơ sở.
+  final Map<String, Map<String, CourtType>> _courtTypes = {};
+
   ApiFacilityRepository({required this._api});
 
   @override
-  bool get supportsAreaFilter => false;
+  bool get supportsAreaFilter => true;
 
-  /// courtType của BE là chữ tự do chủ sân nhập, không dùng để lọc / ghép được.
+  /// BE không lọc / tạo kèo theo loại sân: LFG chưa chọn loại sân (chi tiết cơ sở vẫn chọn khi có dữ liệu).
   @override
   bool get supportsCourtTypes => false;
 
   @override
-  Future<List<FacilitySearchResult>> searchFacilities(FacilitySearchQuery query) async {
+  Future<List<FacilitySearchResult>> searchFacilities(FacilitySearchQuery query) async =>
+      (await _search(query, page: 1, size: pageSize)).items;
+
+  @override
+  Future<FacilitySearchPage> searchFacilitiesPage(FacilitySearchQuery query, {int page = 1}) =>
+      _search(query, page: page, size: listPageSize);
+
+  Future<FacilitySearchPage> _search(FacilitySearchQuery query, {required int page, required int size}) async {
     final location = query.userLocation;
     final params = <String, dynamic>{
-      'page': 1,
-      'pageSize': pageSize,
+      'page': page,
+      'pageSize': size,
       if (query.keyword.trim().isNotEmpty) 'keyword': query.keyword.trim(),
       if (location != null) 'lat': location.latitude,
       if (location != null) 'lng': location.longitude,
     };
+    if (query.city.isNotEmpty) {
+      final province = await _provinceOf(query.city);
+      // Tỉnh chưa có cơ sở nào đang hoạt động (không có trong /locations).
+      if (province == null) return const FacilitySearchPage(items: [], hasMore: false, total: 0);
+      params['province'] = province;
+      if (query.district != null) params['district'] = query.district;
+    }
     // "Gần nhất" mà không có vị trí thì để BE dùng mặc định (mới nhất), gửi distance sẽ bị 400.
     final sortBy = switch (query.sort) {
       FacilitySort.distance => location == null ? null : 'distance',
@@ -76,23 +102,57 @@ class ApiFacilityRepository implements FacilityRepository {
     final sport = query.sport;
     if (sport != null) {
       final categoryId = await categoryIdOf(sport);
-      if (categoryId == null) return []; // server chưa có môn này
+      if (categoryId == null) return const FacilitySearchPage(items: [], hasMore: false, total: 0); // server chưa có môn này
       params['categoryId'] = categoryId;
     }
 
     final data = await _call(() => _api.get(searchPath, query: params)) as Map<String, dynamic>;
     final items = (data['items'] as List? ?? const []).cast<Map<String, dynamic>>();
-    return items
-        .map((json) => FacilitySearchResult(
-              facility: _facilityFromSearch(json),
-              distanceKm: (json['distanceKm'] as num?)?.toDouble(),
-            ))
-        .toList();
+    final total = (data['totalItems'] as num?)?.toInt() ?? 0;
+    return FacilitySearchPage(
+      items: items
+          .map((json) => FacilitySearchResult(
+                facility: _facilityFromSearch(json),
+                distanceKm: (json['distanceKm'] as num?)?.toDouble(),
+              ))
+          .toList(),
+      hasMore: items.length == size && page * size < total,
+      total: total < items.length ? items.length : total,
+    );
   }
 
-  /// BE chưa có lọc tỉnh/quận.
   @override
-  Future<List<String>> getDistricts(String city) async => const [];
+  Future<List<String>> getDistricts(String city) async {
+    final province = await _provinceOf(city);
+    if (province == null) return const [];
+    return [..._locations![province]!]..sort();
+  }
+
+  /// Tên tỉnh của BE ứng với [city] của app ("Hồ Chí Minh" ↔ "TP. Hồ Chí Minh"); `null` khi tỉnh đó
+  /// chưa có cơ sở nào đang hoạt động.
+  Future<String?> _provinceOf(String city) async {
+    final locations = _locations ??= await _loadLocations();
+    final key = _provinceKey(city);
+    return locations.keys.where((p) => _provinceKey(p) == key).firstOrNull;
+  }
+
+  Future<Map<String, List<String>>> _loadLocations() async {
+    final data = await _call(() => _api.get(locationsPath)) as List? ?? const [];
+    return {
+      for (final item in data.cast<Map<String, dynamic>>())
+        if ((item['province'] as String? ?? '').isNotEmpty)
+          item['province'] as String: [
+            for (final d in item['districts'] as List? ?? const [])
+              if (d.toString().isNotEmpty) d.toString(),
+          ],
+    };
+  }
+
+  /// Bỏ dấu, hoa thường và tiền tố "TP." / "Thành phố" / "Tỉnh" để so tên tỉnh.
+  static String _provinceKey(String name) => TextUtils.normalize(name)
+      .replaceFirst(RegExp(r'^(tp\.?|thanh pho|tinh)\s*'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 
   /// Danh mục tiện ích ít thay đổi: tải một lần.
   @override
@@ -111,10 +171,21 @@ class ApiFacilityRepository implements FacilityRepository {
   Future<Facility> getFacility(String facilityId) async =>
       _facilityFromDetail(await _call(() => _api.get(facilityPath(facilityId))) as Map<String, dynamic>);
 
+  /// [courtType]: chỉ lấy sân con thuộc loại đó (loại sân lấy từ chi tiết cơ sở; chưa tải thì tải một lần).
+  /// Bỏ trống thì lấy mọi sân con của môn.
   @override
   Future<List<TimeSlot>> getTimeSlots(String facilityId, Sport sport, DateTime date, {CourtType? courtType}) async {
     final categoryId = await categoryIdOf(sport);
     if (categoryId == null) return [];
+    if (!_courtTypes.containsKey(facilityId)) {
+      try {
+        await getFacility(facilityId);
+      } on FacilityException {
+        // Không tải được chi tiết: coi mọi sân con là sân tiêu chuẩn, vẫn hiện khung giờ (mở chi tiết sẽ tải lại).
+        _courtTypes[facilityId] = const {};
+      }
+    }
+    final types = _courtTypes[facilityId] ?? const {};
     final data = await _call(() => _api.get(availabilityPath(facilityId), query: {
           'date': _dateParam(date),
           'categoryId': categoryId,
@@ -123,12 +194,15 @@ class ApiFacilityRepository implements FacilityRepository {
     final slots = <TimeSlot>[];
     for (final court in (data['courts'] as List? ?? const []).cast<Map<String, dynamic>>()) {
       if (court['categoryId']?.toString() != categoryId) continue;
+      final type = types[court['courtId']?.toString()] ?? CourtType.standard;
+      if (courtType != null && type != courtType) continue;
       final courtName = court['courtName'] as String? ?? '';
       for (final slot in (court['slots'] as List? ?? const []).cast<Map<String, dynamic>>()) {
         slots.add(TimeSlot(
           id: slot['id'].toString(),
           facilityId: facilityId,
           sport: sport,
+          courtType: type,
           courtName: courtName,
           start: DateTime.parse(slot['startTime'] as String).toLocal(),
           end: DateTime.parse(slot['endTime'] as String).toLocal(),
@@ -245,23 +319,29 @@ class ApiFacilityRepository implements FacilityRepository {
     );
   }
 
-  /// Chi tiết cơ sở: mỗi môn = các sân con (Court) đang hoạt động của môn đó; "giá từ" = DefaultPrice thấp nhất.
+  /// Chi tiết cơ sở: mỗi (môn, loại sân) = các sân con (Court) đang hoạt động; "giá từ" = DefaultPrice thấp nhất.
   Facility _facilityFromDetail(Map<String, dynamic> json) {
-    final counts = <Sport, int>{};
-    final prices = <Sport, int>{};
+    final facilityId = json['id'].toString();
+    final counts = <(Sport, CourtType), int>{};
+    final prices = <(Sport, CourtType), int>{};
     final details = <Sport, Map<String, String>>{};
+    final types = <String, CourtType>{};
     for (final court in (json['courts'] as List? ?? const []).cast<Map<String, dynamic>>()) {
       final sport = sportFromName(court['categoryName'] as String?);
       if (sport == null) continue;
       _categoryIds[sport] = court['categoryId'].toString();
       if ((court['status'] as String? ?? 'Active').toLowerCase() != 'active') continue;
-      counts[sport] = (counts[sport] ?? 0) + 1;
+      final type = courtTypeOf(sport, (court['teamSize'] as num?)?.toInt());
+      types[court['id'].toString()] = type;
+      final key = (sport, type);
+      counts[key] = (counts[key] ?? 0) + 1;
       final detail = courtDetail(court);
       if (detail.isNotEmpty) (details[sport] ??= {})[court['name'] as String? ?? ''] = detail;
       final price = _money(court['defaultPrice']);
-      final current = prices[sport];
-      prices[sport] = current == null || price < current ? price : current;
+      final current = prices[key];
+      prices[key] = current == null || price < current ? price : current;
     }
+    _courtTypes[facilityId] = types;
     return Facility(
       id: json['id'].toString(),
       name: json['name'] as String? ?? '',
@@ -270,13 +350,19 @@ class ApiFacilityRepository implements FacilityRepository {
       district: '',
       location: _location(json),
       offerings: counts.entries
-          .map((e) => SportOffering(sport: e.key, courtCount: e.value, priceFrom: prices[e.key] ?? 0))
+          .map((e) => SportOffering(
+                sport: e.key.$1,
+                courtType: e.key.$2,
+                courtCount: e.value,
+                priceFrom: prices[e.key] ?? 0,
+              ))
           .toList(),
       rating: _rating(json['averageRating']),
       reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
       imageUrls: (json['images'] as List? ?? const []).map((e) => e.toString()).where((e) => e.isNotEmpty).toList(),
       amenities: _amenityNames(json),
       amenityIcons: _amenityIcons(json),
+      rules: rulesFromApi(json['rules'] as String?),
       openTime: _time(json['openTime']),
       closeTime: _time(json['closeTime']),
       phone: json['phone'] as String? ?? '',
@@ -284,6 +370,19 @@ class ApiFacilityRepository implements FacilityRepository {
       courtDetails: details,
     );
   }
+
+  /// Loại sân theo số người mỗi đội: bóng đá 5/7/11, bóng rổ 3 (nửa sân 3x3) / 5 (5x5).
+  /// Môn khác hoặc chưa khai báo / số lạ → sân tiêu chuẩn.
+  static CourtType courtTypeOf(Sport sport, int? teamSize) =>
+      CourtType.forSport(sport).where((t) => !t.isStandard && t.playersPerTeam == teamSize).firstOrNull ??
+      CourtType.standard;
+
+  /// Nội quy của BE là một đoạn chữ: mỗi dòng một ý, bỏ ký hiệu đầu dòng ("-", "•", "1." ...).
+  static List<String> rulesFromApi(String? rules) => (rules ?? '')
+      .split(RegExp(r'\r?\n'))
+      .map((line) => line.trim().replaceFirst(RegExp(r'^([-•*+]|\d+[.)])\s*'), '').trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
 
   /// Thông tin chủ sân khai báo cho sân con (đều tùy chọn, chuỗi tự do):
   /// "Sân 5 người · Trong nhà · Cỏ nhân tạo · Tối đa 10 người". Chưa khai báo gì → chuỗi rỗng.

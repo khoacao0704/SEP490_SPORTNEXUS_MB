@@ -34,13 +34,33 @@ class RegisterRequest {
   });
 }
 
-enum OtpPurpose { register, resetPassword }
+enum OtpPurpose { register, resetPassword, addPhone }
+
+/// Thông tin Google / Facebook của email chưa có tài khoản SportNexus, để người dùng xác nhận tạo mới.
+class SocialSignUpInfo {
+  final String fullName;
+  final String email;
+  final String? avatarUrl;
+
+  const SocialSignUpInfo({required this.fullName, required this.email, this.avatarUrl});
+}
+
+/// Hỏi người dùng có tạo tài khoản mới không; `true` = tạo.
+typedef ConfirmSocialSignUp = Future<bool> Function(SocialSignUpInfo info);
 
 /// Hợp đồng xác thực mà UI sử dụng: ApiAuthRepository (BE thật) hoặc MockAuthRepository.
 abstract class AuthRepository {
   /// Đăng nhập bằng tên đăng nhập (bản giả lập nhận thêm email / số điện thoại).
   /// [rememberMe] = false thì lần mở app sau phải đăng nhập lại.
   Future<AppUser> login(String identifier, String password, {bool rememberMe = true});
+
+  /// Đăng nhập bằng tài khoản Google. Email chưa có tài khoản thì hỏi [confirmSignUp] trước khi BE tạo
+  /// tài khoản Người chơi. Trả `null` khi người dùng đóng hộp chọn tài khoản hoặc không đồng ý tạo mới.
+  Future<AppUser?> loginWithGoogle({bool rememberMe = true, required ConfirmSocialSignUp confirmSignUp});
+
+  /// Đăng nhập bằng tài khoản Facebook, quy tắc như [loginWithGoogle].
+  /// Trả `null` khi người dùng hủy đăng nhập.
+  Future<AppUser?> loginWithFacebook({bool rememberMe = true, required ConfirmSocialSignUp confirmSignUp});
 
   /// Bắt đầu đăng ký: gửi OTP về số điện thoại của [request]; tài khoản được tạo ở [verifyRegisterOtp].
   /// Không có OTP ([supportsOtp] = false) thì tạo tài khoản ngay.
@@ -63,6 +83,19 @@ abstract class AuthRepository {
 
   /// Gửi lại OTP. Trả về devOtp như [register].
   Future<String?> resendOtp(String phone, OtpPurpose purpose);
+
+  /// Gửi OTP để thêm SĐT cho tài khoản đang đăng nhập chưa có SĐT ([AppUser.needsPhone]). Trả về devOtp như [register].
+  Future<String?> requestPhoneOtp(String phone);
+
+  /// Nhập đúng OTP thì gắn SĐT (đã xác thực) vào tài khoản; trả hồ sơ mới.
+  Future<AppUser> addPhone(String phone, String otp);
+
+  /// SĐT đã được xác thực trên máy, màn OTP không cần nhập mã (Android tự xác thực SMS, hoặc vừa xác thực
+  /// cùng SĐT mà phải quay lại sửa thông tin đăng ký).
+  bool isPhoneVerified(String phone);
+
+  /// Phát mỗi khi một SĐT được xác thực mà không cần nhập mã; đọc lại bằng [isPhoneVerified].
+  Stream<String> get phoneVerifiedEvents;
 
   /// Người dùng của phiên đã ghi nhớ, `null` nếu chưa đăng nhập.
   Future<AppUser?> getCurrentUser();
@@ -87,6 +120,10 @@ abstract class AuthRepository {
   /// Đổi mật khẩu. Thành công thì mọi phiên đăng nhập bị thu hồi: đăng xuất tại máy, người dùng đăng nhập lại.
   Future<void> changePassword({required String oldPassword, required String newPassword, required String confirmPassword});
 
+  /// Đặt mật khẩu lần đầu cho tài khoản tạo bằng Google / Facebook ([AppUser.hasPassword] = false).
+  Future<void> setPassword({required String newPassword, required String confirmPassword});
+
   /// Xóa tài khoản (xóa mềm). Chặn nếu còn lịch đặt sân sắp diễn ra hoặc ví còn tiền. Thành công thì đăng xuất.
-  Future<void> deleteAccount({required String password, String? reason});
+  /// Tài khoản chưa có mật khẩu thì không cần [password].
+  Future<void> deleteAccount({String? password, String? reason});
 }

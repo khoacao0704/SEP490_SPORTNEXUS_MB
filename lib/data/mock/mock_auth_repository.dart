@@ -88,6 +88,14 @@ class MockAuthRepository implements AuthRepository {
   bool get supportsOtp => true;
 
   @override
+  Future<AppUser?> loginWithGoogle({bool rememberMe = true, required ConfirmSocialSignUp confirmSignUp}) async =>
+      throw const AuthException(AuthStrings.socialComingSoon);
+
+  @override
+  Future<AppUser?> loginWithFacebook({bool rememberMe = true, required ConfirmSocialSignUp confirmSignUp}) async =>
+      throw const AuthException(AuthStrings.socialComingSoon);
+
+  @override
   Future<AppUser> login(String identifier, String password, {bool rememberMe = true}) async {
     await _delay();
     final account = _findByIdentifier(await _loadAccounts(), identifier);
@@ -192,6 +200,32 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<String?> requestPhoneOtp(String phone) async {
+    await _delay();
+    final accounts = await _loadAccounts();
+    if (accounts.any((a) => a.user.phone == _normalizePhone(phone))) throw const AuthException(AuthStrings.phoneTaken);
+    return null;
+  }
+
+  @override
+  Future<AppUser> addPhone(String phone, String otp) async {
+    await _delay();
+    if (otp != mockOtp) throw const AuthException(AuthStrings.wrongOtp);
+    final account = await _me();
+    account.user = AppUser.fromJson({...account.user.toJson(), 'phone': _normalizePhone(phone), 'isPhoneVerified': true});
+    await _saveAccounts();
+    await SessionStore.save(account.user, rememberMe: await SessionStore.rememberMe());
+    return account.user;
+  }
+
+  /// Bản giả lập không có tự xác thực SMS.
+  @override
+  bool isPhoneVerified(String phone) => false;
+
+  @override
+  Stream<String> get phoneVerifiedEvents => const Stream.empty();
+
+  @override
   Future<AppUser?> getCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool(keyIsLoggedIn) ?? false;
@@ -276,8 +310,15 @@ class MockAuthRepository implements AuthRepository {
     await logout();
   }
 
+  /// Tài khoản giả lập luôn có mật khẩu: giống BE, báo dùng Đổi mật khẩu.
   @override
-  Future<void> deleteAccount({required String password, String? reason}) async {
+  Future<void> setPassword({required String newPassword, required String confirmPassword}) async {
+    await _delay();
+    throw const AuthException(ProfileStrings.alreadyHasPassword);
+  }
+
+  @override
+  Future<void> deleteAccount({String? password, String? reason}) async {
     await _delay();
     final account = await _me();
     if (account.password != password) throw const AuthException(ProfileStrings.wrongDeletePassword);

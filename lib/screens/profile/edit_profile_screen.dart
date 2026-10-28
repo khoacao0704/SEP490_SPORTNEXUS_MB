@@ -155,7 +155,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final deleted = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const _DeleteAccountDialog(),
+      builder: (_) => _DeleteAccountDialog(requirePassword: _user.hasPassword),
     );
     if (deleted == true && mounted) goToLogin(context, ProfileStrings.deleted);
   }
@@ -272,8 +272,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 }
 
 /// Hộp xác nhận cuối: nhập mật khẩu (+ lý do) rồi gọi BE. Tự giữ controller; pop `true` khi đã xóa.
+/// Tài khoản Google / Facebook chưa có mật khẩu ([requirePassword] = false) thì chỉ hỏi lý do.
 class _DeleteAccountDialog extends StatefulWidget {
-  const _DeleteAccountDialog();
+  final bool requirePassword;
+
+  const _DeleteAccountDialog({required this.requirePassword});
 
   @override
   State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
@@ -294,7 +297,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   }
 
   Future<void> _delete() async {
-    if (_passwordController.text.isEmpty) {
+    if (widget.requirePassword && _passwordController.text.isEmpty) {
       setState(() => _error = Validators.required(''));
       return;
     }
@@ -303,7 +306,10 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       _error = null;
     });
     try {
-      await AppRepositories.auth.deleteAccount(password: _passwordController.text, reason: _reasonController.text);
+      await AppRepositories.auth.deleteAccount(
+        password: widget.requirePassword ? _passwordController.text : null,
+        reason: _reasonController.text,
+      );
       if (mounted) Navigator.pop(context, true);
     } on AuthException catch (e) {
       if (mounted) {
@@ -323,19 +329,21 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: _passwordController,
-              obscureText: _obscured,
-              autofillHints: const [AutofillHints.password],
-              decoration: InputDecoration(
-                labelText: ProfileStrings.deletePasswordLabel,
-                suffixIcon: IconButton(
-                  icon: Icon(_obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 20),
-                  onPressed: () => setState(() => _obscured = !_obscured),
+            if (widget.requirePassword) ...[
+              TextField(
+                controller: _passwordController,
+                obscureText: _obscured,
+                autofillHints: const [AutofillHints.password],
+                decoration: InputDecoration(
+                  labelText: ProfileStrings.deletePasswordLabel,
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscured ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 20),
+                    onPressed: () => setState(() => _obscured = !_obscured),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
             TextField(
               controller: _reasonController,
               maxLength: 200,

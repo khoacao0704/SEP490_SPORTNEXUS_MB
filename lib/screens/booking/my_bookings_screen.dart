@@ -118,7 +118,8 @@ class _BookingsViewState extends State<_BookingsView> {
     });
     try {
       final bookings = await AppRepositories.booking.getMyBookings();
-      final splits = await AppRepositories.split.getMine();
+      // BE thật chia tiền theo đơn (thẻ "Chờ góp tiền" bên dưới), không dùng lượt chia theo mã.
+      final splits = AppRepositories.booking.supportsSplitInvite ? <SplitPayment>[] : await AppRepositories.split.getMine();
       final user = await AppRepositories.auth.getCurrentUser();
       if (!mounted) return;
       final now = DateTime.now();
@@ -140,10 +141,13 @@ class _BookingsViewState extends State<_BookingsView> {
   Future<void> _cancel(Booking b) async {
     final now = DateTime.now();
     final refund = b.refundIfCancelled(now);
-    final message = (b.isFreeCancel(now)
-            ? BookingStrings.confirmCancelFree(refund)
-            : BookingStrings.confirmCancelLate(b.cancelFee(now), refund)) +
-        (b.paymentType == BookingPaymentType.split ? BookingStrings.splitCancelNote : '');
+    final free = b.refundsInFull(now);
+    final message = (free ? BookingStrings.confirmCancelFree(refund) : BookingStrings.confirmCancelLate(b.cancelFee(now))) +
+        (b.paymentType != BookingPaymentType.split
+            ? ''
+            : free
+                ? BookingStrings.splitCancelFreeNote
+                : BookingStrings.splitCancelLateNote);
     // Không tải được danh sách lý do thì vẫn cho hủy (BE dùng lý do mặc định).
     var reasons = const <CancelReason>[];
     try {
@@ -391,8 +395,6 @@ class _BookingsViewState extends State<_BookingsView> {
           const Divider(height: 20, color: AppColors.divider),
           _row(BookingStrings.total, Formatters.vnd(b.totalPrice)),
           _row(BookingStrings.paid, '${Formatters.vnd(b.amountPaid)} • ${b.paymentType.label}'),
-          if (b.remainingAtCourt > 0 && status == BookingStatus.upcoming)
-            _row('', BookingStrings.remainingAtCourt(b.remainingAtCourt), color: AppColors.tagOrangeText),
           if (status == BookingStatus.cancelled && b.refunded > 0)
             _row('', BookingStrings.refunded(b.refunded), color: AppColors.primaryGreen),
           if (awaiting && b.myShare > 0)
@@ -400,7 +402,8 @@ class _BookingsViewState extends State<_BookingsView> {
           if (!isBooker) _row('', BookingStrings.contributor, color: AppColors.textSecondary),
           if (status == BookingStatus.upcoming) ...[
             const SizedBox(height: 8),
-            if (isBooker)
+            // Đơn chờ góp hủy lúc nào cũng hoàn đủ nên không hiện mốc 24 giờ.
+            if (isBooker && !awaiting)
               Text(
                 b.isFreeCancel(now) ? BookingStrings.freeCancelUntil(deadline) : BookingStrings.lateCancelNote,
                 style: TextStyle(fontSize: 12, color: b.isFreeCancel(now) ? AppColors.textSecondary : Colors.red),

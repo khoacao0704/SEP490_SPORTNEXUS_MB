@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:test1/core/strings/booking_strings.dart';
 import 'package:test1/core/strings/split_payment_strings.dart';
 import 'package:test1/data/api/api_booking_repository.dart';
 import 'package:test1/data/api/api_client.dart';
@@ -105,8 +104,7 @@ void main() {
         schedule: '',
       );
 
-  test('chỉ trả 100%, chưa chia tiền; vé đổi mã 30 giây', () {
-    expect(repo.supportsDeposit, isFalse);
+  test('chưa chia tiền bằng mã; vé đổi mã 30 giây', () {
     expect(repo.supportsSplitPayment, isFalse);
     expect(repo.ticketRefreshInterval, const Duration(seconds: 30));
   });
@@ -142,19 +140,12 @@ void main() {
     expect(bookings.first.paymentType, BookingPaymentType.full);
   });
 
-  test('ca vừa có người đặt / ví không đủ: hiện câu của BE; cọc 1/4 không gọi BE', () async {
+  test('ca vừa có người đặt / ví không đủ: hiện câu của BE', () async {
     server.fail('POST', ApiBookingRepository.bookingsPath, 400, 'Ca sân 06:00 đã có người đặt hoặc đang bảo trì');
     await expectLater(
       book(hold([slot('s1', 6)])),
       throwsA(isA<BookingException>().having((e) => e.message, 'message', contains('đã có người đặt'))),
     );
-
-    server.requests.clear();
-    await expectLater(
-      book(hold([slot('s1', 6)]), type: BookingPaymentType.deposit),
-      throwsA(isA<BookingException>().having((e) => e.message, 'message', BookingStrings.depositUnavailable)),
-    );
-    expect(server.requests, isEmpty);
   });
 
   test('lịch đặt: sắp diễn ra (gần nhất trước) rồi đã qua; đơn được mời góp không phải của mình', () async {
@@ -216,10 +207,83 @@ void main() {
     expect(server.requests[2].data, isEmpty);
   });
 
-  test('hủy xong mà không tải lại được chi tiết vẫn báo đúng số tiền hoàn', () async {
+  test('hủy xong mà không tải lại được chi tiết: chỉ báo đã hủy (refundAmount là của cả đơn)', () async {
     server.ok('POST', ApiBookingRepository.cancelPath('b1'), {'refundAmount': 100000});
     final cancelled = await repo.cancelBooking('b1');
-    expect(cancelled.refunded, 100000);
+    expect(cancelled.cancelledAt, isNotNull);
+    expect(cancelled.refunded, 0);
+  });
+
+  test('hủy đơn chia tiền: chỉ hiện phần mình được hoàn, không phải refundAmount của cả đơn', () async {
+    server.ok('POST', ApiBookingRepository.cancelPath('b1'), {'refundStatus': 'REFUNDED', 'refundAmount': 66667});
+    server.ok('GET', ApiBookingRepository.bookingPath('b1'), {
+      'bookingId': 'b1',
+      'bookingStatus': 'CANCELLED',
+      'hostId': _me,
+      'facilityName': 'Hà Nội Badminton Center',
+      'startTime': '2030-01-05T06:00:00+07:00',
+      'endTime': '2030-01-05T07:00:00+07:00',
+      'totalAmount': 100000,
+      'participants': [
+        {'userId': _me, 'fullName': 'Khoa Cao', 'amountContributed': 33334, 'paymentStatus': 'REFUNDED', 'isHost': true},
+        {'userId': 'u-a', 'fullName': 'An', 'amountContributed': 33333, 'paymentStatus': 'REFUNDED'},
+        {'userId': 'u-b', 'fullName': 'Bình', 'amountContributed': 33333, 'paymentStatus': 'PENDING'},
+      ],
+      'cancellation': {'reason': 'Bận', 'refundAmount': 66667, 'penaltyAmount': 0, 'cancelledAt': '2030-01-05T05:55:00+07:00'},
+    });
+
+    final cancelled = await repo.cancelBooking('b1');
+    expect(cancelled.refunded, 33334);
+    expect(cancelled.paymentType, BookingPaymentType.split);
+    expect(cancelled.amountPaid, 66667);
+  });
+
+  test('người bị người đặt trả thay: ẩn khỏi lịch đặt và khỏi danh sách người góp', () async {
+    server.ok('GET', ApiBookingRepository.myBookingsPath, [
+      _summary('removed', '2030-01-05T06:00:00+07:00', role: 'Participant', pay: 'PENDING', status: 'PAID', people: 3),
+      _summary('paid', '2030-01-06T06:00:00+07:00', role: 'Participant', pay: 'HELD', status: 'PAID', people: 3),
+      _summary('gone', '2030-01-07T06:00:00+07:00', role: 'Participant', pay: 'PENDING', status: 'CANCELLED', people: 3),
+    ]);
+    expect((await repo.getMyBookings()).map((b) => b.id), ['paid', 'gone']);
+
+    server.ok('GET', ApiBookingRepository.bookingPath('b1'), {
+      'bookingId': 'b1',
+      'bookingStatus': 'PAID',
+      'hostId': _me,
+      'facilityName': 'Hà Nội Badminton Center',
+      'startTime': '2030-01-05T06:00:00+07:00',
+      'endTime': '2030-01-05T07:00:00+07:00',
+      'totalAmount': 100000,
+      'participants': [
+        {'userId': _me, 'fullName': 'Khoa Cao', 'amountContributed': 66667, 'paymentStatus': 'HELD', 'isHost': true},
+        {'userId': 'u-a', 'fullName': 'An', 'amountContributed': 33333, 'paymentStatus': 'HELD'},
+        {'userId': 'u-b', 'fullName': 'Bình', 'amountContributed': 33333, 'paymentStatus': 'PENDING'},
+      ],
+    });
+    final b = await repo.getBooking('b1');
+    expect(b.participants.map((p) => p.name), ['Khoa Cao', 'An']);
+    expect(b.paymentType, BookingPaymentType.split);
+  });
+
+  test('đơn chia tiền còn chờ góp: hủy lúc nào cũng hoàn đủ', () async {
+    server.ok('GET', ApiBookingRepository.bookingPath('b1'), {
+      'bookingId': 'b1',
+      'bookingStatus': 'PENDING',
+      'hostId': _me,
+      'facilityName': 'Hà Nội Badminton Center',
+      'startTime': '2030-01-05T06:00:00+07:00',
+      'endTime': '2030-01-05T07:00:00+07:00',
+      'totalAmount': 100000,
+      'participants': [
+        {'userId': _me, 'fullName': 'Khoa Cao', 'amountContributed': 50000, 'paymentStatus': 'HELD', 'isHost': true},
+        {'userId': 'u-a', 'fullName': 'An', 'amountContributed': 50000, 'paymentStatus': 'PENDING'},
+      ],
+    });
+    final b = await repo.getBooking('b1');
+    final oneHourBefore = DateTime.parse('2030-01-05T05:00:00+07:00').toLocal();
+    expect(b.isFreeCancel(oneHourBefore), isFalse);
+    expect(b.refundsInFull(oneHourBefore), isTrue);
+    expect(b.cancelFee(oneHourBefore), 0);
   });
 
   group('chia tiền mời bạn', () {

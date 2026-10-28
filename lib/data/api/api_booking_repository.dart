@@ -13,13 +13,16 @@ import 'api_facility_repository.dart';
 ///
 /// - Đặt sân: POST /api/v1/bookings với các ca đã chọn; BE tạo MỘT đơn cho mỗi ca (cả lần đặt thành công hoặc
 ///   không đơn nào), trừ ví ngay (tạm giữ tới khi chơi xong). Hai người cùng đặt một ca: người sau nhận 400.
-/// - BE chưa có: cọc 1/4 (chỉ trả 100%), giữ chỗ 10 phút (app tự đếm trên máy, xem [ApiFacilityRepository.holdSlots])
-///   → [supportsDeposit] = false.
+/// - Không có cọc (đặt sân thường trả 100%). BE chưa có giữ chỗ 10 phút: app tự đếm trên máy, xem
+///   [ApiFacilityRepository.holdSlots].
 /// - Chia tiền: người đặt mời bạn theo TÀI KHOẢN (tra bằng SĐT); mỗi ca một đơn PENDING, mọi người (gồm người đặt)
 ///   chia đều, người đặt chịu phần lẻ; hạn 30 phút (không quá giờ bắt đầu). BE chưa có mã/link chia sẻ nên luồng
 ///   chia mã của SplitPaymentRepository tắt ([supportsSplitPayment] = false, [supportsSplitInvite] = true).
 /// - Trạng thái đơn của BE: PENDING (chia tiền chờ góp), PAID, CHECKED_IN, CANCELLED; "đã chơi xong" suy ra từ giờ kết thúc.
-/// - Hủy: chỉ người đặt; BE trả số tiền thực được hoàn. Vé QR đổi mã mỗi 30 giây.
+/// - Hủy: chỉ người đặt. ≥24h trước giờ chơi hoàn 100%, <24h không hoàn; đơn chia tiền còn chờ góp luôn hoàn đủ.
+///   refundAmount BE trả là của CẢ đơn (mọi người đã góp), không phải riêng người đặt. Vé QR đổi mã mỗi 30 giây.
+/// - Người bị người đặt "trả thay" (pay-remaining) bị BE xóa mềm nhưng vẫn còn trong my-bookings và
+///   participants với trạng thái chưa trả → app bỏ họ đi.
 class ApiBookingRepository implements BookingRepository {
   static const String bookingsPath = '/api/v1/bookings';
   static const String myBookingsPath = '/api/v1/bookings/my-bookings';
@@ -32,15 +35,15 @@ class ApiBookingRepository implements BookingRepository {
   static String payRemainingPath(String id) => '/api/v1/bookings/$id/pay-remaining';
   static const String lookupPath = '/api/accounts/lookup';
 
-  /// Trạng thái thanh toán của một người trong đơn được tính là đã trả.
-  static const Set<String> paidStatuses = {'HELD', 'PAID', 'RELEASED', 'CHECKED_IN'};
+  /// Trạng thái thanh toán của một người trong đơn được tính là đã trả (REFUNDED: đã trả rồi được hoàn khi hủy).
+  static const Set<String> paidStatuses = {'HELD', 'PAID', 'RELEASED', 'CHECKED_IN', 'REFUNDED'};
+
+  /// Đơn đã đủ tiền: người được mời mà vẫn "chưa trả" là người đã bị người đặt trả thay (bỏ khỏi đơn).
+  static const Set<String> confirmedStatuses = {'PAID', 'CHECKED_IN'};
 
   final ApiClient _api;
 
   ApiBookingRepository({required this._api});
-
-  @override
-  bool get supportsDeposit => false;
 
   @override
   bool get supportsSplitPayment => false;
@@ -60,7 +63,6 @@ class ApiBookingRepository implements BookingRepository {
     required String location,
     required String schedule,
   }) async {
-    if (paymentType == BookingPaymentType.deposit) throw const BookingException(BookingStrings.depositUnavailable);
     if (paymentType == BookingPaymentType.split) throw const BookingException(BookingStrings.useSplitFlow);
     final me = await SessionStore.readUser();
     if (me == null) throw const BookingException(BookingStrings.loginRequired);
@@ -102,7 +104,11 @@ class ApiBookingRepository implements BookingRepository {
   Future<List<Booking>> getMyBookings() async {
     final myId = (await SessionStore.readUser())?.id ?? '';
     final list = await _call(() => _api.get(myBookingsPath)) as List? ?? const [];
-    final all = list.cast<Map<String, dynamic>>().map((json) => bookingFromSummary(json, myId)).toList();
+    final all = list
+        .cast<Map<String, dynamic>>()
+        .where((json) => !_removedFromSplit(json))
+        .map((json) => bookingFromSummary(json, myId))
+        .toList();
     final now = DateTime.now();
     final upcoming = all.where((b) => b.status(now) == BookingStatus.upcoming).toList()
       ..sort((a, b) => a.start.compareTo(b.start));
@@ -114,17 +120,18 @@ class ApiBookingRepository implements BookingRepository {
   @override
   Future<Booking> cancelBooking(String bookingId, {int? reasonCode, String? reason}) async {
     final note = reason?.trim();
-    final result = await _call(() => _api.post(cancelPath(bookingId), body: {
+    await _call(() => _api.post(cancelPath(bookingId), body: {
           'reasonCode': ?reasonCode,
           if (note != null && note.isNotEmpty) 'reason': note,
         }));
-    final refund = result is Map<String, dynamic> ? _money(result['refundAmount']) : 0;
-    // Đã hủy xong; chi tiết chỉ để cập nhật thẻ. Không tải được thì vẫn báo đúng số tiền hoàn.
+    // refundAmount là của cả đơn; phần của mình lấy từ chi tiết. Không tải được chi tiết thì chỉ báo đã hủy
+    // (đơn chia tiền không biết phần mình nên không báo số tiền có thể sai).
     try {
       final detail = await _api.get(bookingPath(bookingId)) as Map<String, dynamic>;
-      return bookingFromDetail(detail, await _myId()).copyWith(cancelledAt: DateTime.now(), refunded: refund);
+      final booking = bookingFromDetail(detail, await _myId());
+      return booking.cancelledAt != null ? booking : booking.copyWith(cancelledAt: DateTime.now());
     } on ApiException {
-      return _cancelledStub(bookingId, refund);
+      return _cancelledStub(bookingId);
     }
   }
 
@@ -279,23 +286,40 @@ class ApiBookingRepository implements BookingRepository {
     );
   }
 
+  /// Người được mời đã bị người đặt trả thay: đơn đã đủ tiền mà phần của mình vẫn chưa trả.
+  static bool _removedFromSplit(Map<String, dynamic> summary) =>
+      (summary['myRole'] as String? ?? '').toLowerCase() != 'host' &&
+      confirmedStatuses.contains((summary['bookingStatus'] as String? ?? '').toUpperCase()) &&
+      !paidStatuses.contains((summary['myPaymentStatus'] as String? ?? '').toUpperCase());
+
   /// GET /bookings/{id}: đủ người đặt, người góp (amountContributed = phần của người đó), thông tin hủy.
   static Booking bookingFromDetail(Map<String, dynamic> json, String myId) {
     final start = _time(json['startTime'])!;
     final end = _time(json['endTime'])!;
     final status = (json['bookingStatus'] as String? ?? '').toUpperCase();
-    final participants = (json['participants'] as List? ?? const []).cast<Map<String, dynamic>>();
     final cancellation = json['cancellation'] as Map<String, dynamic>?;
-    final people = participants
-        .map((p) => BookingParticipant(
-              userId: p['userId'].toString(),
-              name: p['fullName'] as String? ?? '',
-              amount: _money(p['amountContributed']),
-              isPaid: paidStatuses.contains((p['paymentStatus'] as String? ?? '').toUpperCase()),
-              isHost: p['isHost'] == true,
+    final raw = (json['participants'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final isSplit = raw.length > 1;
+    final participants = raw
+        .map((p) => (
+              person: BookingParticipant(
+                userId: p['userId'].toString(),
+                name: p['fullName'] as String? ?? '',
+                amount: _money(p['amountContributed']),
+                isPaid: paidStatuses.contains((p['paymentStatus'] as String? ?? '').toUpperCase()),
+                isHost: p['isHost'] == true,
+              ),
+              refunded: (p['paymentStatus'] as String? ?? '').toUpperCase() == 'REFUNDED',
             ))
+        // Đơn đã đủ tiền: người chưa trả là người đã bị trả thay (BE xóa mềm nhưng vẫn trả về).
+        .where((p) => !confirmedStatuses.contains(status) || p.person.isHost || p.person.isPaid)
         .toList();
+    final people = participants.map((p) => p.person).toList();
     final me = people.where((p) => p.userId == myId).firstOrNull;
+    // Đơn một người: refundAmount của cả đơn chính là của mình. Đơn chia tiền: phần mình nếu đã được hoàn.
+    final myRefund = isSplit
+        ? participants.where((p) => p.person.userId == myId && p.refunded).map((p) => p.person.amount).firstOrNull ?? 0
+        : _money(cancellation?['refundAmount']);
     return Booking(
       id: json['bookingId'].toString(),
       bookerId: json['hostId']?.toString() ?? '',
@@ -307,20 +331,20 @@ class ApiBookingRepository implements BookingRepository {
       start: start,
       end: end,
       totalPrice: _money(json['totalAmount']),
-      paymentType: participants.length > 1 ? BookingPaymentType.split : BookingPaymentType.full,
+      paymentType: isSplit ? BookingPaymentType.split : BookingPaymentType.full,
       payments: people.where((p) => p.isPaid).map((p) => BookingPayment(userId: p.userId, name: p.name, amount: p.amount)).toList(),
       createdAt: _time(json['createdAt']) ?? start,
       cancelledAt: status == 'CANCELLED' ? _time(cancellation?['cancelledAt']) ?? DateTime.now() : null,
-      refunded: _money(cancellation?['refundAmount']),
+      refunded: status == 'CANCELLED' ? myRefund : 0,
       isCheckedIn: status == 'CHECKED_IN',
       awaitingPayment: status == 'PENDING',
-      myShare: people.length > 1 ? me?.amount ?? 0 : 0,
+      myShare: isSplit ? me?.amount ?? 0 : 0,
       participants: people,
     );
   }
 
-  /// Đã hủy nhưng không tải lại được chi tiết: chỉ cần số tiền hoàn để báo người dùng.
-  static Booking _cancelledStub(String id, int refund) {
+  /// Đã hủy nhưng không tải lại được chi tiết: chỉ để báo người dùng đã hủy.
+  static Booking _cancelledStub(String id) {
     final now = DateTime.now();
     return Booking(
       id: id,
@@ -336,7 +360,6 @@ class ApiBookingRepository implements BookingRepository {
       payments: const [],
       createdAt: now,
       cancelledAt: now,
-      refunded: refund,
     );
   }
 

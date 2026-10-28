@@ -3,6 +3,7 @@ import '../../core/strings/auth_strings.dart';
 import '../../core/utils/validators.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../models/app_user.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/auth/auth_card_scaffold.dart';
 import '../../widgets/auth/auth_primary_button.dart';
@@ -25,6 +26,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _rememberMe = true;
   bool _isLoading = false;
+  /// Nút mạng xã hội đang đăng nhập ('google' / 'facebook'), `null` khi không có.
+  String? _socialLoading;
 
   @override
   void dispose() {
@@ -34,16 +37,31 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_socialLoading != null || !_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+    await _signIn(() => AppRepositories.auth.login(
+          _usernameController.text.trim(),
+          _passwordController.text,
+          rememberMe: _rememberMe,
+        ));
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _handleSocialLogin(String provider, Future<AppUser?> Function() request) async {
+    if (_isLoading || _socialLoading != null) return;
+
+    setState(() => _socialLoading = provider);
+    await _signIn(request);
+    if (mounted) setState(() => _socialLoading = null);
+  }
+
+  /// [request] trả `null` khi người dùng tự hủy đăng nhập Google / Facebook.
+  Future<void> _signIn(Future<AppUser?> Function() request) async {
     try {
       // Role do BE trả về quyết định màn hình chính.
-      final user = await AppRepositories.auth.login(
-        _usernameController.text.trim(),
-        _passwordController.text,
-        rememberMe: _rememberMe,
-      );
+      final user = await request();
+      if (user == null) return;
       if (!isRoleAllowedOnMobile(user.role)) {
         await AppRepositories.auth.logout(revoke: false); // không thu hồi phiên Web của Admin
         if (mounted) showAuthError(context, AuthStrings.roleNotAllowed);
@@ -53,9 +71,46 @@ class _LoginScreenState extends State<LoginScreen> {
       goToHome(context, user);
     } on AuthException catch (e) {
       if (mounted) showAuthError(context, e.message);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Email Google / Facebook chưa có tài khoản: hỏi trước khi BE tạo tài khoản mới.
+  Future<bool> _confirmSocialSignUp(SocialSignUpInfo info) async {
+    if (!mounted) return false;
+    final avatar = info.avatarUrl;
+    final create = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(AuthStrings.socialSignUpTitle),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 32,
+              backgroundColor: AppColors.authDivider,
+              backgroundImage: avatar == null ? null : NetworkImage(avatar),
+              child: avatar == null ? const Icon(Icons.person, size: 32, color: AppColors.authHint) : null,
+            ),
+            const SizedBox(height: 12),
+            if (info.fullName.isNotEmpty)
+              Text(info.fullName, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
+            if (info.email.isNotEmpty)
+              Text(info.email, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.authSubtle)),
+            const SizedBox(height: 12),
+            const Text(AuthStrings.socialSignUpMessage, textAlign: TextAlign.center),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(AuthStrings.cancel)),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.authPrimary, foregroundColor: Colors.white),
+            child: const Text(AuthStrings.socialSignUpCreate),
+          ),
+        ],
+      ),
+    );
+    return create == true;
   }
 
   /// Register / ForgotPassword pop về tên đăng nhập khi hoàn tất (rỗng = không điền sẵn).
@@ -67,12 +122,6 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(successMessage), backgroundColor: AppColors.primaryGreen),
     );
-  }
-
-  void _showSocialComingSoon() {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text(AuthStrings.socialComingSoon)));
   }
 
   @override
@@ -107,10 +156,13 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 12),
 
               // Remember Me & Forgot Password
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 8,
                 children: [
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
                         width: 20,
@@ -123,9 +175,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        AuthStrings.rememberMe,
-                        style: TextStyle(fontSize: 13, color: AppColors.authBody),
+                      const Flexible(
+                        child: Text(
+                          AuthStrings.rememberMe,
+                          style: TextStyle(fontSize: 13, color: AppColors.authBody),
+                        ),
                       ),
                     ],
                   ),
@@ -153,23 +207,30 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 24),
 
               // Divider: HOẶC ĐĂNG NHẬP BẰNG
-              const Row(
-                children: [
-                  Expanded(child: Divider(color: AppColors.authDivider)),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      AuthStrings.orLoginWith,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.authHint,
-                        letterSpacing: 0.5,
+              // Chữ tối đa 60% chiều ngang: màn hẹp / chữ to thì xuống dòng thay vì tràn.
+              LayoutBuilder(
+                builder: (context, constraints) => Row(
+                  children: [
+                    const Expanded(child: Divider(color: AppColors.authDivider)),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.6),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          AuthStrings.orLoginWith,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.authHint,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  Expanded(child: Divider(color: AppColors.authDivider)),
-                ],
+                    const Expanded(child: Divider(color: AppColors.authDivider)),
+                  ],
+                ),
               ),
               const SizedBox(height: 20),
 
@@ -180,6 +241,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: _buildSocialButton(
                       icon: const Icon(Icons.g_mobiledata, color: Colors.red, size: 24),
                       label: 'Google',
+                      provider: 'google',
+                      onPressed: () => _handleSocialLogin(
+                        'google',
+                        () => AppRepositories.auth.loginWithGoogle(
+                          rememberMe: _rememberMe,
+                          confirmSignUp: _confirmSocialSignUp,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -187,6 +256,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: _buildSocialButton(
                       icon: const Icon(Icons.facebook, color: Color(0xFF1877F2), size: 20),
                       label: 'Facebook',
+                      provider: 'facebook',
+                      onPressed: () => _handleSocialLogin(
+                        'facebook',
+                        () => AppRepositories.auth.loginWithFacebook(
+                          rememberMe: _rememberMe,
+                          confirmSignUp: _confirmSocialSignUp,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -208,10 +285,16 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildSocialButton({required Widget icon, required String label}) {
+  Widget _buildSocialButton({
+    required Widget icon,
+    required String label,
+    required String provider,
+    required VoidCallback onPressed,
+  }) {
+    final loading = _socialLoading == provider;
     return OutlinedButton.icon(
-      onPressed: _showSocialComingSoon,
-      icon: icon,
+      onPressed: _socialLoading == null ? onPressed : null,
+      icon: loading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : icon,
       label: Text(label, style: const TextStyle(color: AppColors.authLabel, fontWeight: FontWeight.bold)),
       style: OutlinedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 10),

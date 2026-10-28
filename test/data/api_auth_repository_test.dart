@@ -13,6 +13,7 @@ import 'package:test1/data/api/api_auth_repository.dart';
 import 'package:test1/data/api/api_client.dart';
 import 'package:test1/data/api/token_store.dart';
 import 'package:test1/data/repositories/auth_repository.dart';
+import 'package:test1/data/repositories/phone_verifier.dart';
 import 'package:test1/data/session_store.dart';
 import 'package:test1/models/app_user.dart';
 import 'package:test1/models/user_role.dart';
@@ -49,6 +50,39 @@ class _FakeServer implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// Firebase giả: mã đúng luôn là [code], token = `firebase-{SĐT}`.
+class _FakePhoneVerifier implements PhoneVerifier {
+  static const String code = '123456';
+
+  final List<String> sent = [];
+  String? _verified;
+  AuthException? sendError;
+
+  @override
+  Future<void> sendCode(String phone) async {
+    if (sendError != null) throw sendError!;
+    sent.add(phone);
+  }
+
+  @override
+  Future<String> verifyCode(String phone, String smsCode) async {
+    if (_verified == phone) return 'firebase-$phone';
+    if (!sent.contains(phone)) throw const AuthException(AuthStrings.otpExpired);
+    if (smsCode != code) throw const AuthException(AuthStrings.wrongOtp);
+    _verified = phone;
+    return 'firebase-$phone';
+  }
+
+  @override
+  bool isVerified(String phone) => _verified == phone;
+
+  @override
+  Stream<String> get verifiedPhones => const Stream.empty();
+
+  @override
+  void clear() => _verified = null;
+}
+
 /// JWT giả (chỉ payload có ý nghĩa với app).
 String _jwt({required DateTime expiresAt}) {
   String part(Map<String, dynamic> m) => base64Url.encode(utf8.encode(jsonEncode(m))).replaceAll('=', '');
@@ -62,6 +96,7 @@ void main() {
   late MemoryTokenStore tokens;
   late ApiClient api;
   late ApiAuthRepository repo;
+  late _FakePhoneVerifier phone;
   late int unauthorizedCalls;
   final validToken = _jwt(expiresAt: DateTime.now().add(const Duration(days: 7)));
 
@@ -115,7 +150,8 @@ void main() {
     unauthorizedCalls = 0;
     final dio = Dio(BaseOptions(baseUrl: 'https://be.test', validateStatus: (_) => true))..httpClientAdapter = server;
     api = ApiClient(tokens: tokens, dio: dio, onUnauthorized: () => unauthorizedCalls++);
-    repo = ApiAuthRepository(api: api, tokens: tokens);
+    phone = _FakePhoneVerifier();
+    repo = ApiAuthRepository(api: api, tokens: tokens, phoneVerifier: phone);
   });
 
   group('đăng nhập', () {
@@ -182,6 +218,112 @@ void main() {
     });
   });
 
+  group('đăng nhập Google / Facebook', () {
+    Map<String, dynamic> session({bool hasPassword = true}) => {
+      'statusCode': 200,
+      'message': 'Đăng nhập thành công.',
+      'data': {
+        'token': validToken,
+        'refreshToken': 'refresh-1',
+        'userId': userId,
+        'username': 'User1',
+        'fullName': 'Test',
+        'role': 'Player',
+        'phone': null,
+        'email': 'a@gmail.com',
+        'isPhoneVerified': false,
+        'isNewUser': !hasPassword,
+        'needsPhone': true,
+        'hasPassword': hasPassword,
+        'needsConfirmation': false,
+      },
+    };
+    const needsConfirmation = {
+      'statusCode': 200,
+      'message': 'Chưa có tài khoản liên kết. Vui lòng xác nhận để tạo tài khoản mới.',
+      'data': {
+        'needsConfirmation': true,
+        'token': null,
+        'fullName': 'Nguyễn Văn A',
+        'email': 'a@gmail.com',
+        'avatarUrl': 'https://lh3.googleusercontent.com/a.jpg',
+        'hasPassword': false,
+      },
+    };
+    Future<bool> neverAsked(SocialSignUpInfo _) async => fail('không được hỏi tạo tài khoản');
+
+    test('email đã có tài khoản: vào thẳng, gửi token + role player', () async {
+      server.routes['POST /api/auth/google'] = (200, session());
+      meReturns(account(userId, 'User1', 'Player'));
+
+      final user = await repo.exchangeSocialToken('/api/auth/google', 'id-token', rememberMe: true, confirmSignUp: neverAsked);
+
+      expect(user!.id, userId);
+      expect(server.requests.first.data, {'token': 'id-token', 'role': 'player'});
+      expect(await tokens.read(), validToken);
+    });
+
+    test('email chưa có tài khoản: hỏi người dùng, đồng ý thì gọi lại kèm confirmCreate', () async {
+      server.queued['POST /api/auth/google'] = [(200, needsConfirmation), (200, session(hasPassword: false))];
+      meReturns({...account(userId, 'User1', 'Player'), 'phone': '', 'hasPassword': false});
+      SocialSignUpInfo? asked;
+
+      final user = await repo.exchangeSocialToken(
+        '/api/auth/google',
+        'id-token',
+        rememberMe: true,
+        confirmSignUp: (info) async {
+          asked = info;
+          return true;
+        },
+      );
+
+      expect(asked!.fullName, 'Nguyễn Văn A');
+      expect(asked!.email, 'a@gmail.com');
+      expect(asked!.avatarUrl, 'https://lh3.googleusercontent.com/a.jpg');
+      expect(server.requests[1].data, {'token': 'id-token', 'role': 'player', 'confirmCreate': true});
+      expect(user!.hasPassword, isFalse);
+      expect((await SessionStore.readUser())!.hasPassword, isFalse);
+    });
+
+    test('không đồng ý tạo tài khoản: không tạo, không lưu phiên', () async {
+      server.routes['POST /api/auth/facebook'] = (200, needsConfirmation);
+      final user = await repo.exchangeSocialToken(
+        '/api/auth/facebook',
+        'fb-token',
+        rememberMe: true,
+        confirmSignUp: (_) async => false,
+      );
+      expect(user, isNull);
+      expect(server.requests, hasLength(1));
+      expect(await tokens.read(), isNull);
+    });
+
+    test('409 email đã đăng ký nhưng chưa xác thực: hiện câu dễ hiểu thay cho câu có đường dẫn API', () async {
+      server.routes['POST /api/auth/google'] = (
+        409,
+        {
+          'statusCode': 409,
+          'message': 'Email này đã được dùng ... (POST /api/auth/me/email/send-otp) ...',
+          'data': null,
+        },
+      );
+      await expectLater(
+        repo.exchangeSocialToken('/api/auth/google', 'id-token', rememberMe: true, confirmSignUp: neverAsked),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.socialEmailUnverified)),
+      );
+    });
+
+    test('BE không trả token: báo lỗi thay vì vào app', () async {
+      server.routes['POST /api/auth/google'] = (200, {'statusCode': 200, 'message': 'OK', 'data': {'token': null}});
+      await expectLater(
+        repo.exchangeSocialToken('/api/auth/google', 'id-token', rememberMe: true, confirmSignUp: neverAsked),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.socialLoginFailed)),
+      );
+      expect(await tokens.read(), isNull);
+    });
+  });
+
   group('đăng ký', () {
     const request = RegisterRequest(
       username: 'nguyenvana',
@@ -194,39 +336,39 @@ void main() {
 
     Map<String, dynamic> ok(Object? data) => {'statusCode': 200, 'message': 'OK', 'data': data};
     Matcher authError(String message) => throwsA(isA<AuthException>().having((e) => e.message, 'message', message));
+    Map<String, dynamic> fail400(String message) => {'statusCode': 400, 'message': message, 'data': null};
 
-    void otpSent({String? devOtp}) => server.routes['POST /api/auth/send-otp'] = (
-      200,
-      ok({'phone': '0912345678', 'type': 'REGISTER', 'expiresInSeconds': 300, 'devOtp': devOtp}),
-    );
+    // Mặc định: thông tin hợp lệ — gửi không kèm token thì BE chỉ đòi xác thực SĐT (bước kiểm tra trùng qua).
+    setUp(() {
+      server.routes['POST /api/auth/register'] = (400, fail400('Vui lòng xác thực số điện thoại trước khi đăng ký.'));
+    });
 
-    test('bước 1 chỉ gửi OTP REGISTER về SĐT (chưa tạo tài khoản), trả devOtp của máy chủ thử nghiệm', () async {
-      otpSent(devOtp: '482913');
+    /// Kết quả của lần gửi đăng ký kế tiếp (lần có firebaseIdToken).
+    void nextRegister(int status, Object? body) => (server.queued['POST /api/auth/register'] ??= []).add((status, body));
+
+    test('bước 1: kiểm tra trùng trên BE (không kèm token, chưa tạo tài khoản), hợp lệ mới gửi SMS', () async {
       expect(repo.supportsOtp, isTrue);
-      expect(await repo.register(request), '482913');
-      expect(server.requests.single.path, '/api/auth/send-otp');
-      expect(server.requests.single.data, {'phone': '0912345678', 'type': 'REGISTER'});
-      expect(server.requests.single.headers['Authorization'], isNull);
-    });
-
-    test('máy chủ thật không trả devOtp → null', () async {
-      otpSent();
       expect(await repo.register(request), isNull);
+      expect(server.requests.single.path, '/api/auth/register');
+      expect(server.requests.single.data, isNot(contains('firebaseIdToken')));
+      expect(phone.sent, ['0912345678']);
     });
 
-    test('SĐT đã có tài khoản: BE báo ngay ở bước gửi OTP', () async {
-      server.routes['POST /api/auth/send-otp'] = (
-        400,
-        {'statusCode': 400, 'message': 'Số điện thoại này đã được sử dụng bởi một tài khoản khác.', 'data': null},
-      );
-      await expectLater(repo.register(request), authError('Số điện thoại này đã được sử dụng bởi một tài khoản khác.'));
+    test('email / tên đăng nhập / SĐT đã dùng: báo ngay, KHÔNG gửi SMS, không sang màn OTP', () async {
+      server.routes['POST /api/auth/register'] = (400, fail400('Email đã được sử dụng.'));
+      await expectLater(repo.register(request), authError('Email đã được sử dụng.'));
+      expect(phone.sent, isEmpty);
     });
 
-    test('nhập OTP: gửi thông tin đăng ký kèm otpCode, Chủ sân gửi role "owner"', () async {
-      otpSent();
-      server.routes['POST /api/auth/register'] = (200, ok(null));
+    test('Firebase không gửi được SMS: báo lỗi, không đi tiếp', () async {
+      phone.sendError = const AuthException(AuthStrings.otpTooManyRequests);
+      await expectLater(repo.register(request), authError(AuthStrings.otpTooManyRequests));
+    });
+
+    test('nhập đúng mã: gửi đăng ký kèm firebaseIdToken (không có otpCode), Chủ sân gửi role "owner"', () async {
       await repo.register(request);
-      await repo.verifyRegisterOtp('0912345678', '482913');
+      nextRegister(200, ok(null));
+      await repo.verifyRegisterOtp('0912345678', _FakePhoneVerifier.code);
       expect(server.requests.last.path, '/api/auth/register');
       expect(server.requests.last.data, {
         'username': 'nguyenvana',
@@ -235,27 +377,32 @@ void main() {
         'phone': '0912345678',
         'email': 'a@gmail.com',
         'role': 'owner',
-        'otpCode': '482913',
+        'firebaseIdToken': 'firebase-0912345678',
       });
+      expect(phone.isVerified('0912345678'), isFalse); // đã dùng xong token
     });
 
-    test('sai OTP / trùng tên đăng nhập: hiện nguyên câu tiếng Việt của BE, nhập lại được', () async {
-      otpSent();
+    test('sai mã: báo lỗi, không gửi đăng ký', () async {
       await repo.register(request);
-      server.routes['POST /api/auth/register'] = (
-        400,
-        {'statusCode': 400, 'message': 'Tên đăng nhập đã tồn tại.', 'data': null},
-      );
-      await expectLater(repo.verifyRegisterOtp('0912345678', '000000'), authError('Tên đăng nhập đã tồn tại.'));
+      await expectLater(repo.verifyRegisterOtp('0912345678', '000000'), authError(AuthStrings.wrongOtp));
+      expect(server.requests, hasLength(1)); // chỉ có lần kiểm tra trùng
+    });
 
-      server.routes['POST /api/auth/register'] = (200, ok(null));
-      await repo.verifyRegisterOtp('0912345678', '482913');
+    test('bị trùng lúc gửi đăng ký (người khác vừa lấy mất): hiện nguyên câu của BE, gửi lại được', () async {
+      await repo.register(request);
+      nextRegister(400, fail400('Tên đăng nhập đã tồn tại.'));
+      await expectLater(
+        repo.verifyRegisterOtp('0912345678', _FakePhoneVerifier.code),
+        authError('Tên đăng nhập đã tồn tại.'),
+      );
+
+      nextRegister(200, ok(null));
+      await repo.verifyRegisterOtp('0912345678', _FakePhoneVerifier.code);
     });
 
     test('lỗi validate kiểu ProblemDetails: lấy câu lỗi đầu tiên', () async {
-      otpSent();
       await repo.register(request);
-      server.routes['POST /api/auth/register'] = (
+      nextRegister(
         400,
         {
           'title': 'One or more validation errors occurred.',
@@ -265,7 +412,10 @@ void main() {
           },
         },
       );
-      await expectLater(repo.verifyRegisterOtp('0912345678', '482913'), authError('The Password field is required.'));
+      await expectLater(
+        repo.verifyRegisterOtp('0912345678', _FakePhoneVerifier.code),
+        authError('The Password field is required.'),
+      );
     });
 
     test('chưa gửi OTP cho SĐT đó thì không tạo tài khoản', () async {
@@ -273,14 +423,14 @@ void main() {
       expect(server.requests, isEmpty);
     });
 
-    test('trùng tên đăng nhập → sửa rồi đăng ký lại cùng SĐT trong 4 phút: dùng lại mã cũ, không xin mã mới', () async {
-      var now = DateTime(2026, 10, 20, 9);
-      repo = ApiAuthRepository(api: api, tokens: tokens, now: () => now);
-      otpSent(devOtp: '482913');
-      server.routes['POST /api/auth/register'] = (200, ok(null));
+    test('trùng tên đăng nhập → sửa rồi đăng ký lại cùng SĐT: SĐT vừa xác thực thì không gửi SMS lại', () async {
+      await repo.register(request);
+      nextRegister(400, fail400('Tên đăng nhập đã tồn tại.'));
+      await expectLater(
+        repo.verifyRegisterOtp('0912345678', _FakePhoneVerifier.code),
+        authError('Tên đăng nhập đã tồn tại.'),
+      );
 
-      expect(await repo.register(request), '482913');
-      now = now.add(const Duration(minutes: 2));
       const fixed = RegisterRequest(
         username: 'nguyenvana2',
         fullName: 'Nguyễn Văn A',
@@ -288,30 +438,17 @@ void main() {
         phone: '+84912345678', // cùng số, khác cách viết
         password: 'Matkhau123',
       );
-      expect(await repo.register(fixed), '482913');
-      expect(server.requests.where((r) => r.path == '/api/auth/send-otp'), hasLength(1));
+      await repo.register(fixed);
+      expect(phone.sent, hasLength(1));
+      expect(repo.isPhoneVerified('+84912345678'), isTrue); // màn OTP tự đi tiếp
 
-      await repo.verifyRegisterOtp('+84912345678', '482913');
+      nextRegister(200, ok(null));
+      await repo.verifyRegisterOtp('+84912345678', '');
       expect((server.requests.last.data as Map)['username'], 'nguyenvana2');
-
-      // Đã đăng ký xong: lần sau xin mã mới.
-      now = now.add(const Duration(minutes: 6));
-      await repo.register(request);
-      expect(server.requests.where((r) => r.path == '/api/auth/send-otp'), hasLength(2));
-    });
-
-    test('mã đã gửi quá 4 phút (sắp hết hạn 5 phút) thì xin mã mới', () async {
-      var now = DateTime(2026, 10, 20, 9);
-      repo = ApiAuthRepository(api: api, tokens: tokens, now: () => now);
-      otpSent();
-      await repo.register(request);
-      now = now.add(const Duration(minutes: 4, seconds: 30));
-      await repo.register(request);
-      expect(server.requests.where((r) => r.path == '/api/auth/send-otp'), hasLength(2));
+      expect((server.requests.last.data as Map)['firebaseIdToken'], 'firebase-0912345678');
     });
 
     test('đổi sang SĐT khác thì gửi mã mới', () async {
-      otpSent();
       await repo.register(request);
       await repo.register(const RegisterRequest(
         username: 'nguyenvana',
@@ -320,58 +457,95 @@ void main() {
         phone: '0987654321',
         password: 'Matkhau123',
       ));
-      expect(server.requests.where((r) => r.path == '/api/auth/send-otp'), hasLength(2));
+      expect(phone.sent, ['0912345678', '0987654321']);
     });
 
-    test('gửi lại OTP đăng ký', () async {
-      otpSent(devOtp: '111222');
-      expect(await repo.resendOtp('0912345678', OtpPurpose.register), '111222');
-      expect(server.requests.single.path, '/api/auth/send-otp');
+    test('gửi lại OTP đăng ký qua Firebase', () async {
+      expect(await repo.resendOtp('0912345678', OtpPurpose.register), isNull);
+      expect(phone.sent, ['0912345678']);
+      expect(server.requests, isEmpty);
     });
   });
 
   group('quên mật khẩu', () {
-    test('gửi OTP qua forgot-password bằng SĐT; OTP kiểm tra cùng lúc đặt mật khẩu mới', () async {
-      server.routes['POST /api/auth/forgot-password'] = (
-        200,
-        {'statusCode': 200, 'message': 'Nếu thông tin khớp...', 'data': {'expiresInSeconds': 300, 'devOtp': '654321'}},
-      );
+    test('gửi SMS qua Firebase (không gọi BE); đặt mật khẩu mới kèm firebaseIdToken', () async {
       server.routes['POST /api/auth/reset-password'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
 
-      expect(await repo.requestPasswordReset(' 0912345678 '), '654321');
-      expect(server.requests.single.data, {'identifier': '0912345678'});
+      expect(await repo.requestPasswordReset(' 0912345678 '), isNull);
+      expect(phone.sent, ['0912345678']);
 
-      final token = await repo.verifyResetOtp('0912345678', '654321');
-      expect(server.requests, hasLength(1)); // chưa gọi BE ở bước nhập OTP
+      final token = await repo.verifyResetOtp('0912345678', _FakePhoneVerifier.code);
+      expect(server.requests, isEmpty); // chưa gọi BE ở bước nhập OTP
 
       await repo.resetPassword('0912345678', token, 'MatKhauMoi1');
-      expect(server.requests.last.path, '/api/auth/reset-password');
-      expect(server.requests.last.data, {
+      expect(server.requests.single.path, '/api/auth/reset-password');
+      expect(server.requests.single.data, {
         'phone': '0912345678',
-        'otpCode': '654321',
+        'firebaseIdToken': 'firebase-0912345678',
         'newPassword': 'MatKhauMoi1',
         'confirmPassword': 'MatKhauMoi1',
       });
     });
 
-    test('sai OTP: hiện câu của BE', () async {
+    test('sai mã: báo lỗi ngay ở bước nhập OTP', () async {
+      await repo.requestPasswordReset('0912345678');
+      await expectLater(
+        repo.verifyResetOtp('0912345678', '000000'),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.wrongOtp)),
+      );
+    });
+
+    test('SĐT không có tài khoản: BE báo "Mã OTP không chính xác..." → hiện câu dễ hiểu', () async {
       server.routes['POST /api/auth/reset-password'] = (
         400,
         {'statusCode': 400, 'message': 'Mã OTP không chính xác hoặc đã hết hạn.', 'data': null},
       );
       await expectLater(
-        repo.resetPassword('0912345678', '000000', 'MatKhauMoi1'),
-        throwsA(isA<AuthException>().having((e) => e.message, 'message', 'Mã OTP không chính xác hoặc đã hết hạn.')),
+        repo.resetPassword('0912345678', 'firebase-0912345678', 'MatKhauMoi1'),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.resetFailed)),
+      );
+    });
+  });
+
+  group('thêm SĐT (tài khoản Google / Facebook)', () {
+    setUp(() async {
+      await tokens.write(validToken, refreshToken: 'refresh-1');
+      await SessionStore.save(
+        AppUser.fromProfileJson({...account(userId, 'User1', 'Player'), 'phone': '', 'hasPassword': false}),
+        rememberMe: true,
       );
     });
 
-    test('gửi lại OTP quên mật khẩu gọi lại forgot-password', () async {
-      server.routes['POST /api/auth/forgot-password'] = (
-        200,
-        {'statusCode': 200, 'message': 'OK', 'data': {'expiresInSeconds': 300, 'devOtp': null}},
+    test('hồ sơ /auth/me trả phone rỗng → cần thêm SĐT', () async {
+      expect((await SessionStore.readUser())!.needsPhone, isTrue);
+      expect(AppUser.fromProfileJson(account(userId, 'User1', 'Player')).needsPhone, isFalse);
+    });
+
+    test('gửi SMS, nhập đúng mã → POST /auth/me/phone kèm firebaseIdToken, tải lại hồ sơ', () async {
+      server.routes['POST /api/auth/me/phone'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
+      meReturns({...account(userId, 'User1', 'Player'), 'phone': '0912345678', 'isPhoneVerified': true});
+
+      await repo.requestPhoneOtp('+84 912 345 678');
+      expect(phone.sent, ['0912345678']);
+
+      final user = await repo.addPhone('+84 912 345 678', _FakePhoneVerifier.code);
+
+      expect(server.requests.first.path, '/api/auth/me/phone');
+      expect(server.requests.first.data, {'phone': '0912345678', 'firebaseIdToken': 'firebase-0912345678'});
+      expect(server.requests.first.headers['Authorization'], 'Bearer $validToken');
+      expect(user.needsPhone, isFalse);
+      expect((await SessionStore.readUser())!.phone, '0912345678');
+    });
+
+    test('SĐT đã thuộc tài khoản khác: hiện câu của BE, vẫn cần thêm SĐT', () async {
+      server.routes['POST /api/auth/me/phone'] =
+          (400, {'statusCode': 400, 'message': 'Số điện thoại này đã được sử dụng.', 'data': null});
+      await repo.requestPhoneOtp('0912345678');
+      await expectLater(
+        repo.addPhone('0912345678', _FakePhoneVerifier.code),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', 'Số điện thoại này đã được sử dụng.')),
       );
-      expect(await repo.resendOtp('0912345678', OtpPurpose.resetPassword), isNull);
-      expect(server.requests.single.path, '/api/auth/forgot-password');
+      expect((await SessionStore.readUser())!.needsPhone, isTrue);
     });
   });
 
@@ -597,6 +771,39 @@ void main() {
       expect(server.requests.last.data, {'password': 'matkhau1', 'reason': 'Không dùng nữa'});
       expect(await tokens.read(), isNull);
       expect(await SessionStore.readUser(), isNull);
+    });
+
+    test('xóa tài khoản chưa có mật khẩu (Google / Facebook): không gửi password', () async {
+      server.routes['DELETE /api/auth/me'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
+      await repo.deleteAccount(reason: 'Không dùng nữa');
+      expect(server.requests.single.data, {'reason': 'Không dùng nữa'});
+      expect(await SessionStore.readUser(), isNull);
+    });
+
+    test('hồ sơ đọc hasPassword; tài khoản cũ đã lưu không có trường này thì coi là có mật khẩu', () async {
+      meReturns({...account(userId, 'User1', 'Player'), 'hasPassword': false});
+      expect((await repo.getProfile()).hasPassword, isFalse);
+      expect(AppUser.fromJson(AppUser.fromProfileJson(account(userId, 'User1', 'Player')).toJson()..remove('hasPassword')).hasPassword, isTrue);
+    });
+
+    test('đặt mật khẩu lần đầu: gửi mật khẩu mới, giữ phiên, hồ sơ chuyển sang có mật khẩu', () async {
+      await SessionStore.save(
+        AppUser.fromProfileJson({...account(userId, 'User1', 'Player'), 'hasPassword': false}),
+        rememberMe: true,
+      );
+      server.routes['POST /api/auth/set-password'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
+
+      await repo.setPassword(newPassword: 'moi12345', confirmPassword: 'moi12345');
+
+      expect(server.requests.single.data, {'newPassword': 'moi12345', 'confirmPassword': 'moi12345'});
+      expect(await tokens.read(), validToken);
+      expect((await SessionStore.readUser())!.hasPassword, isTrue);
+    });
+
+    test('đặt mật khẩu khi đã có mật khẩu: hiện câu của BE', () async {
+      const message = 'Tài khoản đã có mật khẩu. Vui lòng dùng chức năng đổi mật khẩu.';
+      server.routes['POST /api/auth/set-password'] = (400, {'statusCode': 400, 'message': message, 'data': null});
+      await expectLater(repo.setPassword(newPassword: 'moi12345', confirmPassword: 'moi12345'), authError(message));
     });
   });
 

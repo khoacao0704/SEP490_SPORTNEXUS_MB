@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:test1/core/constants/booking_rules.dart';
 import 'package:test1/core/strings/booking_strings.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_booking_repository.dart';
@@ -92,17 +91,13 @@ void main() {
     // Quá 10 phút giữ chỗ vẫn còn bị chiếm (đã đặt).
     clock = clock.add(const Duration(minutes: 20));
     expect(await isTaken(full), isTrue);
-
-    final deposit = await book(BookingPaymentType.deposit, daysAhead: 4);
-    expect(deposit.amountPaid, BookingRules.depositAmount(deposit.totalPrice));
-    expect(deposit.remainingAtCourt, deposit.totalPrice - deposit.amountPaid);
   });
 
   test('đặt nhiều khung giờ: mỗi khung là một lượt đặt riêng, hủy riêng từng khung', () async {
-    final bookings = await bookMany(BookingPaymentType.deposit, count: 2);
+    final bookings = await bookMany(BookingPaymentType.full, count: 2);
     expect(bookings, hasLength(2));
     expect(bookings.map((b) => b.ticketCode).toSet(), hasLength(2));
-    expect(bookings.every((b) => b.amountPaid == BookingRules.depositAmount(b.totalPrice)), isTrue);
+    expect(bookings.every((b) => b.amountPaid == b.totalPrice), isTrue);
     expect(bookings.first.end.isAfter(bookings.last.start), isFalse);
 
     await repo.cancelBooking(bookings.first.id);
@@ -125,21 +120,22 @@ void main() {
     expect(() => repo.cancelBooking(booking.id), error(BookingStrings.cannotCancel));
   });
 
-  test('hủy trong vòng 24 giờ: mất 1/4 tiền sân; cọc 1/4 thì không được hoàn', () async {
+  test('hủy trong vòng 24 giờ: không được hoàn tiền', () async {
     final full = await book(BookingPaymentType.full, daysAhead: 0);
     expect(full.isFreeCancel(clock), isFalse);
     final before = await wallet.getBalance();
     final cancelled = await repo.cancelBooking(full.id);
-    final expected = full.totalPrice - BookingRules.quarterOf(full.totalPrice);
-    expect(cancelled.refunded, expected);
-    expect(await wallet.getBalance(), before + expected);
+    expect(cancelled.status(clock), BookingStatus.cancelled);
+    expect(cancelled.refunded, 0);
+    expect(await wallet.getBalance(), before);
 
-    final demo = (await repo.getMyBookings()).firstWhere((b) => b.id == 'DEMO2'); // cọc 1/4, còn ~12 giờ
+    final demo = (await repo.getMyBookings()).firstWhere((b) => b.id == 'DEMO2'); // 700.000đ, còn ~12 giờ
+    expect(demo.cancelFee(clock), 700000);
     expect(demo.refundIfCancelled(clock), 0);
     expect((await repo.cancelBooking('DEMO2')).refunded, 0);
   });
 
-  test('chỉ người đặt được hủy; chia tiền hủy trong 24h thì phần mất trừ vào người đặt trước', () async {
+  test('chỉ người đặt được hủy; chia tiền hủy trong 24h thì không ai được hoàn', () async {
     final split = MockSplitPaymentRepository(
       facility: facility,
       latency: Duration.zero,
@@ -162,9 +158,8 @@ void main() {
     await loginAs('player@sportnexus.vn');
     final before = await wallet.getBalance();
     final cancelled = await repo.cancelBooking(s.bookingId);
-    // Mất 1/4 tiền sân, trừ hết vào phần người đặt (1/2); người góp được hoàn đủ.
-    expect(cancelled.refunded, s.totalAmount - BookingRules.quarterOf(s.totalAmount));
-    expect(await wallet.getBalance(), before + cancelled.refunded);
+    expect(cancelled.refunded, 0);
+    expect(await wallet.getBalance(), before);
   });
 
   test('chia tiền nhiều khung giờ: mỗi khung một lượt đặt, tiền mỗi người chia theo khung', () async {

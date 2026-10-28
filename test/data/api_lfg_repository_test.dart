@@ -304,25 +304,70 @@ void main() {
     );
   });
 
-  test('rời kèo trước T−48h: hoàn đủ phần đã trả; sau T−48h thì chặn, không gọi BE', () async {
+  test('rời kèo gửi kèm lý do; trước T−48h hoàn đủ phần đã trả, sau T−48h vẫn rời được nhưng không hoàn', () async {
+    expect(repo.lateLeaveAllowed, isTrue);
     server.ok('GET', ApiLfgRepository.cardPath('c1'), _card(daysAhead: 4));
     server.ok('POST', ApiLfgRepository.leavePath('c1'), null);
-    expect(await repo.leaveMatch('c1'), 50000);
+    expect(await repo.leaveMatch('c1', reason: ' Bận việc '), 50000);
+    expect(server.requests.last.data, {'reason': 'Bận việc'});
 
-    server.requests.clear();
     server.ok('GET', ApiLfgRepository.cardPath('c1'), _card(daysAhead: 1));
-    await expectLater(
-      repo.leaveMatch('c1'),
-      throwsA(isA<LfgException>().having((e) => e.message, 'message', LfgStrings.leaveTooLate)),
-    );
-    expect(server.requests.where((r) => r.method == 'POST'), isEmpty);
+    expect(await repo.leaveMatch('c1', reason: 'Bận việc'), 0);
+    expect(server.requests.last.path, ApiLfgRepository.leavePath('c1'));
   });
 
-  test('yêu cầu hủy cần tất cả đồng ý: BE chưa có', () async {
-    await expectLater(
-      repo.requestCancel('c1'),
-      throwsA(isA<LfgException>().having((e) => e.message, 'message', LfgStrings.mutualCancelUnavailable)),
-    );
+  test('lý do rời kèo: dạng {code, label, isCustom} hoặc chuỗi', () async {
+    server.ok('GET', ApiLfgRepository.leaveReasonsPath, [
+      {'code': 1, 'label': 'Bận việc đột xuất', 'isCustom': false},
+      {'code': 6, 'label': 'Khác', 'isCustom': true},
+    ]);
+    expect((await repo.getLeaveReasons()).map((r) => (r.code, r.label, r.isCustom)), [
+      (1, 'Bận việc đột xuất', false),
+      (6, 'Khác', true),
+    ]);
+    server.ok('GET', ApiLfgRepository.leaveReasonsPath, ['Ốm', 'Bận']);
+    expect((await repo.getLeaveReasons()).map((r) => r.label), ['Ốm', 'Bận']);
+  });
+
+  test('yêu cầu hủy kèo đã chốt: chỉ host gửi, người tham gia bỏ phiếu theo id yêu cầu mới nhất', () async {
+    expect(repo.onlyHostRequestsCancel, isTrue);
+    // Kèo đủ người, còn ~48 giờ: đã qua hạn tự rời, chưa tới T−24h.
+    server.ok('GET', ApiLfgRepository.cardPath('c1'), _card(hostId: _me, remaining: 0, daysAhead: 2));
+    server.ok('POST', ApiLfgRepository.cancelRequestsPath('c1'), {'id': 'r1', 'status': 'PENDING'});
+    server.ok('GET', ApiLfgRepository.latestCancelRequestPath('c1'),
+        {'id': 'r1', 'status': 'PENDING', 'myVote': null, 'canVote': false, 'createdAt': DateTime.now().toUtc().toIso8601String()});
+    server.ok('POST', ApiLfgRepository.votePath('c1', 'r1'), null);
+
+    final requested = await repo.requestCancel('c1', reason: 'Trời mưa');
+    expect(server.requests.firstWhere((r) => r.method == 'POST').data, {'reason': 'Trời mưa'});
+    expect(requested.cancelRequest, isNotNull);
+    expect(requested.cancelRequest!.requestedBy, _me);
+    expect(requested.cancelRequest!.hasApproved(_me), isTrue);
+
+    server.requests.clear();
+    await repo.respondCancel('c1', approve: false);
+    final vote = server.requests.firstWhere((r) => r.method == 'POST');
+    expect(vote.path, ApiLfgRepository.votePath('c1', 'r1'));
+    expect(vote.data, {'approve': false});
+
+    // Yêu cầu đã bị bác / hết hạn: không còn hiện.
+    server.ok('GET', ApiLfgRepository.latestCancelRequestPath('c1'), {'id': 'r1', 'status': 'REJECTED'});
+    expect((await repo.getMatch('c1')).cancelRequest, isNull);
+  });
+
+  test('yêu cầu hủy: có danh sách phiếu thì biết ai đã đồng ý; không có thì chỉ biết phiếu của mình', () {
+    final match = ApiLfgRepository.matchFromApi(_card(remaining: 0), myId: _me)!;
+    final withVotes = ApiLfgRepository.cancelRequestFromApi({
+      'status': 'PENDING',
+      'votes': [
+        {'userId': 'u-a', 'approve': true},
+        {'userId': 'u-b', 'approve': null},
+      ],
+    }, match, myId: _me)!;
+    expect(withVotes.approvals.toSet(), {'u-host', 'u-a'});
+
+    final mine = ApiLfgRepository.cancelRequestFromApi({'status': 'PENDING', 'myVote': true}, match, myId: _me)!;
+    expect(mine.approvals.toSet(), {'u-host', _me});
   });
 
   test('host hủy kèo, chấp nhận / từ chối lời mời: gọi đúng API', () async {

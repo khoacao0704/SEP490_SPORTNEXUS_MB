@@ -157,14 +157,32 @@ void main() {
     expect(tx.status, TransactionStatus.cancelled);
   });
 
-  test('chi tiết giao dịch tìm trong lịch sử; không có thì báo không tìm thấy', () async {
-    server.transactionPages[1] = {'page': 1, 'pageSize': 100, 'totalItems': 1, 'items': [_tx(7)]};
+  test('chi tiết giao dịch: GET /transactions/{id} (không tải cả lịch sử); không có (404) thì báo không tìm thấy', () async {
+    server.routes['GET ${ApiWalletRepository.transactionPath('tx-7')}'] =
+        (200, {'statusCode': 200, 'message': 'OK', 'data': _tx(7)});
+    server.routes['GET ${ApiWalletRepository.transactionPath('khong-co')}'] =
+        (404, {'statusCode': 404, 'message': 'Không tìm thấy giao dịch', 'data': null});
 
     expect((await repo.getTransaction('tx-7')).description, 'Giao dịch 7');
+    expect(server.requests.single.path, '/api/v1/wallet/transactions/tx-7');
     await expectLater(
       repo.getTransaction('khong-co'),
       throwsA(isA<WalletException>().having((e) => e.message, 'message', WalletStrings.transactionNotFound)),
     );
+  });
+
+  test('lệnh nạp hết hạn (EXPIRED) là "Hết hạn", không phải thành công', () {
+    expect(ApiWalletRepository.statusFromApi('EXPIRED'), TransactionStatus.expired);
+    expect(ApiWalletRepository.transactionFromApi(_tx(1, status: 'EXPIRED')).status, TransactionStatus.expired);
+  });
+
+  test('ghi chú (note) của BE: có thì hiện, rỗng / null thì bỏ', () {
+    expect(
+      ApiWalletRepository.transactionFromApi({..._tx(1, type: 'WITHDRAW'), 'note': ' Mã giao dịch ngân hàng: FT123 '}).note,
+      'Mã giao dịch ngân hàng: FT123',
+    );
+    expect(ApiWalletRepository.transactionFromApi({..._tx(1), 'note': '  '}).note, isNull);
+    expect(ApiWalletRepository.transactionFromApi(_tx(1)).note, isNull);
   });
 
   test('lỗi BE thành WalletException mang câu tiếng Việt', () async {
@@ -192,7 +210,23 @@ void main() {
   );
 
   group('nạp tiền PayOS', () {
-    test('tạo lệnh: QR + trang thanh toán của PayOS, app tự đặt hạn 15 phút, không có thông tin chuyển khoản tay',
+    test('tạo lệnh: đếm ngược theo expiresAt của BE', () async {
+      server.routes['POST ${ApiWalletRepository.depositPath}'] = (
+        201,
+        ok({
+          'orderCode': 1,
+          'amount': 10000,
+          'status': 'PENDING_PAYMENT',
+          'checkoutUrl': 'https://pay.payos.vn/web/abc',
+          'qrCode': '0002...',
+          'expiresAt': '2026-10-27T08:15:00+00:00',
+        }),
+      );
+      final order = await repo.createTopUp(10000);
+      expect(order.expiresAt, DateTime.utc(2026, 10, 27, 8, 15).toLocal());
+    });
+
+    test('tạo lệnh: QR + trang thanh toán của PayOS; BE không trả hạn thì tự đặt 15 phút, không có chuyển khoản tay',
         () async {
       server.routes['POST ${ApiWalletRepository.depositPath}'] = (
         201,
@@ -233,6 +267,7 @@ void main() {
         ('PENDING_PAYMENT', TransactionStatus.pending),
         ('SUCCESS', TransactionStatus.success),
         ('CANCELLED', TransactionStatus.cancelled),
+        ('EXPIRED', TransactionStatus.expired),
         ('FAILED', TransactionStatus.failed),
       ]) {
         server.routes['GET ${ApiWalletRepository.depositStatusPath('123')}'] = (
@@ -330,14 +365,50 @@ void main() {
       await expectLater(repo.getBankAccounts(), walletError('Bạn không có quyền truy cập vào tài nguyên này.'));
     });
 
-    test('Người chơi tạm chưa rút tiền: tiền chờ rút là 0, không gọi BE', () async {
-      expect(repo.supportsWithdrawal, isFalse);
+    test('Người chơi rút được tiền (mặc định bật); tắt thì tiền chờ rút là 0, không gọi BE', () async {
+      expect(repo.supportsWithdrawal, isTrue);
+      repo = ApiWalletRepository(api: api, supportsWithdrawal: false);
       expect(await repo.getPendingWithdrawalAmount(), 0);
       expect(server.requests, isEmpty);
     });
 
+    test('hủy yêu cầu rút: tìm lệnh PENDING (id lệnh rút) rồi POST cancel', () async {
+      server.routes['GET ${ApiWalletRepository.withdrawalsPath}'] = (
+        200,
+        ok({
+          'items': [
+            {'id': 'w-2', 'amount': 70000.00, 'status': 'COMPLETED'},
+            {'id': 'w-1', 'amount': 50000.00, 'status': 'PENDING'},
+          ],
+        }),
+      );
+      server.routes['POST ${ApiWalletRepository.withdrawalCancelPath('w-1')}'] = (200, ok(null));
+      final pending = ApiWalletRepository.transactionFromApi(_tx(9, type: 'WITHDRAW', status: 'PENDING'));
+      expect(pending.isPendingWithdrawal, isTrue);
+
+      await repo.cancelWithdrawal(pending);
+
+      expect(server.requests.last.method, 'POST');
+      expect(server.requests.last.path, '/api/v1/wallet/withdrawals/w-1/cancel');
+    });
+
+    test('hủy yêu cầu rút khi Admin vừa xử lý xong (không còn lệnh chờ): báo, không gọi hủy', () async {
+      server.routes['GET ${ApiWalletRepository.withdrawalsPath}'] = (
+        200,
+        ok({
+          'items': [
+            {'id': 'w-1', 'amount': 50000.00, 'status': 'COMPLETED'},
+          ],
+        }),
+      );
+      await expectLater(
+        repo.cancelWithdrawal(ApiWalletRepository.transactionFromApi(_tx(9, type: 'WITHDRAW', status: 'PENDING'))),
+        walletError(WalletStrings.noPendingWithdrawal),
+      );
+      expect(server.requests.where((r) => r.method == 'POST'), isEmpty);
+    });
+
     test('tiền đang chờ rút = tổng lệnh PENDING; không có quyền rút (403) thì 0', () async {
-      repo = ApiWalletRepository(api: api, supportsWithdrawal: true);
       server.routes['GET ${ApiWalletRepository.withdrawalsPath}'] = (
         200,
         ok({

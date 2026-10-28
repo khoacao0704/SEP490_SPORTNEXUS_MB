@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/app_repositories.dart';
-import '../../core/constants/booking_rules.dart';
 import '../../core/constants/split_payment_rules.dart';
 import '../../core/strings/booking_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
@@ -50,7 +49,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   late int _secondsRemaining;
   Timer? _timer;
 
-  int _paymentTypeIndex = 0; // 0: Full Payment (100%), 1: Partial Deposit (1/4), 2: Chia tiền nhóm
+  int _paymentTypeIndex = 0; // 0: Thanh toán 100%, 2: Chia tiền nhóm (đặt sân thường không có cọc)
   int _splitParts = SplitPaymentRules.allowedParts.last;
 
   /// Chia tiền theo cách mời bạn (BE thật) thay cho chia mã/link.
@@ -78,12 +77,6 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     switch (_paymentTypeIndex) {
       case 0:
         return widget.totalAmount;
-      case 1:
-        // Mỗi khung giờ là một lượt đặt riêng nên cọc 1/4 tính theo từng khung.
-        final hold = widget.hold;
-        return hold == null
-            ? BookingRules.depositAmount(widget.totalAmount)
-            : BookingRules.depositFor(hold.slots.map((s) => s.price));
       default:
         return _splitByInvite ? _inviteHostAmount : SplitPaymentRules.bookerAmount(widget.totalAmount, _splitParts);
     }
@@ -91,7 +84,6 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
 
   String get _payLabel => switch (_paymentTypeIndex) {
     0 => 'Thanh toán 100% tiền sân',
-    1 => 'Ký quỹ 1 phần (1/4) tiền sân',
     _ => _splitByInvite ? SplitPaymentStrings.invitePay : SplitPaymentStrings.payNow(_splitParts),
   };
   int _selectedPaymentMethod = 0; // 0: SportNexus Wallet, 1: VietQR
@@ -191,7 +183,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
       if (_selectedPaymentMethod == 1 && !await _payByVietQr(payAmount)) return;
       bookings = await AppRepositories.booking.createBooking(
         hold: hold,
-        paymentType: _paymentTypeIndex == 0 ? BookingPaymentType.full : BookingPaymentType.deposit,
+        paymentType: BookingPaymentType.full,
         facilityName: widget.courtName,
         sportLabel: widget.sport,
         location: widget.location,
@@ -389,11 +381,10 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     return false;
   }
 
-  /// Cọc 1/4 / chia tiền BE chưa hỗ trợ thì báo "đang phát triển", giữ lựa chọn hiện tại.
+  /// Chia tiền BE chưa hỗ trợ thì báo "đang phát triển", giữ lựa chọn hiện tại.
   void _selectPaymentType(int index) {
     final booking = AppRepositories.booking;
     final unavailable = switch (index) {
-      1 when !booking.supportsDeposit => BookingStrings.depositUnavailable,
       2 when !booking.supportsSplitPayment && !booking.supportsSplitInvite => BookingStrings.splitUnavailable,
       _ => null,
     };
@@ -526,7 +517,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
             ),
             const SizedBox(height: 16),
 
-            // 3. Select Payment Type (Full vs Deposit)
+            // 3. Select Payment Type (100% / chia tiền nhóm)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -575,44 +566,6 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                                 const SizedBox(height: 4),
                                 Text(
                                   '${_formatCurrency(widget.totalAmount)} đ',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.primaryGreen,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _selectPaymentType(1),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                            decoration: BoxDecoration(
-                              color: _paymentTypeIndex == 1 ? const Color(0xFFE8F5E9) : Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: _paymentTypeIndex == 1 ? AppColors.primaryGreen : AppColors.cardBorder,
-                                width: _paymentTypeIndex == 1 ? 1.5 : 1,
-                              ),
-                            ),
-                            child: Column(
-                              children: [
-                                const Text(
-                                  'Ký quỹ (1/4 tiền sân)',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: AppColors.textMain,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${_formatCurrency((widget.totalAmount / 4).round())} đ',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: AppColors.primaryGreen,

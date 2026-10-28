@@ -19,7 +19,6 @@ class BookingStrings {
   static const String statusCompleted = 'Đã kết thúc';
   static const String total = 'Tiền sân';
   static const String paid = 'Đã trả';
-  static String remainingAtCourt(int amount) => 'Trả tại sân ${Formatters.vnd(amount)}';
   static String refunded(int amount) => 'Đã hoàn ${Formatters.vnd(amount)}';
   static const String ticket = 'Vé QR';
   static const String ticketTitle = 'VÉ QR CHECK-IN';
@@ -28,22 +27,21 @@ class BookingStrings {
   static const String ticketLoadError = 'Không tải được vé. Vui lòng thử lại.';
   static const String cancelReasonTitle = 'Lý do hủy';
   static const String cancelReasonHint = 'Nhập lý do hủy';
-  static const String depositUnavailable = 'Cọc 1/4 đang được phát triển. Vui lòng chọn thanh toán 100%.';
   static const String splitUnavailable = 'Chia tiền nhóm đang được phát triển.';
   static const String close = 'Đóng';
   static const String cancel = 'Hủy đặt sân';
   static String freeCancelUntil(String t) => 'Hủy miễn phí trước $t';
-  static const String lateCancelNote = 'Đã trong 24 giờ trước giờ chơi: hủy sẽ mất 1/4 tiền sân';
+  static const String lateCancelNote = 'Đã trong 24 giờ trước giờ chơi: hủy sẽ không được hoàn tiền';
   static const String contributor = 'Bạn góp tiền trong nhóm';
 
   // Hủy
   static const String confirmCancelTitle = 'Hủy đặt sân?';
   static String confirmCancelFree(int refund) =>
       'Còn hơn 24 giờ trước giờ chơi nên được hoàn 100% (${Formatters.vnd(refund)}).';
-  static String confirmCancelLate(int fee, int refund) =>
-      'Đã trong vòng 24 giờ trước giờ chơi nên mất 1/4 tiền sân (${Formatters.vnd(fee)}). '
-      'Được hoàn ${Formatters.vnd(refund)}.';
-  static const String splitCancelNote = ' Phần mất trừ vào phần của bạn trước; những người góp được hoàn phần còn lại.';
+  static String confirmCancelLate(int lost) =>
+      'Đã trong vòng 24 giờ trước giờ chơi nên không được hoàn tiền (mất ${Formatters.vnd(lost)}).';
+  static const String splitCancelFreeNote = ' Những người góp cũng được hoàn đủ phần của họ.';
+  static const String splitCancelLateNote = ' Tiền những người đã góp cũng không được hoàn.';
   static const String keep = 'Không';
   static String cancelledMessage(int refund) =>
       refund > 0 ? 'Đã hủy đặt sân. Hoàn ${Formatters.vnd(refund)} vào ví.' : 'Đã hủy đặt sân.';

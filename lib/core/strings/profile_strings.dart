@@ -43,6 +43,16 @@ class ProfileStrings {
   static const String changePasswordButton = 'ĐỔI MẬT KHẨU';
   static const String passwordChanged = 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại bằng mật khẩu mới.';
 
+  // Đặt mật khẩu (tài khoản tạo bằng Google / Facebook)
+  static const String setPassword = 'Đặt mật khẩu';
+  static const String setPasswordTitle = 'Đặt Mật Khẩu';
+  static const String setPasswordNote =
+      'Tài khoản của bạn được tạo bằng Google / Facebook nên chưa có mật khẩu. Đặt mật khẩu để có thể đăng nhập '
+      'bằng tên đăng nhập và mật khẩu.';
+  static const String setPasswordButton = 'ĐẶT MẬT KHẨU';
+  static const String passwordSet = 'Đã đặt mật khẩu.';
+  static const String alreadyHasPassword = 'Tài khoản đã có mật khẩu. Vui lòng dùng chức năng Đổi mật khẩu.';
+
   // Xóa tài khoản
   static const String deleteAccount = 'Xóa tài khoản';
   static const String deleteWarningTitle = 'Xóa tài khoản?';
