@@ -401,7 +401,8 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
             );
           }).toList(),
         ),
-        if (!_courtType.isStandard) ...[
+        // Có sân đã phân loại (vd. sân 5 người) — kể cả khi môn còn sân chưa phân loại ("Sân tiêu chuẩn").
+        if (!_courtType.isStandard || _facility.offeringsFor(_sport).length > 1) ...[
           const SizedBox(height: 12),
           const Text(
             FacilityStrings.chooseCourtType,

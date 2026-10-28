@@ -3,7 +3,6 @@ import '../core/constants/split_payment_rules.dart';
 
 enum BookingPaymentType {
   full('Full', 'Thanh toán 100%'),
-  deposit('Deposit', 'Cọc 1/4, còn lại trả tại sân'),
   split('Split', 'Chia tiền nhóm');
 
   const BookingPaymentType(this.apiValue, this.label);
@@ -98,7 +97,7 @@ class Booking {
   final DateTime createdAt;
   final DateTime? cancelledAt;
 
-  /// Tổng tiền đã hoàn khi hủy.
+  /// Số tiền người dùng hiện tại được hoàn khi hủy (đơn chia tiền: chỉ phần của mình).
   final int refunded;
 
   /// Đã check-in tại sân (không hủy được nữa).
@@ -149,20 +148,16 @@ class Booking {
 
   int get amountPaid =>payments.fold(0, (sum, p) => sum + p.amount);
 
-  /// Còn phải trả tại sân (với cọc 1/4).
-  int get remainingAtCourt => (totalPrice - amountPaid).clamp(0, totalPrice);
-
   /// Hủy trước mốc này được hoàn 100%.
   DateTime get freeCancelDeadline => start.subtract(BookingRules.freeCancelBeforeStart);
 
   bool isFreeCancel(DateTime now) => now.isBefore(freeCancelDeadline);
 
-  /// Số tiền bị mất nếu hủy lúc [now]: trước 24h không mất, trong 24h mất 1/4 tiền sân.
-  int cancelFee(DateTime now) {
-    if (isFreeCancel(now)) return 0;
-    final fee = BookingRules.lateCancelFee(totalPrice);
-    return fee > amountPaid ? amountPaid : fee;
-  }
+  /// Hủy lúc [now] được hoàn đủ: trước 24h, hoặc đơn chia tiền còn chờ góp (lúc nào hủy cũng hoàn đủ phần đã góp).
+  bool refundsInFull(DateTime now) => awaitingPayment || isFreeCancel(now);
+
+  /// Số tiền bị mất nếu hủy lúc [now]: được hoàn đủ thì không mất, còn lại mất toàn bộ số đã trả.
+  int cancelFee(DateTime now) => refundsInFull(now) ? 0 : amountPaid;
 
   /// Tổng tiền được hoàn nếu hủy lúc [now].
   int refundIfCancelled(DateTime now) => amountPaid - cancelFee(now);

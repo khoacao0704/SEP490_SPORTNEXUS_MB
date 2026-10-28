@@ -72,6 +72,13 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
   String? _error;
   String? _selectedMapFacilityId;
 
+  /// Phân trang: trang đã tải, còn trang sau không, tổng số kết quả, đang tải thêm.
+  int _page = 1;
+  bool _hasMore = false;
+  int _total = 0;
+  bool _isLoadingMore = false;
+  bool _loadMoreFailed = false;
+
   /// Mỗi lần tìm tăng số này; kết quả của lần tìm cũ về muộn sẽ bị bỏ qua.
   int _searchGeneration = 0;
 
@@ -89,7 +96,7 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
     super.dispose();
   }
 
-  /// BE chưa lọc được theo tỉnh/quận: ẩn chọn thành phố và bộ lọc quận.
+  /// Không lọc được theo tỉnh/quận: ẩn chọn thành phố và bộ lọc quận.
   bool get _hasAreaFilter => AppRepositories.facility.supportsAreaFilter;
 
   Future<void> _init() async {
@@ -116,19 +123,18 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
         GeoUtils.distanceKm(point, a.center) <= GeoUtils.distanceKm(point, b.center) ? a : b);
   }
 
+  /// Lỗi tải danh sách quận: bỏ trống bộ lọc quận, vẫn tìm sân bình thường.
   Future<void> _loadDistricts() async {
-    final districts = await AppRepositories.facility.getDistricts(_city.name);
+    List<String> districts;
+    try {
+      districts = await AppRepositories.facility.getDistricts(_city.name);
+    } on FacilityException {
+      districts = const [];
+    }
     if (mounted) setState(() => _districts = districts);
   }
 
-  Future<void> _search() async {
-    final generation = ++_searchGeneration;
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    try {
-      final results = await AppRepositories.facility.searchFacilities(FacilitySearchQuery(
+  FacilitySearchQuery get _query => FacilitySearchQuery(
         city: _city.name,
         district: _district,
         sport: _sport,
@@ -139,10 +145,24 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
         maxPrice: _priceRange?.$2,
         minRating: _minRating,
         amenityIds: _amenityIds,
-      ));
+      );
+
+  Future<void> _search() async {
+    final generation = ++_searchGeneration;
+    setState(() {
+      _isLoading = true;
+      _isLoadingMore = false;
+      _loadMoreFailed = false;
+      _error = null;
+    });
+    try {
+      final page = await AppRepositories.facility.searchFacilitiesPage(_query);
       if (!mounted || generation != _searchGeneration) return;
       setState(() {
-        _results = results;
+        _results = page.items;
+        _page = 1;
+        _hasMore = page.hasMore;
+        _total = page.total;
         _isLoading = false;
         if (!_results.any((r) => r.facility.id == _selectedMapFacilityId)) _selectedMapFacilityId = null;
       });
@@ -153,6 +173,31 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
         // Lỗi từ BE / mạng đã có câu tiếng Việt cụ thể; lỗi khác dùng câu chung.
         _error = e is FacilityException ? e.message : FacilityStrings.loadError;
       });
+    }
+  }
+
+  /// Kéo gần cuối danh sách: tải trang kế tiếp. Lỗi thì giữ danh sách đã có, hiện nút thử lại.
+  Future<void> _loadMore() async {
+    if (!_hasMore || _isLoading || _isLoadingMore || _loadMoreFailed) return;
+    final generation = _searchGeneration;
+    setState(() => _isLoadingMore = true);
+    try {
+      final page = await AppRepositories.facility.searchFacilitiesPage(_query, page: _page + 1);
+      if (!mounted || generation != _searchGeneration) return;
+      final known = _results.map((r) => r.facility.id).toSet();
+      setState(() {
+        _results = [..._results, ...page.items.where((r) => !known.contains(r.facility.id))];
+        _page++;
+        _hasMore = page.hasMore;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      if (mounted && generation == _searchGeneration) {
+        setState(() {
+          _isLoadingMore = false;
+          _loadMoreFailed = true;
+        });
+      }
     }
   }
 
@@ -398,29 +443,56 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
     return RefreshIndicator(
       color: AppColors.primaryGreen,
       onRefresh: _search,
-      child: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: _results.length + 1,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return Row(
-              children: [
-                Text(
-                  FacilityStrings.resultCount(_results.length),
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
-                ),
-                if (_isLoading) ...[
-                  const SizedBox(width: 8),
-                  const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
-                ],
-              ],
-            );
-          }
-          final result = _results[index - 1];
-          return FacilityCard(result: result, sport: _sport, onTap: () => _openDetail(result));
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          if (n.metrics.extentAfter < 400) _loadMore();
+          return false;
         },
+        child: ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: _results.length + (_hasMore ? 2 : 1),
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            if (index > _results.length) return _buildLoadMoreFooter();
+            if (index == 0) {
+              return Row(
+                children: [
+                  Text(
+                    FacilityStrings.resultCount(_total < _results.length ? _results.length : _total),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                  ),
+                  if (_isLoading) ...[
+                    const SizedBox(width: 8),
+                    const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                  ],
+                ],
+              );
+            }
+            final result = _results[index - 1];
+            return FacilityCard(result: result, sport: _sport, onTap: () => _openDetail(result));
+          },
+        ),
       ),
+    );
+  }
+
+  /// Cuối danh sách khi còn trang sau: vòng tải (danh sách ngắn không cuộn được thì tải luôn), lỗi thì nút thử lại.
+  Widget _buildLoadMoreFooter() {
+    if (_loadMoreFailed) {
+      return Center(
+        child: TextButton(
+          onPressed: () {
+            setState(() => _loadMoreFailed = false);
+            _loadMore();
+          },
+          child: const Text(FacilityStrings.retry),
+        ),
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadMore());
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
     );
   }
 

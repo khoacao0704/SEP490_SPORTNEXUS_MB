@@ -12,16 +12,13 @@ class BookingException implements Exception {
 }
 
 abstract class BookingRepository {
-  /// false: chỉ trả 100% (BE chưa có cọc 1/4) — chọn cọc thì UI báo "đang phát triển".
-  bool get supportsDeposit;
-
   /// false: chưa chia tiền nhóm được — chọn chia tiền thì UI báo "đang phát triển".
   bool get supportsSplitPayment;
 
   /// Mã QR vé đổi theo chu kỳ này thì UI tải lại mã định kỳ; `null` = mã cố định.
   Duration? get ticketRefreshInterval;
 
-  /// Thanh toán 100% hoặc cọc 1/4 (từng khung) từ ví cho các khung giờ đang giữ.
+  /// Thanh toán 100% từ ví cho các khung giờ đang giữ (đặt sân thường không có cọc).
   /// Mỗi khung giờ thành một lượt đặt riêng (vé QR và hủy riêng), sắp theo giờ bắt đầu.
   /// (Chia tiền nhóm đi qua SplitPaymentRepository, đủ tiền thì BE tự tạo các lượt đặt.)
   Future<List<Booking>> createBooking({
@@ -36,8 +33,8 @@ abstract class BookingRepository {
   /// Lần đặt sân người dùng đã đặt hoặc góp tiền: sắp diễn ra trước (gần nhất trước), đã qua sau.
   Future<List<Booking>> getMyBookings();
 
-  /// Người đặt hủy: trước 24 giờ hoàn 100%, trong 24 giờ mất 1/4 tiền sân.
-  /// Chia tiền nhóm: phần mất trừ vào phần của người đặt trước, những người góp được hoàn phần còn lại.
+  /// Người đặt hủy: trước 24 giờ hoàn 100% (chia tiền nhóm: mỗi người được hoàn phần đã góp),
+  /// trong 24 giờ không hoàn cho ai.
   /// [reasonCode] lấy từ [getCancelReasons]; lý do tự nhập đi trong [reason]. Trả về lượt đặt đã hủy
   /// với [Booking.refunded] là số tiền thực được hoàn.
   Future<Booking> cancelBooking(String bookingId, {int? reasonCode, String? reason});

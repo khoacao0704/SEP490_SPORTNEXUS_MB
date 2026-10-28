@@ -85,6 +85,13 @@ class MockFacilityRepository implements FacilityRepository {
     return results;
   }
 
+  /// Dữ liệu mẫu ít: trả hết trong một trang.
+  @override
+  Future<FacilitySearchPage> searchFacilitiesPage(FacilitySearchQuery query, {int page = 1}) async {
+    final all = await searchFacilities(query);
+    return FacilitySearchPage(items: page == 1 ? all : const [], hasMore: false, total: all.length);
+  }
+
   /// Dữ liệu mẫu chỉ có tên tiện ích: dùng tên làm id.
   @override
   Future<List<Amenity>> getAmenities() async {

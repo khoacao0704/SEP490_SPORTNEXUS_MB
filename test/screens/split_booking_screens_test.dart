@@ -13,6 +13,7 @@ import 'package:test1/models/sport.dart';
 import 'package:test1/models/time_slot.dart';
 import 'package:test1/screens/booking/booking_checkout_screen.dart';
 import 'package:test1/screens/booking/split_booking_screen.dart';
+import 'package:test1/screens/booking/split_payments_screen.dart';
 
 const _me = 'u-player-001';
 
@@ -51,6 +52,12 @@ class _InviteBookings extends MockBookingRepository {
 
   @override
   Future<Booking> getBooking(String bookingId) async => current!;
+
+  /// Lịch đặt của tôi (null = như bản giả lập).
+  List<Booking>? mine;
+
+  @override
+  Future<List<Booking>> getMyBookings() async => mine ?? super.getMyBookings();
 
   @override
   Future<Booking> joinSplit(String bookingId) async {
@@ -116,6 +123,40 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
   }
+
+  testWidgets('"Chia Tiền Sân" với BE thật: liệt kê đơn chia tiền (không có ô nhập mã), bấm mở màn góp tiền', (tester) async {
+    bookings.current = _InviteBookings.split(hostPaid: true, friendPaid: false, hostIsMe: false);
+    final start = DateTime.now().add(const Duration(days: 2));
+    bookings.mine = [
+      bookings.current!,
+      Booking(
+        id: 'b-full',
+        bookerId: _me,
+        facilityName: 'Sân không chia tiền',
+        location: '',
+        sportLabel: '',
+        schedule: '',
+        start: start,
+        end: start.add(const Duration(hours: 1)),
+        totalPrice: 100000,
+        paymentType: BookingPaymentType.full,
+        payments: const [],
+        createdAt: DateTime.now(),
+      ),
+    ];
+    await pump(tester, const SplitPaymentsScreen());
+
+    expect(find.text(SplitPaymentStrings.enterCode), findsNothing);
+    expect(find.text('Hà Nội Badminton Center'), findsOneWidget);
+    expect(find.text(SplitPaymentStrings.awaiting), findsOneWidget);
+    expect(find.text('Sân không chia tiền'), findsNothing);
+
+    await tester.tap(find.text('Hà Nội Badminton Center'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(SplitBookingScreen), findsOneWidget);
+    await tester.pumpWidget(const SizedBox()); // dừng đồng hồ
+  });
 
   testWidgets('người được mời: thấy ai đã góp, bấm góp phần của mình thì đơn đủ tiền', (tester) async {
     bookings.current = _InviteBookings.split(hostPaid: true, friendPaid: false, hostIsMe: false);

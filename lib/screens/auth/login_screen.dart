@@ -156,10 +156,13 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 12),
 
               // Remember Me & Forgot Password
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 8,
                 children: [
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
                         width: 20,
@@ -172,9 +175,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        AuthStrings.rememberMe,
-                        style: TextStyle(fontSize: 13, color: AppColors.authBody),
+                      const Flexible(
+                        child: Text(
+                          AuthStrings.rememberMe,
+                          style: TextStyle(fontSize: 13, color: AppColors.authBody),
+                        ),
                       ),
                     ],
                   ),
@@ -202,23 +207,30 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 24),
 
               // Divider: HOẶC ĐĂNG NHẬP BẰNG
-              const Row(
-                children: [
-                  Expanded(child: Divider(color: AppColors.authDivider)),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      AuthStrings.orLoginWith,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.authHint,
-                        letterSpacing: 0.5,
+              // Chữ tối đa 60% chiều ngang: màn hẹp / chữ to thì xuống dòng thay vì tràn.
+              LayoutBuilder(
+                builder: (context, constraints) => Row(
+                  children: [
+                    const Expanded(child: Divider(color: AppColors.authDivider)),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.6),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          AuthStrings.orLoginWith,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.authHint,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  Expanded(child: Divider(color: AppColors.authDivider)),
-                ],
+                    const Expanded(child: Divider(color: AppColors.authDivider)),
+                  ],
+                ),
               ),
               const SizedBox(height: 20),
 

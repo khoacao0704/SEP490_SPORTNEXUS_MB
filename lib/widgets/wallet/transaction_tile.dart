@@ -146,7 +146,8 @@ class TransactionTile extends StatelessWidget {
   }
 }
 
-void showTransactionDetailSheet(BuildContext context, WalletTransaction tx) {
+/// [onCancelWithdrawal]: có thì lệnh rút đang chờ hiện nút "Hủy yêu cầu rút" (đóng bảng rồi gọi).
+void showTransactionDetailSheet(BuildContext context, WalletTransaction tx, {VoidCallback? onCancelWithdrawal}) {
   Widget row(String label, String value, {Color? valueColor, bool copyable = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -184,7 +185,7 @@ void showTransactionDetailSheet(BuildContext context, WalletTransaction tx) {
     context: context,
     showDragHandle: true,
     backgroundColor: AppColors.white,
-    builder: (_) => SafeArea(
+    builder: (sheetContext) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
         child: Column(
@@ -212,8 +213,26 @@ void showTransactionDetailSheet(BuildContext context, WalletTransaction tx) {
             row(WalletStrings.type, tx.type.label),
             row(WalletStrings.content, tx.description),
             if (tx.reference != null) row(WalletStrings.reference, tx.reference!, copyable: true),
+            if (tx.note != null) row(WalletStrings.note, tx.note!),
             row(WalletStrings.time, '${Formatters.time(tx.createdAt)} • ${Formatters.weekdayDayMonth(tx.createdAt)}/${tx.createdAt.year}'),
             row(WalletStrings.transactionId, tx.id, copyable: true),
+            if (onCancelWithdrawal != null && tx.isPendingWithdrawal) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    onCancelWithdrawal();
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                  ),
+                  child: const Text(WalletStrings.cancelWithdrawal),
+                ),
+              ),
+            ],
           ],
         ),
       ),

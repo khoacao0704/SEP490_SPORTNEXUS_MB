@@ -58,12 +58,11 @@ void main() {
     expect(find.text(BookingStrings.cancel), findsOneWidget);
   });
 
-  testWidgets('hủy trong 24 giờ: báo mất 1/4 tiền sân', (tester) async {
+  testWidgets('hủy trong 24 giờ: báo không được hoàn tiền', (tester) async {
     await pump(tester);
     await tester.tap(find.text(BookingStrings.cancel).first);
     await tester.pumpAndSettle();
-    expect(find.textContaining('mất 1/4 tiền sân'), findsWidgets);
-    expect(find.text(BookingStrings.confirmCancelLate(175000, 0)), findsOneWidget);
+    expect(find.text(BookingStrings.confirmCancelLate(700000)), findsOneWidget);
   });
 
   testWidgets('tab Kèo LFG: kèo thật của tôi, mở chi tiết có nút rời / yêu cầu hủy', (tester) async {
