@@ -71,6 +71,9 @@ abstract class WalletRepository {
 
   /// Gửi lệnh rút: trừ số dư ngay, trạng thái chờ xử lý. Nếu bị từ chối, BE hoàn lại tiền.
   Future<WalletTransaction> requestWithdrawal({required int amount, required BankAccount account});
+
+  /// Hủy lệnh rút đang chờ xử lý ([WalletTransaction.isPendingWithdrawal]); tiền trả lại ví.
+  Future<void> cancelWithdrawal(WalletTransaction withdrawal);
 }
 
 /// Chỉ bản giả lập cài đặt: dùng cho nút "Giả lập đã chuyển khoản" khi demo.

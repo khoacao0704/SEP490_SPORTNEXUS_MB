@@ -262,6 +262,16 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
   }
 
   @override
+  Future<void> cancelWithdrawal(WalletTransaction withdrawal) async {
+    await _delay();
+    final tx = await getTransaction(withdrawal.id);
+    if (!tx.isPendingWithdrawal) throw const WalletException(WalletStrings.noPendingWithdrawal);
+    final prefs = await SharedPreferences.getInstance();
+    final balance = prefs.getInt(_keyBalance) ?? initialBalance;
+    await _save(balance: balance + tx.amount, replace: tx.copyWith(status: TransactionStatus.cancelled));
+  }
+
+  @override
   Future<void> simulateWithdrawalProcessed(String transactionId, {required bool approved}) async {
     final tx = await getTransaction(transactionId);
     if (tx.type != TransactionType.withdrawal || tx.status != TransactionStatus.pending) return;

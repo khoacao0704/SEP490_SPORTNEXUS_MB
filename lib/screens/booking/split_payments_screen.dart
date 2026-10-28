@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import '../../core/strings/booking_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/split_payment_repository.dart';
+import '../../models/booking.dart';
 import '../../models/split_payment.dart';
 import '../../theme/app_colors.dart';
+import 'split_booking_screen.dart';
 import 'split_payment_screen.dart';
 
 /// "Chia Tiền Sân": nhập mã từ link bạn bè gửi, và xem các lượt chia của mình.
+/// BE thật ([BookingRepository.supportsSplitInvite]): chia tiền bằng cách mời theo SĐT, không có mã →
+/// chỉ liệt kê các đơn chia tiền (mình đặt hoặc được mời góp), mở màn chia tiền của đơn đó.
 class SplitPaymentsScreen extends StatefulWidget {
   const SplitPaymentsScreen({super.key});
 
@@ -17,8 +22,11 @@ class SplitPaymentsScreen extends StatefulWidget {
 class _SplitPaymentsScreenState extends State<SplitPaymentsScreen> {
   final _code = TextEditingController();
   List<SplitPayment> _items = [];
+  List<Booking> _splitBookings = [];
   bool _isLoading = true;
   bool _isOpening = false;
+
+  bool get _byInvite => AppRepositories.booking.supportsSplitInvite;
 
   @override
   void initState() {
@@ -34,6 +42,11 @@ class _SplitPaymentsScreenState extends State<SplitPaymentsScreen> {
 
   Future<void> _load() async {
     try {
+      if (_byInvite) {
+        final bookings = await AppRepositories.booking.getMyBookings();
+        if (mounted) setState(() => _splitBookings = bookings.where((b) => b.paymentType == BookingPaymentType.split).toList());
+        return;
+      }
       final items = await AppRepositories.split.getMine();
       if (mounted) setState(() => _items = items);
     } catch (_) {
@@ -70,6 +83,66 @@ class _SplitPaymentsScreenState extends State<SplitPaymentsScreen> {
     _load();
   }
 
+  Future<void> _openBooking(Booking booking) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => SplitBookingScreen(bookingId: booking.id)));
+    _load();
+  }
+
+  /// Nhãn trạng thái giống thẻ ở Lịch đặt.
+  static (String, Color) _bookingStatus(Booking b, DateTime now) {
+    final status = b.status(now);
+    if (b.awaitingPayment && status == BookingStatus.upcoming) return (SplitPaymentStrings.awaiting, AppColors.tagOrangeText);
+    return switch (status) {
+      BookingStatus.upcoming => (BookingStrings.statusUpcoming, AppColors.tagGreenText),
+      BookingStatus.cancelled => (BookingStrings.statusCancelled, const Color(0xFFC62828)),
+      BookingStatus.completed => (BookingStrings.statusCompleted, AppColors.textSecondary),
+    };
+  }
+
+  Widget _buildInviteList(DateTime now) {
+    return RefreshIndicator(
+      color: AppColors.primaryGreen,
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text(
+            SplitPaymentStrings.mine,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textMain),
+          ),
+          const SizedBox(height: 8),
+          if (_isLoading)
+            const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()))
+          else if (_splitBookings.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text(SplitPaymentStrings.empty, style: TextStyle(color: AppColors.textSecondary)),
+            )
+          else
+            for (final b in _splitBookings) _bookingTile(b, now),
+        ],
+      ),
+    );
+  }
+
+  Widget _bookingTile(Booking b, DateTime now) {
+    final (label, color) = _bookingStatus(b, now);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppColors.cardBorder),
+      ),
+      child: ListTile(
+        onTap: () => _openBooking(b),
+        title: Text(b.facilityName, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(b.schedule),
+        trailing: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -84,7 +157,7 @@ class _SplitPaymentsScreenState extends State<SplitPaymentsScreen> {
           style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold),
         ),
       ),
-      body: RefreshIndicator(
+      body: _byInvite ? _buildInviteList(now) : RefreshIndicator(
         color: AppColors.primaryGreen,
         onRefresh: _load,
         child: ListView(

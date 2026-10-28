@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../core/constants/booking_rules.dart';
 import '../../core/strings/booking_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/booking.dart';
@@ -53,8 +52,7 @@ class MockBookingRepository implements BookingRepository {
     final me = await _requireUser();
     final now = _now();
     final slots = [...hold.slots]..sort((a, b) => a.start.compareTo(b.start));
-    int amountFor(TimeSlot s) => paymentType == BookingPaymentType.full ? s.price : BookingRules.depositAmount(s.price);
-    final total = slots.fold(0, (sum, s) => sum + amountFor(s));
+    final total = slots.fold(0, (sum, s) => sum + s.price);
     final baseId = '${now.millisecondsSinceEpoch.toRadixString(36).toUpperCase()}${++_counter}';
     String idFor(int i) => slots.length == 1 ? baseId : '$baseId-${i + 1}';
 
@@ -64,8 +62,7 @@ class MockBookingRepository implements BookingRepository {
         amount: total,
         type: TransactionType.bookingPayment,
         description: 'Đặt sân $facilityName'
-            '${slots.length > 1 ? ' • ${slots.length} khung giờ' : ''}'
-            '${paymentType == BookingPaymentType.deposit ? ' • cọc 1/4' : ''}',
+            '${slots.length > 1 ? ' • ${slots.length} khung giờ' : ''}',
         reference: baseId,
       );
     } on WalletException catch (e) {
@@ -90,7 +87,7 @@ class MockBookingRepository implements BookingRepository {
           end: slot.end,
           totalPrice: slot.price,
           paymentType: paymentType,
-          payments: [BookingPayment(userId: me.id, name: me.name, amount: amountFor(slot))],
+          payments: [BookingPayment(userId: me.id, name: me.name, amount: slot.price)],
           createdAt: now,
         ));
       }
@@ -167,9 +164,6 @@ class MockBookingRepository implements BookingRepository {
   }
 
   @override
-  bool get supportsDeposit => true;
-
-  @override
   bool get supportsSplitPayment => true;
 
   /// Mã vé giả lập cố định theo lượt đặt.
@@ -237,21 +231,13 @@ class MockBookingRepository implements BookingRepository {
     if (booking.bookerId != me.id) throw const BookingException(BookingStrings.onlyBookerCancels);
     if (!booking.canCancel(now, me.id)) throw const BookingException(BookingStrings.cannotCancel);
 
-    // Phần mất trừ vào người đặt trước, sau đó tới những người góp (theo thứ tự trả).
-    var fee = booking.cancelFee(now);
-    final ordered = [
-      ...booking.payments.where((p) => p.userId == booking.bookerId),
-      ...booking.payments.where((p) => p.userId != booking.bookerId),
-    ];
+    // Trước 24h (hoặc đơn chia tiền còn chờ góp): hoàn đủ cho từng người đã trả. Còn lại không hoàn cho ai.
     var refunded = 0;
-    for (final p in ordered) {
-      final lost = fee > p.amount ? p.amount : fee;
-      fee -= lost;
-      final refund = p.amount - lost;
-      if (refund <= 0) continue;
-      refunded += refund;
+    for (final p in booking.refundsInFull(now) ? booking.payments : const <BookingPayment>[]) {
+      if (p.amount <= 0) continue;
+      refunded += p.amount;
       await _wallet.creditRefund(
-        amount: refund,
+        amount: p.amount,
         description: 'Hoàn tiền hủy đặt sân ${booking.facilityName}${p.userId == me.id ? '' : ' • phần của ${p.name}'}',
         reference: booking.id,
       );
@@ -288,7 +274,7 @@ class MockBookingRepository implements BookingRepository {
     return (jsonDecode(raw) as List).map((e) => Booking.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  /// Đặt mẫu của tài khoản demo player@: còn hơn 48 giờ (hủy miễn phí), còn ~30 giờ (hủy mất 1/4), đã qua.
+  /// Đặt mẫu của tài khoản demo player@: còn hơn 48 giờ (hủy miễn phí), còn ~12 giờ (hủy không được hoàn), đã qua.
   List<Booking> _seedBookings() {
     final now = _now();
     final hour = DateTime(now.year, now.month, now.day, now.hour);
@@ -296,7 +282,6 @@ class MockBookingRepository implements BookingRepository {
     Booking seed(String id, String facility, String location, String sport, DateTime start, Duration length, int total,
         BookingPaymentType type) {
       final end = start.add(length);
-      final paid = type == BookingPaymentType.full ? total : BookingRules.depositAmount(total);
       return Booking(
         id: id,
         bookerId: me.id,
@@ -308,7 +293,7 @@ class MockBookingRepository implements BookingRepository {
         end: end,
         totalPrice: total,
         paymentType: type,
-        payments: [BookingPayment(userId: me.id, name: me.name, amount: paid)],
+        payments: [BookingPayment(userId: me.id, name: me.name, amount: total)],
         createdAt: now.subtract(const Duration(days: 1)),
       );
     }
@@ -318,7 +303,7 @@ class MockBookingRepository implements BookingRepository {
       seed('DEMO1', 'Sân Cầu Lông Thiên Triều', 'Quận 7, Hồ Chí Minh', 'Cầu Lông', in4Days,
           const Duration(hours: 1), 168000, BookingPaymentType.full),
       seed('DEMO2', 'Sân Bóng Hoa Lư', 'Quận 1, Hồ Chí Minh', 'Bóng Đá • Sân 5 người',
-          hour.add(const Duration(hours: 12)), const Duration(minutes: 90), 700000, BookingPaymentType.deposit),
+          hour.add(const Duration(hours: 12)), const Duration(minutes: 90), 700000, BookingPaymentType.full),
       seed('DEMO3', 'Eco Sport Quận 7', 'Quận 7, Hồ Chí Minh', 'Pickleball',
           hour.subtract(const Duration(days: 3)), const Duration(hours: 1), 140000, BookingPaymentType.full),
     ];

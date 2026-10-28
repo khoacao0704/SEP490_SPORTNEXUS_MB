@@ -15,12 +15,9 @@ import 'package:test1/screens/booking/booking_checkout_screen.dart';
 import 'package:test1/screens/booking/split_payment_screen.dart';
 import 'package:test1/screens/booking/split_payments_screen.dart';
 
-/// Như BE hiện tại: chỉ trả 100%, chưa chia tiền.
-class _NoDepositBookings extends MockBookingRepository {
-  _NoDepositBookings({required super.facility, super.latency});
-
-  @override
-  bool get supportsDeposit => false;
+/// Chưa chia tiền được: chỉ trả 100%.
+class _NoSplitBookings extends MockBookingRepository {
+  _NoSplitBookings({required super.facility, super.latency});
 
   @override
   bool get supportsSplitPayment => false;
@@ -99,10 +96,10 @@ void main() {
     await tester.pumpWidget(const SizedBox()); // dừng đồng hồ đếm ngược
   });
 
-  testWidgets('BE chưa có cọc 1/4 / chia tiền: chọn thì báo đang phát triển, giữ thanh toán 100%', (tester) async {
+  testWidgets('không có cọc; chưa chia tiền: chọn thì báo đang phát triển, giữ thanh toán 100%', (tester) async {
     final hold = await holdSlot(tester);
     final facilityRepo = facility;
-    AppRepositories.booking = _NoDepositBookings(facility: facilityRepo, latency: Duration.zero);
+    AppRepositories.booking = _NoSplitBookings(facility: facilityRepo, latency: Duration.zero);
     await pump(
       tester,
       BookingCheckoutScreen(
@@ -116,9 +113,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Ký quỹ (1/4 tiền sân)'));
-    await tester.pump();
-    expect(find.text(BookingStrings.depositUnavailable), findsOneWidget);
+    expect(find.textContaining('Ký quỹ'), findsNothing);
 
     await tester.tap(find.text(SplitPaymentStrings.option));
     await tester.pump();

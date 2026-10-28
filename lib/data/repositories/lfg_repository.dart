@@ -1,4 +1,5 @@
 import '../../core/constants/lfg_rules.dart';
+import '../../models/booking.dart' show CancelReason;
 import '../../models/facility.dart';
 import '../../models/lfg_match.dart';
 import '../../models/time_slot.dart';
@@ -40,13 +41,18 @@ abstract class LfgRepository {
     String note = '',
   });
 
-  /// Rời kèo chưa đủ người: hoàn 100% cọc, chỗ mở lại, kèo vẫn ở lại để ghép tiếp.
+  /// Rời kèo trước T−48h: hoàn 100% cọc, chỗ mở lại, kèo vẫn ở lại để ghép tiếp.
   /// Host rời thì quyền host chuyển cho người vào sớm nhất; host là người cuối cùng thì kèo bị hủy.
-  /// Kèo đã chốt (đủ người) không rời được — dùng [requestCancel]. Trả về số tiền được hoàn.
-  Future<int> leaveMatch(String matchId);
+  /// Sau T−48h: xem [lateLeaveAllowed]. [reason] lấy từ [getLeaveReasons] (BE bắt buộc khi đã vào kèo).
+  /// Trả về số tiền được hoàn.
+  Future<int> leaveMatch(String matchId, {String? reason});
 
-  /// Gửi yêu cầu hủy kèo đã chốt (bất kỳ thành viên nào, trước T−24h). Người gửi tính là đã đồng ý.
-  Future<LfgMatch> requestCancel(String matchId);
+  /// Lý do rời / xin hủy kèo chọn sẵn (có thể rỗng: UI không hỏi lý do).
+  Future<List<CancelReason>> getLeaveReasons();
+
+  /// Gửi yêu cầu hủy kèo đã chốt (trước T−24h; ai gửi được xem [onlyHostRequestsCancel]).
+  /// Người gửi tính là đã đồng ý.
+  Future<LfgMatch> requestCancel(String matchId, {String? reason});
 
   /// Trả lời yêu cầu hủy. Một người từ chối là bác yêu cầu; tất cả đồng ý thì hủy kèo,
   /// hoàn 100% cho mọi người và không trừ Fair Play.
@@ -59,6 +65,14 @@ abstract class LfgRepository {
 
   /// true: host rời kèo thì chuyển quyền host ([leaveMatch]); false: host chỉ hủy kèo ([cancelMatch]).
   bool get hostCanLeave;
+
+  /// true: người tham gia (không phải host) vẫn tự rời được sau T−48h tới giờ chơi nhưng không được hoàn
+  /// (tiền chuyển cho host, chỗ không mở lại; trong 24h cuối còn bị trừ Fair Play) — cách BE làm.
+  /// false: sau T−48h không tự rời được, chỉ gửi yêu cầu hủy.
+  bool get lateLeaveAllowed;
+
+  /// true: chỉ host gửi được yêu cầu hủy kèo đã chốt (BE); false: thành viên nào cũng gửi được.
+  bool get onlyHostRequestsCancel;
 
   /// true: host trả trước cả tiền sân khi tạo kèo, người vào trả phần của mình cho host (BE);
   /// false: host chỉ cọc phần của mình như mọi người.

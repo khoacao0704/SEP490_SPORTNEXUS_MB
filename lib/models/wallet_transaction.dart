@@ -65,6 +65,9 @@ class WalletTransaction {
   /// Mã tham chiếu: mã đặt sân, nội dung chuyển khoản, tài khoản nhận tiền rút...
   final String? reference;
 
+  /// Ghi chú thêm của BE, vd. "Mã giao dịch ngân hàng: …" khi Admin chuyển tiền rút xong.
+  final String? note;
+
   const WalletTransaction({
     required this.id,
     required this.type,
@@ -73,7 +76,11 @@ class WalletTransaction {
     required this.createdAt,
     required this.description,
     this.reference,
+    this.note,
   });
+
+  /// Lệnh rút đang chờ Admin xử lý: người dùng còn hủy được (tiền trả lại ví).
+  bool get isPendingWithdrawal => type == TransactionType.withdrawal && status == TransactionStatus.pending;
 
   /// Số tiền có dấu theo chiều ảnh hưởng tới số dư (+ nạp/hoàn, - chi/rút).
   int get signedAmount => type.isCredit ? amount : -amount;
@@ -86,6 +93,7 @@ class WalletTransaction {
         createdAt: createdAt,
         description: description,
         reference: reference,
+        note: note,
       );
 
   factory WalletTransaction.fromJson(Map<String, dynamic> json) => WalletTransaction(
@@ -96,6 +104,7 @@ class WalletTransaction {
         createdAt: DateTime.parse(json['createdAt'] as String),
         description: json['description'] as String,
         reference: json['reference'] as String?,
+        note: json['note'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -106,5 +115,6 @@ class WalletTransaction {
         'createdAt': createdAt.toIso8601String(),
         'description': description,
         'reference': reference,
+        'note': note,
       };
 }

@@ -110,6 +110,13 @@ class WalletStrings {
   static const String invalidAmount = 'Vui lòng nhập số tiền hợp lệ';
   static const String accountExists = 'Tài khoản ngân hàng này đã được lưu';
   static const String transactionNotFound = 'Không tìm thấy giao dịch';
+  static const String note = 'Ghi chú';
+  static const String cancelWithdrawal = 'Hủy yêu cầu rút';
+  static const String cancelWithdrawalConfirm =
+      'Hủy yêu cầu rút tiền này? Số tiền sẽ được trả lại vào ví của bạn.';
+  static const String withdrawalCancelled = 'Đã hủy yêu cầu rút tiền, tiền đã trả lại ví.';
+  static const String noPendingWithdrawal = 'Yêu cầu rút tiền không còn ở trạng thái chờ xử lý.';
+  static const String keep = 'Giữ lại';
   static const String topUpNotPending = 'Lệnh nạp không còn ở trạng thái chờ thanh toán';
   static const String loadError = 'Không tải được dữ liệu ví. Vui lòng thử lại.';
   static const String retry = 'Thử lại';

@@ -18,10 +18,15 @@ abstract class FacilityRepository {
   /// false: không lọc được theo tỉnh/quận (UI ẩn bộ lọc khu vực, [getDistricts] trả rỗng).
   bool get supportsAreaFilter;
 
-  /// false: sân con không phân loại (sân 5/7/11, 3x3/5x5...) — mọi sân là [CourtType.standard], UI ẩn chọn loại sân.
+  /// false: không lọc / tạo kèo theo loại sân (sân 5/7/11, 3x3/5x5...) được — UI ẩn chọn loại sân ở LFG.
+  /// Chi tiết cơ sở vẫn hiện chọn loại sân khi cơ sở có sân đã phân loại ([Facility.offerings]).
   bool get supportsCourtTypes;
 
+  /// Tìm sân (trang đầu, tối đa vài chục cơ sở) — dùng cho các màn chọn nhanh như tạo kèo LFG.
   Future<List<FacilitySearchResult>> searchFacilities(FacilitySearchQuery query);
+
+  /// Tìm sân theo trang [page] (bắt đầu từ 1) cho màn Tìm sân: kéo xuống cuối thì tải trang sau.
+  Future<FacilitySearchPage> searchFacilitiesPage(FacilitySearchQuery query, {int page = 1});
 
   /// Danh mục tiện ích cho bộ lọc tìm sân.
   Future<List<Amenity>> getAmenities();

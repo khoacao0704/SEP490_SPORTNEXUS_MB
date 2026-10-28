@@ -47,3 +47,14 @@ class FacilitySearchResult {
 
   const FacilitySearchResult({required this.facility, this.distanceKm});
 }
+
+/// Một trang kết quả tìm sân; [hasMore] = còn trang sau (kéo xuống cuối danh sách thì tải tiếp).
+class FacilitySearchPage {
+  final List<FacilitySearchResult> items;
+  final bool hasMore;
+
+  /// Tổng số cơ sở khớp bộ lọc (mọi trang).
+  final int total;
+
+  const FacilitySearchPage({required this.items, required this.hasMore, required this.total});
+}

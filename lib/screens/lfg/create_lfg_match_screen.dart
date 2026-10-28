@@ -83,8 +83,14 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     return dates;
   }
 
+  /// Lỗi tải danh sách quận: bỏ trống bộ lọc quận, vẫn chọn sân bình thường.
   Future<void> _loadDistricts() async {
-    final districts = await AppRepositories.lfgFacility.getDistricts(_city);
+    List<String> districts;
+    try {
+      districts = await AppRepositories.lfgFacility.getDistricts(_city);
+    } on FacilityException {
+      districts = const [];
+    }
     if (mounted) setState(() => _districts = districts);
   }
 

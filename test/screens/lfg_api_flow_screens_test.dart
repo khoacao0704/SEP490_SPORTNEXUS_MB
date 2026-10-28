@@ -36,7 +36,7 @@ class _BeLikeLfg extends MockLfgRepository {
   }
 
   @override
-  Future<int> leaveMatch(String matchId) async {
+  Future<int> leaveMatch(String matchId, {String? reason}) async {
     calls.add('leave');
     current = build(hostIsMe: false, myStatus: null);
     return 0;

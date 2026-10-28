@@ -76,25 +76,26 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     return ok == true;
   }
 
+  /// Trước T−48h: hoàn 100%. Sau đó (chỉ khi [LfgRepository.lateLeaveAllowed]): không hoàn, trong 24h cuối
+  /// còn bị trừ Fair Play.
   Future<void> _leave() async {
     final m = _match!;
+    final now = DateTime.now();
     final isHost = m.isHostedBy(_myId!);
     final others = m.members.where((x) => x.userId != _myId).toList()..sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
-    final message = LfgStrings.confirmLeaveMessage(
-      m.depositPerSlot,
-      isHost: isHost,
-      nextHost: others.firstOrNull?.name,
-    );
+    final message = now.isBefore(m.leaveDeadline)
+        ? LfgStrings.confirmLeaveMessage(m.depositPerSlot, isHost: isHost, nextHost: others.firstOrNull?.name)
+        : LfgStrings.confirmLateLeaveMessage(m.depositPerSlot, fairPlayPenalty: !now.isBefore(m.cancelRequestDeadline));
     final alone = others.isEmpty;
-    if (!await _confirm(
-      alone ? LfgStrings.confirmCancelTitle : LfgStrings.confirmLeaveTitle,
-      message,
-      alone ? LfgStrings.cancelMatch : LfgStrings.leave,
-    )) {
-      return;
-    }
+    final reason = await confirmLfgWithReason(
+      context,
+      title: alone ? LfgStrings.confirmCancelTitle : LfgStrings.confirmLeaveTitle,
+      message: message,
+      action: alone ? LfgStrings.cancelMatch : LfgStrings.leave,
+    );
+    if (reason == null) return;
     await _run(() async {
-      final refund = await AppRepositories.lfg.leaveMatch(m.id);
+      final refund = await AppRepositories.lfg.leaveMatch(m.id, reason: reason);
       _snack(LfgStrings.leftMessage(refund));
     });
   }
@@ -130,14 +131,15 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
   Future<void> _requestCancel() async {
     final m = _match!;
     final deadline = '${Formatters.time(m.cancelRequestDeadline)} ${Formatters.weekdayDayMonth(m.cancelRequestDeadline)}';
-    final ok = await _confirm(
-      LfgStrings.confirmRequestTitle,
-      LfgStrings.confirmRequestMessage(m.members.length - 1, deadline),
-      LfgStrings.sendRequest,
+    final reason = await confirmLfgWithReason(
+      context,
+      title: LfgStrings.confirmRequestTitle,
+      message: LfgStrings.confirmRequestMessage(m.members.length - 1, deadline),
+      action: LfgStrings.sendRequest,
     );
-    if (!ok) return;
+    if (reason == null) return;
     await _run(() async {
-      await AppRepositories.lfg.requestCancel(m.id);
+      await AppRepositories.lfg.requestCancel(m.id, reason: reason);
       _snack(LfgStrings.requestSent);
     });
   }
@@ -241,6 +243,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                         m.format.isTeam,
                         hostPaysCourt: AppRepositories.lfg.hostPaysCourt,
                         hostCanLeave: AppRepositories.lfg.hostCanLeave,
+                        lateLeave: AppRepositories.lfg.lateLeaveAllowed,
                       ),
                       style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
                     ),
@@ -598,20 +601,34 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
   }
 
   /// Sau T−48h: từ T−48h tới T−24h kèo đã chốt chỉ hủy được khi tất cả đồng ý; sau T−24h không hủy được.
+  /// BE: chỉ host gửi yêu cầu hủy; người tham gia vẫn tự rời được tới giờ chơi (không hoàn).
   Widget _lateActions(LfgMatch m, DateTime now, LfgStatus status) {
-    final canRequest = status == LfgStatus.confirmed && now.isBefore(m.cancelRequestDeadline);
+    final repo = AppRepositories.lfg;
+    final isHost = m.isHostedBy(_myId!);
+    final canRequest = status == LfgStatus.confirmed &&
+        now.isBefore(m.cancelRequestDeadline) &&
+        (isHost || !repo.onlyHostRequestsCancel);
     final hasRequest = m.activeCancelRequest(now) != null;
+    final canLateLeave = repo.lateLeaveAllowed && !isHost && now.isBefore(m.start);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          canRequest ? LfgStrings.confirmedNote : LfgStrings.tooLateNote,
+          canLateLeave
+              ? LfgStrings.lateLeaveNote
+              : canRequest
+                  ? LfgStrings.confirmedNote
+                  : LfgStrings.tooLateNote,
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
         if (canRequest && !hasRequest) ...[
           const SizedBox(height: 8),
           SizedBox(width: double.infinity, child: _redButton(LfgStrings.requestCancel, _requestCancel)),
+        ],
+        if (canLateLeave) ...[
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity, child: _redButton(LfgStrings.leave, _leave)),
         ],
       ],
     );

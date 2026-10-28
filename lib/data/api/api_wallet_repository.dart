@@ -9,11 +9,12 @@ import 'api_client.dart';
 ///
 /// - Số dư (GET /api/v1/wallet), lịch sử giao dịch (GET /api/v1/wallet/transactions).
 /// - Nạp tiền qua PayOS: tạo lệnh → hiện mã QR / trang thanh toán → hỏi trạng thái tới khi BE nhận tiền.
-///   BE không có hạn thanh toán và không tự đóng lệnh: app tự hủy sau [WalletRules.topUpExpiry].
-/// - Rút tiền: MỘT tài khoản ngân hàng (lưu = thay thế, không xóa), lệnh rút trừ tiền ngay, Admin duyệt / từ chối.
-///   BE hiện chỉ mở cho Chủ sân (Người chơi nhận 403) nên tạm tắt ở Người chơi ([supportsWithdrawal]).
-/// - BE chưa có: chi tiết một giao dịch (tìm trong lịch sử), thanh toán bằng ví. Các luồng đặt sân / LFG / giải đấu
-///   chưa nối vẫn trừ tiền qua ví giả lập ([AppRepositories.paymentWallet]).
+///   Link PayOS hết hạn theo `expiresAt` của BE (mặc định 15 phút); hết giờ app gọi hủy để đồng bộ với PayOS.
+///   BE tự chuyển lệnh quá hạn sang EXPIRED (≈25 phút sau khi tạo).
+/// - Rút tiền: MỘT tài khoản ngân hàng (lưu = thay thế, không xóa), lệnh rút trừ tiền ngay, Admin duyệt / từ chối;
+///   tối thiểu 50.000đ, mỗi lúc một lệnh chờ, hủy được khi còn chờ (tiền trả lại ví).
+/// - BE chưa có: thanh toán bằng ví. Các luồng giải đấu chưa nối vẫn trừ tiền qua ví giả lập
+///   ([AppRepositories.paymentWallet]).
 class ApiWalletRepository implements WalletRepository {
   static const String walletPath = '/api/v1/wallet';
   static const String transactionsPath = '/api/v1/wallet/transactions';
@@ -22,6 +23,8 @@ class ApiWalletRepository implements WalletRepository {
   static String depositCancelPath(String orderCode) => '/api/v1/wallet/deposits/$orderCode/cancel';
   static const String bankAccountPath = '/api/v1/wallet/bank-account';
   static const String withdrawalsPath = '/api/v1/wallet/withdrawals';
+  static String transactionPath(String id) => '/api/v1/wallet/transactions/$id';
+  static String withdrawalCancelPath(String id) => '/api/v1/wallet/withdrawals/$id/cancel';
 
   /// pageSize tối đa BE cho phép.
   static const int pageSize = 100;
@@ -37,12 +40,11 @@ class ApiWalletRepository implements WalletRepository {
   /// Lượt tải ví đang chạy: số dư và tiền tạm giữ gọi cùng lúc thì dùng chung một request.
   Future<Map<String, dynamic>>? _walletRequest;
 
-  /// Người chơi tạm chưa rút tiền (BE chỉ mở cho Chủ sân): mặc định `false`, UI báo "đang phát triển".
-  /// Phần ngân hàng / rút tiền bên dưới đã nối sẵn, bật lại bằng `supportsWithdrawal: true`.
+  /// `false`: tắt rút tiền / tài khoản ngân hàng (UI báo "đang phát triển").
   @override
   final bool supportsWithdrawal;
 
-  ApiWalletRepository({required this._api, this.supportsWithdrawal = false});
+  ApiWalletRepository({required this._api, this.supportsWithdrawal = true});
 
   @override
   bool get supportsTopUp => true;
@@ -88,14 +90,16 @@ class ApiWalletRepository implements WalletRepository {
     return result;
   }
 
-  /// BE chưa có API chi tiết theo id: tìm trong lịch sử.
+  /// Chỉ xem được giao dịch trong ví của mình; không có → 404.
   @override
   Future<WalletTransaction> getTransaction(String transactionId) async {
-    final txs = await getTransactions();
-    for (final tx in txs) {
-      if (tx.id == transactionId) return tx;
+    final Object? data;
+    try {
+      data = await _api.get(transactionPath(transactionId));
+    } on ApiException catch (e) {
+      throw WalletException(e.statusCode == 404 ? WalletStrings.transactionNotFound : e.message);
     }
-    throw const WalletException(WalletStrings.transactionNotFound);
+    return transactionFromApi(data as Map<String, dynamic>);
   }
 
   // ---------------- Nạp tiền (PayOS) ----------------
@@ -104,16 +108,17 @@ class ApiWalletRepository implements WalletRepository {
   Future<TopUpOrder> createTopUp(int amount) async {
     final data = await _call(() => _api.post(depositPath, body: {'amount': amount})) as Map<String, dynamic>;
     final checkoutUrl = data['checkoutUrl'] as String?;
+    final expiresAt = DateTime.tryParse(data['expiresAt']?.toString() ?? '')?.toLocal();
     return TopUpOrder(
       transactionId: data['orderCode'].toString(),
       amount: _money(data['amount']),
       qrData: data['qrCode'] as String? ?? '',
       checkoutUrl: checkoutUrl == null || checkoutUrl.isEmpty ? null : checkoutUrl,
-      expiresAt: DateTime.now().add(WalletRules.topUpExpiry),
+      expiresAt: expiresAt ?? DateTime.now().add(WalletRules.topUpExpiry),
     );
   }
 
-  /// PENDING_PAYMENT → chờ, SUCCESS → đã cộng ví, CANCELLED / FAILED → kết thúc.
+  /// PENDING_PAYMENT → chờ, SUCCESS → đã cộng ví, CANCELLED / EXPIRED / FAILED → kết thúc.
   @override
   Future<TransactionStatus> getTopUpStatus(String orderId) async {
     final data = await _call(() => _api.get(depositStatusPath(orderId))) as Map<String, dynamic>;
@@ -186,6 +191,20 @@ class ApiWalletRepository implements WalletRepository {
     );
   }
 
+  /// BE chỉ cho một lệnh chờ mỗi lúc và id lệnh rút khác id giao dịch: tìm lệnh PENDING rồi hủy.
+  /// Lệnh vừa được Admin xử lý (không còn chờ) → BE báo lỗi, hiển thị nguyên văn.
+  @override
+  Future<void> cancelWithdrawal(WalletTransaction withdrawal) async {
+    final data = await _call(() => _api.get(withdrawalsPath, query: {'page': 1, 'pageSize': pageSize}));
+    final items = data is Map<String, dynamic> ? (data['items'] as List? ?? const []) : const [];
+    final pending = items
+        .cast<Map<String, dynamic>>()
+        .where((w) => (w['status'] as String? ?? '').toUpperCase() == 'PENDING')
+        .firstOrNull;
+    if (pending == null) throw const WalletException(WalletStrings.noPendingWithdrawal);
+    await _call(() => _api.post(withdrawalCancelPath(pending['id'].toString())));
+  }
+
   @override
   Future<WalletTransaction> pay({
     required int amount,
@@ -215,6 +234,7 @@ class ApiWalletRepository implements WalletRepository {
   /// Một dòng của GET /api/v1/wallet/transactions → [WalletTransaction].
   static WalletTransaction transactionFromApi(Map<String, dynamic> json) {
     final status = json['status'] as String? ?? '';
+    final note = (json['note'] as String?)?.trim();
     return WalletTransaction(
       id: json['id'].toString(),
       type: typeFromApi(json['type'] as String? ?? '', status, json['balanceChange'] as num?),
@@ -223,6 +243,7 @@ class ApiWalletRepository implements WalletRepository {
       createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
       description: json['description'] as String? ?? '',
       reference: json['referenceId']?.toString(),
+      note: note == null || note.isEmpty ? null : note,
     );
   }
 
@@ -249,7 +270,8 @@ class ApiWalletRepository implements WalletRepository {
 
   /// BE trả trạng thái dạng chuỗi tự do:
   /// - PENDING_PAYMENT (lệnh nạp chờ chuyển khoản) / PENDING (lệnh rút chờ duyệt) → chờ.
-  /// - CANCELLED → đã hủy; FAILED / REJECTED → không thành công; NO_REFUND_* → hủy muộn, không được hoàn.
+  /// - CANCELLED → đã hủy; EXPIRED → lệnh nạp quá hạn chưa nhận tiền; FAILED / REJECTED → không thành công;
+  ///   NO_REFUND_* → hủy muộn, không được hoàn.
   /// - Còn lại (SUCCESS, COMPLETED, LFG_*, PRIZE_*, REFUNDED*, WALKIN_*...) → thành công.
   static TransactionStatus statusFromApi(String value) {
     final s = value.toUpperCase();
@@ -257,6 +279,7 @@ class ApiWalletRepository implements WalletRepository {
     if (s.startsWith('PENDING')) return TransactionStatus.pending;
     return switch (s) {
       'CANCELLED' || 'CANCELED' => TransactionStatus.cancelled,
+      'EXPIRED' => TransactionStatus.expired,
       'FAILED' || 'REJECTED' => TransactionStatus.failed,
       _ => TransactionStatus.success,
     };

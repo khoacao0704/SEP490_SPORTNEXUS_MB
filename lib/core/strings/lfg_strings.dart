@@ -62,7 +62,10 @@ class LfgStrings {
   static const String rulesTitle = 'Quy định cọc & hủy';
   /// [hostPaysCourt]: chủ kèo trả trước cả tiền sân, người vào trả phần của mình cho chủ kèo (cách BE làm).
   /// [hostCanLeave]: host rời kèo thì quyền host chuyển cho người khác (bản giả lập); không thì host chỉ hủy kèo.
-  static String rules(int deposit, bool isTeam, {bool hostPaysCourt = false, bool hostCanLeave = true}) => [
+  /// [lateLeave]: sau T−48h người tham gia vẫn tự rời được nhưng không hoàn (cách BE làm).
+  static String rules(int deposit, bool isTeam,
+          {bool hostPaysCourt = false, bool hostCanLeave = true, bool lateLeave = false}) =>
+      [
         'Mỗi ${isTeam ? 'đội' : 'người'} vào kèo trả ${Formatters.vnd(deposit)} (chia đều tiền sân).',
         if (isTeam) 'Team vs Team: người đại diện mỗi đội trả tiền, nhận hoàn tiền và chịu cộng/trừ Fair Play thay cả đội.',
         hostPaysCourt
@@ -70,9 +73,14 @@ class LfgStrings {
             : 'Tiền được giữ tới khi chủ sân check-out mới chuyển cho chủ sân.',
         'Kèo phải đủ người trước giờ chơi 48 giờ, nếu không sẽ tự hủy và hoàn 100% cho tất cả.',
         'Trước giờ chơi 48 giờ: ai rời cũng được hoàn 100%, chỗ mở lại cho người khác.'
-            '${hostCanLeave ? ' Host rời thì quyền host chuyển cho người vào sớm nhất.' : ' Host không rời được, chỉ có thể hủy kèo (mọi người được hoàn 100%).'}',
-        'Từ 48 giờ đến 24 giờ trước giờ chơi: muốn hủy phải gửi yêu cầu và tất cả đồng ý; khi đó hoàn 100% và không ai bị trừ Fair Play.',
-        'Trong 24 giờ trước giờ chơi: không thể rời hay hủy kèo.',
+            '${hostCanLeave ? ' Host rời thì quyền host chuyển cho người vào sớm nhất.' : ' Host không rời được, chỉ có thể hủy kèo (mọi người được hoàn 100%, host bị trừ 10 điểm Fair Play).'}',
+        'Từ 48 giờ đến 24 giờ trước giờ chơi: muốn hủy kèo phải ${hostCanLeave ? '' : 'được host '}gửi yêu cầu và tất cả đồng ý; '
+            'khi đó hoàn 100% và không ai bị trừ Fair Play.',
+        if (lateLeave) ...[
+          'Sau 48 giờ trước giờ chơi bạn vẫn tự rời được nhưng không được hoàn tiền (chuyển cho host), chỗ không mở lại.',
+          'Rời trong 24 giờ trước giờ chơi còn bị trừ 10 điểm Fair Play.',
+        ] else
+          'Trong 24 giờ trước giờ chơi: không thể rời hay hủy kèo.',
         'Vắng mặt hoặc trễ quá 15 phút sẽ mất tiền và bị trừ 10 điểm Fair Play.',
       ].join('\n');
   static const String leave = 'Rời kèo';
@@ -83,7 +91,15 @@ class LfgStrings {
       'Bạn được hoàn 100% tiền cọc (${Formatters.vnd(deposit)}) và chỗ của bạn mở lại cho người khác.'
       '${!isHost ? '' : nextHost == null ? ' Bạn là người cuối cùng nên kèo sẽ bị hủy.' : ' Quyền host sẽ chuyển cho $nextHost.'}';
   static const String keep = 'Không';
-  static String leftMessage(int refund) => 'Đã rời kèo. ${Formatters.vnd(refund)} đã được hoàn vào ví.';
+  static String leftMessage(int refund) =>
+      refund > 0 ? 'Đã rời kèo. ${Formatters.vnd(refund)} đã được hoàn vào ví.' : 'Đã rời kèo.';
+  static String confirmLateLeaveMessage(int paid, {required bool fairPlayPenalty}) =>
+      'Kèo đã chốt nên bạn không được hoàn ${Formatters.vnd(paid)} (chuyển cho chủ kèo) và chỗ của bạn không mở lại.'
+      '${fairPlayPenalty ? ' Đã trong 24 giờ trước giờ chơi nên bạn còn bị trừ 10 điểm Fair Play.' : ''}';
+  static const String lateLeaveNote =
+      'Kèo đã chốt. Bạn vẫn rời được tới giờ chơi nhưng không được hoàn tiền; trong 24 giờ trước giờ chơi còn bị trừ 10 điểm Fair Play.';
+  static const String reasonTitle = 'Lý do';
+  static const String reasonHint = 'Nhập lý do';
 
   // Yêu cầu hủy kèo đã chốt
   static const String requestCancel = 'Yêu cầu hủy kèo';
@@ -105,12 +121,10 @@ class LfgStrings {
   static const String mutualCancelledMessage = 'Tất cả đã đồng ý, kèo đã hủy. Mọi người được hoàn 100%.';
   static const String confirmedNote =
       'Đã qua hạn tự rời kèo (48 giờ trước giờ chơi). Muốn hủy, hãy gửi yêu cầu – cần tất cả đồng ý trước giờ chơi 24 giờ.';
-  static const String mutualCancelUnavailable =
-      'Yêu cầu hủy cần tất cả đồng ý đang được phát triển. Liên hệ chủ kèo nếu bạn không thể tham gia.';
   static const String leaveTooLate = 'Đã qua hạn tự rời kèo (48 giờ trước giờ chơi). Hãy gửi yêu cầu hủy kèo.';
   static String hostCancelMessage(int courtPrice) =>
-      'Mọi người trong kèo được hoàn 100%. Tiền sân ${Formatters.vnd(courtPrice)} của bạn hoàn theo chính sách đặt sân '
-      '(hủy trước giờ chơi 24 giờ được hoàn đủ).';
+      'Mọi người trong kèo được hoàn 100%, tiền sân ${Formatters.vnd(courtPrice)} của bạn cũng được hoàn đủ. '
+      'Bạn sẽ bị trừ 10 điểm Fair Play vì hủy kèo.';
   static const String hostCancelledMessage = 'Đã hủy kèo. Mọi người đã được hoàn tiền.';
   static const String withdrawRequest = 'Rút yêu cầu';
   static const String pendingApprovalNote = 'Bạn đã xin vào kèo. Chủ kèo duyệt thì mới trừ tiền và có vé.';
