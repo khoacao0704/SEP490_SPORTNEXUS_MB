@@ -43,6 +43,7 @@ abstract class OwnerRepository {
 
   Future<OwnerFacility> getOwnerFacility(String facilityId);
 
+  Future<List<Map<String, dynamic>>> getAmenities();
   /// Đăng cơ sở mới: đủ thông tin + giấy phép, chờ Admin duyệt.
   Future<OwnerFacility> submitFacility(FacilitySubmission submission);
 

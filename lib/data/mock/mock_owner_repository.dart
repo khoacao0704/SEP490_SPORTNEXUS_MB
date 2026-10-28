@@ -67,6 +67,27 @@ class MockOwnerRepository implements OwnerRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> getAmenities() async {
+    return [
+      {
+        'id': 'mock-amenity-1',
+        'name': 'Parking',
+        'iconCode': 'parking',
+      },
+      {
+        'id': 'mock-amenity-2',
+        'name': 'Changing Room',
+        'iconCode': 'changing-room',
+      },
+      {
+        'id': 'mock-amenity-3',
+        'name': 'Shower',
+        'iconCode': 'shower',
+      },
+    ];
+  }
+
+  @override
   Future<List<CourtSession>> getSessions({required DateTime day, String? facilityId}) async {
     await _delay();
     final ids = await _myFacilityIds();

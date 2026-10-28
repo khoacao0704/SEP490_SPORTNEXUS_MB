@@ -70,6 +70,23 @@ class ApiClient {
     return _send('POST', path, body: form, auth: true);
   }
 
+  Future<dynamic> uploadFiles(
+      String path, {
+        required List<String> filePaths,
+        String field = 'files',
+      }) async {
+    final files = <MultipartFile>[];
+
+    for (final filePath in filePaths) {
+      files.add(await MultipartFile.fromFile(filePath));
+    }
+
+    final form = FormData.fromMap({
+      field: files,
+    });
+
+    return _send('POST', path, body: form, auth: true);
+  }
   /// Đổi refresh token lấy cặp token mới. `false` khi BE từ chối (hết hạn, đã thu hồi, tài khoản bị khóa).
   Future<bool> refreshSession() => _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
 
