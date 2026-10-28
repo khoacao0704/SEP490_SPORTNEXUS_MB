@@ -50,8 +50,16 @@ class _OwnerSessionDetailScreenState extends State<OwnerSessionDetailScreen> {
   }
 
   Future<void> _scan() async {
-    final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const OwnerScanScreen()));
-    if (changed == true) {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OwnerScanScreen(
+          facilityId: _session.facilityId,
+        ),
+      ),
+    );
+
+    if (changed == true && mounted) {
       _changed = true;
       await _reload();
     }

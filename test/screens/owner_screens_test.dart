@@ -62,7 +62,13 @@ void main() {
   });
 
   testWidgets('nhập mã vé: hiện sân con người chơi đã đặt rồi check-in', (tester) async {
-    await pump(tester, const OwnerScanScreen(enableCamera: false));
+    await pump(
+      tester,
+      const OwnerScanScreen(
+        enableCamera: false,
+        facilityId: 'mock-facility-id',
+      ),
+    );
     await tester.enterText(find.byType(TextField), 'SPN-BK-OW1001');
     await tester.tap(find.text(OwnerStrings.lookup));
     await tester.pumpAndSettle();
@@ -76,7 +82,13 @@ void main() {
   });
 
   testWidgets('quá giờ check-in: báo vắng mặt, không mở check-in', (tester) async {
-    await pump(tester, const OwnerScanScreen(enableCamera: false));
+    await pump(
+      tester,
+      const OwnerScanScreen(
+        enableCamera: false,
+        facilityId: 'mock-facility-id',
+      ),
+    );
     await tester.enterText(find.byType(TextField), 'SPN-LFG-LFGOW1-u-lfg-14');
     await tester.tap(find.text(OwnerStrings.lookup));
     await tester.pumpAndSettle();

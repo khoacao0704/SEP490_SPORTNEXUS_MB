@@ -29,6 +29,7 @@ abstract class OwnerRepository {
   /// Tra mã QR người chơi xuất trình. Lỗi nếu mã sai hoặc không thuộc cơ sở của Chủ sân.
   Future<TicketLookup> lookupTicket(String code);
 
+
   /// Check-in một người vào đúng sân con người chơi đã chọn lúc đặt ([CourtSession.assignedCourt]).
   Future<CourtSession> checkIn({required String sessionId, required String userId});
 

@@ -85,14 +85,39 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
 
   void _selectTab(OwnerTab tab) => setState(() => _currentIndex = tab.index);
 
+
   Future<void> _onTap(int index) async {
     if (index == _scanIndex) {
-      final changed = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const OwnerScanScreen()));
-      if (changed == true) _bump();
+      if (_facilities.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bạn chưa có cơ sở để quét QR.'),
+          ),
+        );
+        return;
+      }
+
+      // If no facility was selected, use the first available facility.
+      final facilityId = _facilityId ?? _facilities.first.id;
+
+      final changed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OwnerScanScreen(
+            facilityId: facilityId,
+          ),
+        ),
+      );
+
+      if (changed == true && mounted) {
+        _bump();
+      }
       return;
     }
+
     setState(() => _currentIndex = index);
   }
+
 
   @override
   Widget build(BuildContext context) {

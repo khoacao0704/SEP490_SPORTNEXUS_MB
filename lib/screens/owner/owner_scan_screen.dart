@@ -16,8 +16,13 @@ import 'owner_session_detail_screen.dart';
 class OwnerScanScreen extends StatefulWidget {
   /// Tắt camera (dùng trong test, nơi không có plugin camera).
   final bool enableCamera;
+  final String facilityId;
 
-  const OwnerScanScreen({super.key, this.enableCamera = true});
+  const OwnerScanScreen({
+    super.key,
+    this.enableCamera = true,
+    required this.facilityId,
+  });
 
   @override
   State<OwnerScanScreen> createState() => _OwnerScanScreenState();
