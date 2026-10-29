@@ -119,6 +119,17 @@ class MockOwnerRepository implements OwnerRepository {
     throw const OwnerException(OwnerStrings.ticketNotFound);
   }
 
+
+  @override
+  Future<void> scanQr({
+    required String facilityId,
+    required String qrCode,
+  }) async {
+    throw const OwnerException(
+      'Quét QR trực tiếp qua API chưa được bật trong mock.',
+    );
+  }
+
   @override
   Future<CourtSession> checkIn({required String sessionId, required String userId}) async {
     await _delay();

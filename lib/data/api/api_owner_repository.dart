@@ -339,7 +339,30 @@ class ApiOwnerRepository implements OwnerRepository {
   }
 
   @override
-  Future<TicketLookup> lookupTicket(String code) async => _todo();
+  Future<TicketLookup> lookupTicket(String code) async {
+    throw const OwnerException(
+      'Tra cứu vé chưa được hỗ trợ qua API.',
+    );
+  }
+
+  @override
+  Future<void> scanQr({
+    required String facilityId,
+    required String qrCode,
+  }) async {
+    try {
+      await _api.post(
+        '/api/v1/checkin/scan',
+        query: {
+          'facilityId': facilityId,
+          'qrCode': qrCode.trim(),
+        },
+      );
+    } on ApiException catch (e) {
+      throw OwnerException(e.message);
+    }
+  }
+
 
   @override
   Future<CourtSession> checkIn({required String sessionId, required String userId}) async => _todo();
