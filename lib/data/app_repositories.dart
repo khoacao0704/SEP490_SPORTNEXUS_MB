@@ -1,22 +1,32 @@
 import '../core/config/api_config.dart';
+import 'api/api_ai_chat_repository.dart';
 import 'api/api_auth_repository.dart';
 import 'api/api_booking_repository.dart';
 import 'api/api_client.dart';
 import 'api/api_facility_repository.dart';
 import 'api/api_lfg_repository.dart';
+import 'api/api_notification_repository.dart';
+import 'api/api_player_tournament_repository.dart';
+import 'api/api_review_repository.dart';
+import 'api/api_team_repository.dart';
 import 'api/api_wallet_repository.dart';
+import 'api/notification_hub.dart';
 import 'api/token_store.dart';
 import 'api/api_owner_repository.dart';
+import 'mock/mock_ai_chat_repository.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_booking_repository.dart';
 import 'mock/mock_facility_repository.dart';
 import 'mock/mock_lfg_repository.dart';
 import 'mock/mock_notification_repository.dart';
 import 'mock/mock_owner_repository.dart';
+import 'mock/mock_player_tournament_repository.dart';
 import 'mock/mock_review_repository.dart';
 import 'mock/mock_split_payment_repository.dart';
+import 'mock/mock_team_repository.dart';
 import 'mock/mock_tournament_repository.dart';
 import 'mock/mock_wallet_repository.dart';
+import 'repositories/ai_chat_repository.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/booking_repository.dart';
 import 'repositories/facility_repository.dart';
@@ -24,13 +34,15 @@ import 'repositories/lfg_repository.dart';
 import 'repositories/notification_repository.dart';
 import 'repositories/organizer_tournament_repository.dart';
 import 'repositories/owner_repository.dart';
+import 'repositories/player_tournament_repository.dart';
 import 'repositories/review_repository.dart';
 import 'repositories/split_payment_repository.dart';
+import 'repositories/team_repository.dart';
 import 'repositories/tournament_repository.dart';
 import 'repositories/wallet_repository.dart';
 
 /// Nơi duy nhất quyết định UI dùng bản cài đặt nào của từng repository.
-/// Đã nối API: đăng nhập / đăng ký / hồ sơ cá nhân / ví / tìm sân + chi tiết cơ sở / đặt sân thường + chia tiền / LFG. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
+/// Đã nối API: đăng nhập / đăng ký / hồ sơ cá nhân / ví / tìm sân + chi tiết cơ sở / đặt sân thường + chia tiền / LFG / thông báo / đánh giá + Fair Play / giải đấu + đội / AI chat. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
 class AppRepositories {
   AppRepositories._();
 
@@ -62,8 +74,26 @@ class AppRepositories {
 
   /// Ví màn thanh toán đặt sân kiểm tra số dư / nạp thêm: ví thật (BE trừ tiền khi tạo đơn).
   static WalletRepository bookingWallet = ApiConfig.useMockAuth ? _mockWallet : wallet;
-  static ReviewRepository review = MockReviewRepository();
-  static NotificationRepository notification = MockNotificationRepository();
+  /// Đánh giá cơ sở, chấm người chơi cùng trận, Fair Play: dữ liệu thật.
+  /// Giải đấu phía người chơi (dữ liệu thật). [tournament] bên dưới vẫn là bản giả lập dùng chung với phần Chủ sân.
+  static PlayerTournamentRepository playerTournament = ApiConfig.useMockAuth
+      ? MockPlayerTournamentRepository(teams: _mockTeams)
+      : ApiPlayerTournamentRepository(api: api, facility: _apiFacility);
+
+  /// Đội của người chơi (dữ liệu thật).
+  static TeamRepository team = ApiConfig.useMockAuth ? _mockTeams : ApiTeamRepository(api: api);
+  static final MockTeamRepository _mockTeams = MockTeamRepository();
+
+  /// Trợ lý AI (Gemini qua BE): chỉ gợi ý sân / kèo, không tự đặt.
+  static AiChatRepository aiChat = ApiConfig.useMockAuth
+      ? MockAiChatRepository(facility: _mockFacility)
+      : ApiAiChatRepository(api: api);
+
+  static ReviewRepository review = ApiConfig.useMockAuth ? MockReviewRepository() : ApiReviewRepository(api: api);
+  /// Thông báo: dữ liệu thật + realtime SignalR (chưa có push FCM).
+  static NotificationRepository notification = ApiConfig.useMockAuth
+      ? MockNotificationRepository()
+      : ApiNotificationRepository(api: api, realtime: SignalRNotificationRealtime(tokens: tokenStore, api: api));
 
   /// Ví Chủ sân. Bản giả lập tách riêng với ví người chơi trên cùng máy;
   /// khi nối API dùng cùng WalletRepository (BE trả ví theo tài khoản đăng nhập).

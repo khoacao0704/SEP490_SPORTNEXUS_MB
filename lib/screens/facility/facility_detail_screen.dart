@@ -15,6 +15,7 @@ import '../../widgets/facility/facility_card.dart';
 import '../../widgets/facility/facility_map.dart';
 import '../../widgets/facility/slot_picker.dart';
 import '../../widgets/facility/sport_icon.dart';
+import '../../widgets/review/facility_reviews_section.dart';
 import '../booking/booking_checkout_screen.dart';
 
 class FacilityDetailScreen extends StatefulWidget {
@@ -217,6 +218,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                   child: _buildSlots(),
                 ),
                 _buildAboutSection(),
+                FacilityReviewsSection(facilityId: _facility.id, facilityName: _facility.name),
                 const SizedBox(height: 24),
               ],
             ),

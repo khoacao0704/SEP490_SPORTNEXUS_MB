@@ -3,76 +3,43 @@ import '../../core/utils/formatters.dart';
 import '../../models/app_notification.dart';
 import '../../theme/app_colors.dart';
 
-IconData notificationIcon(NotificationType type) {
-  switch (type) {
-    case NotificationType.bookingConfirmed:
+IconData notificationIcon(NotificationGroup group) {
+  switch (group) {
+    case NotificationGroup.booking:
       return Icons.event_available_outlined;
-    case NotificationType.matchReminder:
-      return Icons.alarm_outlined;
-    case NotificationType.lfgPlayerJoined:
-      return Icons.person_add_alt_1_outlined;
-    case NotificationType.lfgFull:
+    case NotificationGroup.lfg:
       return Icons.groups_outlined;
-    case NotificationType.lfgCancelled:
-      return Icons.event_busy_outlined;
-    case NotificationType.topUpSucceeded:
+    case NotificationGroup.wallet:
       return Icons.account_balance_wallet_outlined;
-    case NotificationType.withdrawalApproved:
-      return Icons.north_east_rounded;
-    case NotificationType.withdrawalRejected:
-      return Icons.money_off_outlined;
-    case NotificationType.refunded:
-      return Icons.undo_rounded;
-    case NotificationType.reviewReminder:
-      return Icons.rate_review_outlined;
-    case NotificationType.fairPlayChanged:
+    case NotificationGroup.review:
       return Icons.shield_outlined;
-    case NotificationType.lfgRestriction:
-      return Icons.block_outlined;
-    case NotificationType.newBooking:
-      return Icons.event_available_outlined;
-    case NotificationType.bookingCancelledByPlayer:
-      return Icons.event_busy_outlined;
-    case NotificationType.lfgMatchConfirmed:
-      return Icons.groups_outlined;
-    case NotificationType.playerNoShow:
-      return Icons.person_off_outlined;
-    case NotificationType.escrowReleased:
-      return Icons.payments_outlined;
-    case NotificationType.ownerWithdrawalApproved:
-      return Icons.north_east_rounded;
-    case NotificationType.ownerWithdrawalRejected:
-      return Icons.money_off_outlined;
-    case NotificationType.listingFeeIssued:
-    case NotificationType.listingFeeDueSoon:
-      return Icons.receipt_long_outlined;
-    case NotificationType.listingFeeOverdue:
-      return Icons.visibility_off_outlined;
-    case NotificationType.facilityApproved:
-    case NotificationType.profileChangeApproved:
-      return Icons.verified_outlined;
-    case NotificationType.facilityRejected:
-    case NotificationType.profileChangeRejected:
-      return Icons.report_gmailerrorred_outlined;
-    case NotificationType.newFacilityReview:
-      return Icons.star_outline_rounded;
-    case NotificationType.reviewReportResolved:
+    case NotificationGroup.team:
+      return Icons.diversity_3_outlined;
+    case NotificationGroup.tournament:
+      return Icons.emoji_events_outlined;
+    case NotificationGroup.community:
+      return Icons.forum_outlined;
+    case NotificationGroup.report:
       return Icons.flag_outlined;
+    case NotificationGroup.system:
+      return Icons.campaign_outlined;
   }
 }
 
-({Color bg, Color fg}) notificationColors(NotificationCategory category) {
-  switch (category) {
-    case NotificationCategory.booking:
-    case NotificationCategory.ownerBooking:
+({Color bg, Color fg}) notificationColors(NotificationGroup group) {
+  switch (group) {
+    case NotificationGroup.booking:
+    case NotificationGroup.lfg:
       return (bg: AppColors.lightGreen, fg: AppColors.primaryGreen);
-    case NotificationCategory.wallet:
-    case NotificationCategory.ownerMoney:
+    case NotificationGroup.wallet:
       return (bg: AppColors.tagPurpleBg, fg: AppColors.tagPurpleText);
-    case NotificationCategory.review:
-    case NotificationCategory.ownerReview:
+    case NotificationGroup.review:
+    case NotificationGroup.report:
       return (bg: AppColors.tagOrangeBg, fg: AppColors.tagOrangeText);
-    case NotificationCategory.ownerFacility:
+    case NotificationGroup.team:
+    case NotificationGroup.tournament:
+    case NotificationGroup.community:
+    case NotificationGroup.system:
       return (bg: const Color(0xFFE3F2FD), fg: const Color(0xFF1565C0));
   }
 }
@@ -87,7 +54,7 @@ class NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final n = notification;
-    final colors = notificationColors(n.type.category);
+    final colors = notificationColors(n.group);
     return Material(
       color: n.isRead ? AppColors.white : const Color(0xFFF1FAF4),
       child: InkWell(
@@ -101,7 +68,7 @@ class NotificationTile extends StatelessWidget {
               CircleAvatar(
                 radius: 20,
                 backgroundColor: colors.bg,
-                child: Icon(notificationIcon(n.type), size: 20, color: colors.fg),
+                child: Icon(notificationIcon(n.group), size: 20, color: colors.fg),
               ),
               const SizedBox(width: 12),
               Expanded(

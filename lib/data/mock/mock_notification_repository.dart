@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/strings/notification_strings.dart';
 import '../../models/app_notification.dart';
 import '../repositories/notification_repository.dart';
 import 'mock_auth_repository.dart';
@@ -11,15 +12,18 @@ import 'mock_auth_repository.dart';
 ///
 /// - Thông báo mẫu tính lùi từ mốc lần đầu chạy, riêng cho từng tài khoản demo
 ///   (tài khoản mới đăng ký thì hộp thư trống).
-/// - Trạng thái đã đọc và thông báo giả lập lưu theo từng tài khoản.
+/// - Trạng thái đã đọc, đã xoá, cài đặt và thông báo giả lập lưu theo từng tài khoản.
 class MockNotificationRepository implements NotificationRepository, SandboxNotificationSimulator {
   static const String keySeedAt = 'notification_seed_at';
   static String keyRead(String userId) => 'notifications_read_$userId';
   static String keyExtra(String userId) => 'notifications_extra_$userId';
+  static String keyDeleted(String userId) => 'notifications_deleted_$userId';
+  static String keyDisabled(String userId) => 'notifications_disabled_$userId';
 
   final Duration latency;
   final DateTime Function() _now;
   final StreamController<void> _changes = StreamController<void>.broadcast();
+  final StreamController<AppNotification> _incoming = StreamController<AppNotification>.broadcast();
 
   MockNotificationRepository({this.latency = const Duration(milliseconds: 300), DateTime Function()? now})
       : _now = now ?? DateTime.now;
@@ -28,15 +32,39 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
   Stream<void> get changes => _changes.stream;
 
   @override
+  Stream<AppNotification> get incoming => _incoming.stream;
+
+  @override
+  Future<NotificationPage> getPage({NotificationGroup? group, bool unreadOnly = false, int page = 1}) async {
+    await _delay();
+    final matching = (await _all())
+        .where((n) => (group == null || n.group == group) && (!unreadOnly || !n.isRead))
+        .toList();
+    const size = NotificationRepository.pageSize;
+    final start = (page - 1) * size;
+    return NotificationPage(
+      items: matching.skip(start).take(size).toList(),
+      hasMore: matching.length > start + size,
+    );
+  }
+
+  @override
   Future<List<AppNotification>> getNotifications() async {
     await _delay();
     return _all();
   }
 
   @override
-  Future<int> getUnreadCount() async {
+  Future<int> getUnreadCount() async => (await getUnread()).total;
+
+  @override
+  Future<UnreadNotifications> getUnread() async {
     await _delay();
-    return (await _all()).where((n) => !n.isRead).length;
+    final byGroup = <NotificationGroup, int>{};
+    for (final n in (await _all()).where((n) => !n.isRead)) {
+      byGroup[n.group] = (byGroup[n.group] ?? 0) + 1;
+    }
+    return UnreadNotifications(total: byGroup.values.fold(0, (a, b) => a + b), byGroup: byGroup);
   }
 
   @override
@@ -51,12 +79,47 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
   }
 
   @override
-  Future<void> markAllAsRead() async {
+  Future<void> markAllAsRead({NotificationGroup? group}) async {
     await _delay();
     final userId = await _currentUserId();
-    final read = await _readIds(userId)..addAll((await _all()).map((n) => n.id));
+    final all = await _all();
+    final read = await _readIds(userId)..addAll(all.where((n) => group == null || n.group == group).map((n) => n.id));
     await _saveReadIds(userId, read);
     _changes.add(null);
+  }
+
+  @override
+  Future<void> delete(String notificationId) async {
+    await _delay();
+    final userId = await _currentUserId();
+    await _saveDeleted(userId, await _deletedIds(userId)..add(notificationId));
+    _changes.add(null);
+  }
+
+  @override
+  Future<int> deleteRead() async {
+    await _delay();
+    final userId = await _currentUserId();
+    final readIds = (await _all()).where((n) => n.isRead).map((n) => n.id).toList();
+    await _saveDeleted(userId, await _deletedIds(userId)..addAll(readIds));
+    _changes.add(null);
+    return readIds.length;
+  }
+
+  @override
+  Future<Set<NotificationGroup>> getDisabledGroups() async {
+    await _delay();
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(keyDisabled(await _currentUserId())) ?? const [];
+    return saved.map(NotificationGroup.fromApi).where((g) => !g.mandatory).toSet();
+  }
+
+  @override
+  Future<void> setDisabledGroups(Set<NotificationGroup> disabled) async {
+    await _delay();
+    if (disabled.any((g) => g.mandatory)) throw const NotificationException(NotificationStrings.mandatoryGroup);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(keyDisabled(await _currentUserId()), disabled.map((g) => g.apiValue).toList());
   }
 
   /// Thêm một thông báo mới (xoay vòng theo các mẫu) như thể BE vừa đẩy xuống.
@@ -75,6 +138,7 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
       createdAt: _now(),
     );
     await prefs.setStringList(keyExtra(userId), [...extras, jsonEncode(notification.toJson())]);
+    _incoming.add(notification);
     _changes.add(null);
     return notification;
   }
@@ -100,14 +164,26 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
     await prefs.setStringList(keyRead(userId), ids.toList());
   }
 
+  Future<Set<String>> _deletedIds(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(keyDeleted(userId)) ?? []).toSet();
+  }
+
+  Future<void> _saveDeleted(String userId, Set<String> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(keyDeleted(userId), ids.toList());
+  }
+
   Future<List<AppNotification>> _all() async {
     final userId = await _currentUserId();
     final prefs = await SharedPreferences.getInstance();
     final read = await _readIds(userId);
+    final deleted = await _deletedIds(userId);
     final extras = (prefs.getStringList(keyExtra(userId)) ?? [])
         .map((raw) => AppNotification.fromJson(jsonDecode(raw) as Map<String, dynamic>))
         .whereType<AppNotification>();
     return [...await _seedFor(userId), ...extras]
+        .where((n) => !deleted.contains(n.id))
         .map((n) => read.contains(n.id) ? n.copyWith(isRead: true) : n)
         .toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));

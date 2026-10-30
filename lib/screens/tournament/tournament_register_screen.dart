@@ -1,428 +1,273 @@
 import 'package:flutter/material.dart';
-import '../../core/strings/tournament_strings.dart';
+
+import '../../core/strings/player_tournament_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
-import '../../data/repositories/tournament_repository.dart';
-import '../../data/repositories/wallet_repository.dart';
-import '../../models/tournament.dart';
+import '../../data/repositories/player_tournament_repository.dart';
+import '../../models/team.dart';
+import '../../models/tournament_listing.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/facility/sport_icon.dart';
-import '../wallet/vietqr_payment_screen.dart';
+import '../profile/top_up_wallet_screen.dart';
+import '../team/team_form_screen.dart';
 
-enum _Method { wallet, vietQr }
-
-/// Đăng ký giải: tên đội, thành viên (tra theo email/SĐT), đồng ý điều lệ, trả lệ phí.
-/// Pop về [Tournament] đã cập nhật khi đăng ký thành công.
+/// Đăng ký một nội dung: cá nhân (đơn / ghép đôi ngẫu nhiên) hoặc bằng một đội (đội / đôi cố định).
+/// Lệ phí tạm giữ trong ví người đăng ký. Pop về `true` khi đăng ký thành công.
 class TournamentRegisterScreen extends StatefulWidget {
-  final Tournament tournament;
+  final TournamentDetails details;
+  final TournamentDivision division;
 
-  const TournamentRegisterScreen({super.key, required this.tournament});
+  const TournamentRegisterScreen({super.key, required this.details, required this.division});
 
   @override
   State<TournamentRegisterScreen> createState() => _TournamentRegisterScreenState();
 }
 
 class _TournamentRegisterScreenState extends State<TournamentRegisterScreen> {
-  final _teamName = TextEditingController();
-  final _memberInput = TextEditingController();
-  final List<TournamentMember> _teammates = [];
-  TournamentMember? _me;
   int? _balance;
-  _Method _method = _Method.wallet;
-  bool _agreed = false;
-  bool _isLookingUp = false;
-  bool _isPaying = false;
+  List<Team>? _teams;
+  String? _teamId;
+  bool _submitting = false;
 
-  Tournament get _t => widget.tournament;
-  bool get _isTeam => _t.entryType == TournamentEntryType.team;
-  int get _memberCount => _teammates.length + 1;
-  bool get _walletEnough => _balance != null && _balance! >= _t.entryFee;
+  TournamentDivision get _division => widget.division;
+
+  bool _teamFits(Team t) =>
+      !t.isLocked && t.memberCount >= _division.minTeamSize && t.memberCount <= _division.maxTeamSize;
+
+  bool get _enoughMoney => _balance == null || _balance! >= _division.entryFee;
+
+  bool get _canSubmit => !_submitting && _enoughMoney && (!_division.type.needsTeam || _teamId != null);
 
   @override
   void initState() {
     super.initState();
-    _loadUser();
     _loadBalance();
-  }
-
-  @override
-  void dispose() {
-    _teamName.dispose();
-    _memberInput.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadUser() async {
-    final user = await AppRepositories.auth.getCurrentUser();
-    if (user != null && mounted) setState(() => _me = TournamentMember(userId: user.id, name: user.fullName));
+    if (_division.type.needsTeam) _loadTeams();
   }
 
   Future<void> _loadBalance() async {
     try {
-      final balance = await AppRepositories.paymentWallet.getBalance();
+      final balance = await AppRepositories.wallet.getBalance();
       if (mounted) setState(() => _balance = balance);
     } catch (_) {
-      // Không có số dư thì vẫn cho chọn VietQR.
+      // Không biết số dư thì để BE kiểm tra khi đăng ký.
     }
   }
 
-  Future<void> _addMember() async {
-    final input = _memberInput.text.trim();
-    if (input.isEmpty) return;
-    if (_memberCount >= _t.maxMembers) {
-      _showError(TournamentStrings.tooManyMembers);
-      return;
-    }
-    FocusScope.of(context).unfocus();
-    setState(() => _isLookingUp = true);
+  Future<void> _loadTeams() async {
     try {
-      final member = await AppRepositories.tournament.findPlayer(input);
+      final teams = await AppRepositories.team.getMyTeams();
       if (!mounted) return;
-      if (member.userId == _me?.userId) {
-        _showError(TournamentStrings.cannotAddSelf);
-      } else if (_teammates.any((m) => m.userId == member.userId)) {
-        _showError(TournamentStrings.duplicateMember);
-      } else {
-        setState(() => _teammates.add(member));
-        _memberInput.clear();
-      }
-    } on TournamentException catch (e) {
-      _showError(e.message);
+      setState(() {
+        _teams = teams;
+        if (_teamId != null && !teams.any((t) => t.id == _teamId && _teamFits(t))) _teamId = null;
+        _teamId ??= teams.where(_teamFits).firstOrNull?.id;
+      });
     } catch (_) {
-      _showError(TournamentStrings.loadError);
-    } finally {
-      if (mounted) setState(() => _isLookingUp = false);
+      if (mounted) setState(() => _teams = const []);
     }
   }
 
-  String? _validate() {
-    if (_isTeam && _teamName.text.trim().isEmpty) return TournamentStrings.teamNameRequired;
-    if (_memberCount < _t.minMembers) {
-      return _t.entryType == TournamentEntryType.pair
-          ? TournamentStrings.needPartner
-          : TournamentStrings.needMembers(_t.minMembers - _memberCount);
-    }
-    if (!_agreed) return TournamentStrings.mustAgree;
-    if (_method == _Method.wallet && !_walletEnough) return TournamentStrings.insufficient;
-    return null;
+  Future<void> _createTeam() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const TeamFormScreen()));
+    _loadTeams();
+  }
+
+  Future<void> _topUp() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const TopUpWalletScreen()));
+    _loadBalance();
   }
 
   Future<void> _submit() async {
-    final error = _validate();
-    if (error != null) {
-      _showError(error);
-      return;
-    }
-    setState(() => _isPaying = true);
+    setState(() => _submitting = true);
     try {
-      if (_method == _Method.vietQr) {
-        // Chuyển khoản đúng số lệ phí vào ví rồi trừ ví (BE xác nhận chuyển khoản).
-        final order = await AppRepositories.paymentWallet.createTopUp(_t.entryFee);
-        if (!mounted) return;
-        final paid = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(builder: (_) => VietQrPaymentScreen(order: order, wallet: AppRepositories.paymentWallet)),
-        );
-        if (paid != true) {
-          if (mounted) setState(() => _isPaying = false);
-          _loadBalance();
-          return;
-        }
-      }
-      final updated = await AppRepositories.tournament.register(TournamentRegistration(
-        tournamentId: _t.id,
-        teamName: _teamName.text,
-        teammates: List.of(_teammates),
-      ));
-      if (mounted) Navigator.pop(context, updated);
+      await AppRepositories.playerTournament.join(_division.id, teamId: _division.type.needsTeam ? _teamId : null);
+      if (mounted) Navigator.pop(context, true);
     } on TournamentException catch (e) {
-      _fail(e.message);
-    } on WalletException catch (e) {
-      _fail(e.message);
-    } catch (_) {
-      _fail(TournamentStrings.loadError);
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+      _loadBalance();
     }
-  }
-
-  void _fail(String message) {
-    if (!mounted) return;
-    setState(() => _isPaying = false);
-    _loadBalance();
-    _showError(message);
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
   }
 
   @override
   Widget build(BuildContext context) {
+    final d = _division;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.white,
-        elevation: 0,
+        elevation: 0.5,
         iconTheme: const IconThemeData(color: AppColors.textMain),
         title: const Text(
-          TournamentStrings.registerTitle,
+          PlayerTournamentStrings.registerTitle,
           style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold),
         ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _card(Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: AppColors.lightGreen,
-                child: Icon(sportIcon(_t.sport), color: AppColors.primaryGreen),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(_t.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textMain)),
-                    Text(
-                      '${_t.sport.label} • ${_t.entryType.label} • ${_t.facilityName}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                    Text(
-                      TournamentStrings.dateRange(_t.startDate, _t.endDate),
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
-                    ),
-                  ],
+          _card(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.details.info.name,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain),
                 ),
-              ),
-            ],
-          )),
-          if (_isTeam) ...[
-            _title(TournamentStrings.teamName),
-            TextField(
-              controller: _teamName,
-              textCapitalization: TextCapitalization.words,
-              maxLength: 40,
-              decoration: _inputDecoration(TournamentStrings.teamNameHint),
-            ),
-          ],
-          _title(_t.maxMembers == 1
-              ? TournamentStrings.playerInfo
-              : _isTeam
-                  ? TournamentStrings.membersTitle(_memberCount, _t.minMembers, _t.maxMembers)
-                  : TournamentStrings.partnerTitle),
-          _card(Column(
-            children: [
-              if (_me != null) _memberRow(_me!, isCaptain: true),
-              for (final m in _teammates) _memberRow(m),
-              if (_memberCount < _t.maxMembers) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _memberInput,
-                        keyboardType: TextInputType.emailAddress,
-                        onSubmitted: (_) => _addMember(),
-                        decoration: _inputDecoration(TournamentStrings.addMemberHint),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: _isLookingUp ? null : _addMember,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryGreen,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      child: _isLookingUp
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Text(TournamentStrings.addMember),
-                    ),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    d.name,
+                    d.typeLabel,
+                    if (d.type.needsTeam) PlayerTournamentStrings.teamSize(d.minTeamSize, d.maxTeamSize),
+                  ].join(' • '),
+                  style: const TextStyle(color: AppColors.textSecondary),
                 ),
-                const SizedBox(height: 6),
-                const Text(TournamentStrings.memberNote, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                if (d.guide.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(d.guide, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+                if (d.type == DivisionType.randomDoubles) ...[
+                  const SizedBox(height: 6),
+                  const Text(PlayerTournamentStrings.randomDoublesNote, style: TextStyle(fontSize: 12)),
+                ],
               ],
-            ],
-          )),
-          const SizedBox(height: 12),
-          _card(Text(
-            TournamentStrings.feeRules(_t.entryFee, _unitLower),
-            style: const TextStyle(fontSize: 13, color: AppColors.textMain, height: 1.5),
-          )),
-          CheckboxListTile(
-            value: _agreed,
-            onChanged: (v) => setState(() => _agreed = v ?? false),
-            controlAffinity: ListTileControlAffinity.leading,
-            contentPadding: EdgeInsets.zero,
-            activeColor: AppColors.primaryGreen,
-            title: const Text(TournamentStrings.agreeRules, style: TextStyle(fontSize: 13)),
+            ),
           ),
-          _title(TournamentStrings.paymentMethod),
-          _methodTile(
-            _Method.wallet,
-            Icons.account_balance_wallet_outlined,
-            TournamentStrings.payWallet,
-            _balance == null ? '...' : TournamentStrings.balance(_balance!),
-            warning: _balance != null && !_walletEnough,
-          ),
-          const SizedBox(height: 8),
-          _methodTile(_Method.vietQr, Icons.qr_code_2, TournamentStrings.payVietQr, TournamentStrings.payVietQrHint),
+          if (d.type.needsTeam) ...[const SizedBox(height: 16), _buildTeamPicker()],
           const SizedBox(height: 16),
+          _card(
+            Column(
+              children: [
+                _row(PlayerTournamentStrings.entryFee, PlayerTournamentStrings.fee(d.entryFee), bold: true),
+                if (_balance != null) _row(PlayerTournamentStrings.walletBalance, Formatters.vnd(_balance!)),
+                if (!_enoughMoney) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          PlayerTournamentStrings.notEnoughBalance,
+                          style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      TextButton(onPressed: _topUp, child: const Text(PlayerTournamentStrings.topUp)),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 6),
+                const Text(
+                  PlayerTournamentStrings.feeNote,
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: SafeArea(
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          decoration: const BoxDecoration(
-            color: AppColors.white,
-            border: Border(top: BorderSide(color: AppColors.divider)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _canSubmit ? _submit : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.authPrimary,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.cardBorder,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: _submitting
+                  ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white))
+                  : const Text(PlayerTournamentStrings.confirmRegister, style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      TournamentStrings.amountToPay,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
-                    ),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        Formatters.vnd(_t.entryFee),
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTeamPicker() {
+    final teams = _teams;
+    final d = _division;
+    return _card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(PlayerTournamentStrings.chooseTeam, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          Text(
+            PlayerTournamentStrings.teamSizeRequired(d.minTeamSize, d.maxTeamSize),
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 6),
+          if (teams == null)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Center(child: CircularProgressIndicator(color: AppColors.primaryGreen, strokeWidth: 2)),
+            )
+          else ...[
+            if (!teams.any(_teamFits))
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Text(PlayerTournamentStrings.noEligibleTeam, style: TextStyle(color: AppColors.textSecondary)),
+              ),
+            RadioGroup<String>(
+              groupValue: _teamId,
+              onChanged: (id) => setState(() => _teamId = id),
+              child: Column(
+                children: [
+                  for (final t in teams)
+                    RadioListTile<String>(
+                      value: t.id,
+                      enabled: _teamFits(t),
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: AppColors.primaryGreen,
+                      title: Text(t.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        _teamFits(t)
+                            ? '${t.memberCount} thành viên'
+                            : PlayerTournamentStrings.teamSizeInvalid(t.memberCount),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              ElevatedButton(
-                onPressed: _isPaying ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryGreen,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                child: _isPaying
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text(TournamentStrings.confirmPay, style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String get _unitLower => TournamentStrings.unit(_isTeam, _t.entryType == TournamentEntryType.pair).toLowerCase();
-
-  Widget _memberRow(TournamentMember m, {bool isCaptain = false}) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: AppColors.lightGreen,
-              child: Text(
-                m.name.isEmpty ? '?' : m.name.characters.first,
-                style: const TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold),
+                ],
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                isCaptain && _t.maxMembers > 1
-                    ? '${m.name} ${TournamentStrings.you} – ${TournamentStrings.captain}'
-                    : isCaptain
-                        ? '${m.name} ${TournamentStrings.you}'
-                        : m.name,
-                style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textMain),
-              ),
-            ),
-            if (!isCaptain)
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                onPressed: _isPaying ? null : () => setState(() => _teammates.remove(m)),
-                icon: const Icon(Icons.close, size: 18, color: AppColors.textSecondary),
-              ),
           ],
-        ),
-      );
-
-  Widget _title(String text) => Padding(
-        padding: const EdgeInsets.only(top: 20, bottom: 8),
-        child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textMain)),
-      );
-
-  InputDecoration _inputDecoration(String hint) => InputDecoration(
-        hintText: hint,
-        counterText: '',
-        isDense: true,
-        filled: true,
-        fillColor: AppColors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.cardBorder)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.cardBorder),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.primaryGreen, width: 2),
-        ),
-      );
-
-  Widget _card(Widget child) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.cardBorder),
-        ),
-        child: child,
-      );
-
-  Widget _methodTile(_Method method, IconData icon, String title, String subtitle, {bool warning = false}) {
-    final selected = _method == method;
-    return Material(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: _isPaying ? null : () => setState(() => _method = method),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: selected ? AppColors.primaryGreen : AppColors.cardBorder, width: selected ? 2 : 1),
+          TextButton.icon(
+            onPressed: _createTeam,
+            icon: const Icon(Icons.group_add_outlined),
+            label: const Text(PlayerTournamentStrings.createTeam),
           ),
-          child: Row(
-            children: [
-              Icon(icon, color: AppColors.primaryGreen),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain)),
-                    Text(subtitle, style: TextStyle(fontSize: 12, color: warning ? Colors.red : AppColors.textSecondary)),
-                  ],
-                ),
-              ),
-              Icon(
-                selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                color: selected ? AppColors.primaryGreen : AppColors.textSecondary,
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
+
+  Widget _card(Widget child) => Material(
+    color: AppColors.white,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(14),
+      side: const BorderSide(color: AppColors.cardBorder),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: SizedBox(width: double.infinity, child: child),
+    ),
+  );
+
+  Widget _row(String label, String value, {bool bold = false}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(label, style: const TextStyle(color: AppColors.textSecondary)),
+        ),
+        Text(value, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.w600)),
+      ],
+    ),
+  );
 }

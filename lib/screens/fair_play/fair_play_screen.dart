@@ -15,6 +15,9 @@ class FairPlayScreen extends StatefulWidget {
 
 class _FairPlayScreenState extends State<FairPlayScreen> {
   FairPlaySummary? _summary;
+  List<FairPlayEvent> _history = [];
+  int _page = 1;
+  bool _loadingMore = false;
   String? _error;
 
   @override
@@ -27,14 +30,40 @@ class _FairPlayScreenState extends State<FairPlayScreen> {
     setState(() => _error = null);
     try {
       final summary = await AppRepositories.review.getFairPlay();
-      if (mounted) setState(() => _summary = summary);
+      if (!mounted) return;
+      setState(() {
+        _summary = summary;
+        _history = summary.history;
+        _page = 1;
+      });
     } catch (_) {
       if (mounted) setState(() => _error = ReviewStrings.loadError);
     }
   }
 
+  Future<void> _loadMore() async {
+    setState(() => _loadingMore = true);
+    try {
+      final next = await AppRepositories.review.getFairPlay(page: _page + 1);
+      if (!mounted) return;
+      final known = _history.map((e) => e.id).toSet();
+      setState(() {
+        _summary = next;
+        _history = [..._history, ...next.history.where((e) => !known.contains(e.id))];
+        _page++;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(ReviewStrings.loadError)));
+      }
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final summary = _summary;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -56,18 +85,18 @@ class _FairPlayScreenState extends State<FairPlayScreen> {
                 ],
               ),
             )
-          : _summary == null
+          : summary == null
               ? const Center(child: CircularProgressIndicator(color: AppColors.primaryGreen))
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
-                      FairPlayScoreCard(summary: _summary!),
+                      FairPlayScoreCard(summary: summary),
                       const SizedBox(height: 16),
-                      _buildRules(),
+                      _buildRules(summary),
                       const SizedBox(height: 16),
-                      _buildHistory(_summary!.history),
+                      _buildHistory(summary),
                     ],
                   ),
                 ),
@@ -92,19 +121,20 @@ class _FairPlayScreenState extends State<FairPlayScreen> {
         ),
       );
 
-  Widget _buildRules() {
+  Widget _buildRules(FairPlaySummary summary) {
+    final rules = ReviewStrings.rules(summary.minScoreForLfg, summary.recoveryCap);
     return _card(
       title: ReviewStrings.howItWorks,
       child: Column(
         children: [
-          for (var i = 0; i < ReviewStrings.rules.length; i++) ...[
+          for (var i = 0; i < rules.length; i++) ...[
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('•  ', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
-                  Expanded(child: Text(ReviewStrings.rules[i], style: const TextStyle(fontSize: 13, height: 1.4))),
+                  Expanded(child: Text(rules[i], style: const TextStyle(fontSize: 13, height: 1.4))),
                 ],
               ),
             ),
@@ -153,53 +183,63 @@ class _FairPlayScreenState extends State<FairPlayScreen> {
     );
   }
 
-  Widget _buildHistory(List<FairPlayEvent> history) {
+  Widget _buildHistory(FairPlaySummary summary) {
     return _card(
       title: ReviewStrings.history,
-      child: history.isEmpty
+      child: _history.isEmpty
           ? const Text(ReviewStrings.noHistory, style: TextStyle(color: AppColors.textSecondary))
           : Column(
-              children: history.map((e) {
-                final positive = e.delta >= 0;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    children: [
-                      Icon(
-                        positive ? Icons.trending_up : Icons.trending_down,
-                        color: positive ? AppColors.primaryGreen : Colors.red,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(e.reason, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                            Text(
-                              '${Formatters.dayMonth(e.createdAt)}/${e.createdAt.year}',
-                              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        '${positive ? '+' : ''}${e.delta}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: positive ? AppColors.primaryGreen : Colors.red,
-                        ),
-                      ),
-                    ],
+              children: [
+                ..._history.map(_buildEvent),
+                if (summary.hasMoreHistory)
+                  TextButton(
+                    onPressed: _loadingMore ? null : _loadMore,
+                    child: _loadingMore
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text(ReviewStrings.loadMore),
                   ),
-                );
-              }).toList(),
+              ],
             ),
+    );
+  }
+
+  Widget _buildEvent(FairPlayEvent e) {
+    final positive = e.delta >= 0;
+    final color = positive ? AppColors.primaryGreen : Colors.red;
+    final reason = e.reason.isEmpty ? e.type.label : e.reason;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(positive ? Icons.trending_up : Icons.trending_down, color: color, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(reason, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(
+                  '${e.type.label} • ${Formatters.dayMonth(e.createdAt)}/${e.createdAt.year}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text('${positive ? '+' : ''}${e.delta}', style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+              if (e.scoreAfter != null)
+                Text('→ ${e.scoreAfter}', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// Thẻ điểm Fair Play: vòng điểm, trạng thái được/không được ghép LFG, ghi chú hồi phục.
+/// Thẻ điểm Fair Play: vòng điểm, trạng thái được/không được ghép LFG, ghi chú cấm / hồi phục.
 class FairPlayScoreCard extends StatelessWidget {
   final FairPlaySummary summary;
 
@@ -210,6 +250,7 @@ class FairPlayScoreCard extends StatelessWidget {
     final score = summary.score;
     final ok = summary.canJoinLfg;
     final color = ok ? AppColors.primaryGreen : Colors.red;
+    final average = summary.averageRating;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -261,17 +302,42 @@ class FairPlayScoreCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
-                    ok ? ReviewStrings.eligible : ReviewStrings.restricted(FairPlayRules.minScoreForLfg),
+                    ok
+                        ? ReviewStrings.eligible
+                        : summary.isBanned
+                            ? ReviewStrings.banned
+                            : ReviewStrings.restricted(summary.minScoreForLfg),
                     style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 13),
                   ),
                 ),
               ],
             ),
           ),
-          if (FairPlayRules.isRecovering(score)) ...[
+          if (summary.isBanned) ...[
             const SizedBox(height: 8),
             Text(
-              ReviewStrings.recovering(FairPlayRules.recoveryCap),
+              [
+                summary.bannedUntil == null
+                    ? ReviewStrings.banForever
+                    : ReviewStrings.banUntil('${Formatters.time(summary.bannedUntil!)} ${Formatters.dayMonth(summary.bannedUntil!)}/${summary.bannedUntil!.year}'),
+                if (summary.banReason != null) ReviewStrings.banReason(summary.banReason!),
+              ].join('\n'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.red),
+            ),
+          ],
+          if (summary.isRecovering) ...[
+            const SizedBox(height: 8),
+            Text(
+              ReviewStrings.recovering(summary.recoveryCap),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
+          if (average != null && summary.ratingCount > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              ReviewStrings.ratingSummary(summary.ratingCount, average),
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),

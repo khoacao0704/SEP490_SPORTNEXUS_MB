@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/utils/formatters.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_notification_repository.dart';
+import 'package:test1/data/repositories/notification_repository.dart';
 import 'package:test1/models/app_notification.dart';
 
 void main() {
@@ -82,5 +83,44 @@ void main() {
     expect(Formatters.timeAgo(now.subtract(const Duration(minutes: 5)), now), '5 phút trước');
     expect(Formatters.timeAgo(now.subtract(const Duration(hours: 3)), now), '3 giờ trước');
     expect(Formatters.timeAgo(DateTime(2026, 10, 13, 18, 30), now), 'Thứ 3, 13/10 • 18:30');
+  });
+
+  test('trang theo nhóm / chưa đọc, số chưa đọc theo nhóm, đọc hết một nhóm', () async {
+    final lfg = await repo.getPage(group: NotificationGroup.lfg);
+    expect(lfg.items, isNotEmpty);
+    expect(lfg.items.every((n) => n.group == NotificationGroup.lfg), isTrue);
+    expect(lfg.hasMore, isFalse);
+
+    final unread = await repo.getUnread();
+    expect(unread.total, 3);
+    expect(unread.byGroup.values.fold<int>(0, (a, b) => a + b), 3);
+
+    await repo.markAllAsRead(group: NotificationGroup.lfg);
+    expect((await repo.getUnread()).byGroup.containsKey(NotificationGroup.lfg), isFalse);
+    expect(await repo.getUnreadCount(), 3 - (unread.byGroup[NotificationGroup.lfg] ?? 0));
+    expect((await repo.getPage(unreadOnly: true)).items.every((n) => !n.isRead), isTrue);
+  });
+
+  test('xoá một thông báo và xoá mọi thông báo đã đọc', () async {
+    final all = await repo.getNotifications();
+    await repo.delete(all.first.id);
+    expect((await repo.getNotifications()).any((n) => n.id == all.first.id), isFalse);
+
+    final readCount = all.skip(1).where((n) => n.isRead).length;
+    expect(await repo.deleteRead(), readCount);
+    final left = await repo.getNotifications();
+    expect(left.every((n) => !n.isRead), isTrue);
+    expect(left, hasLength(all.length - 1 - readCount));
+  });
+
+  test('cài đặt: lưu nhóm tắt theo tài khoản, chặn tắt nhóm bắt buộc', () async {
+    expect(await repo.getDisabledGroups(), isEmpty);
+    await repo.setDisabledGroups({NotificationGroup.lfg, NotificationGroup.team});
+    expect(await repo.getDisabledGroups(), {NotificationGroup.lfg, NotificationGroup.team});
+
+    expect(() => repo.setDisabledGroups({NotificationGroup.wallet}), throwsA(isA<NotificationException>()));
+
+    await loginAs('restricted@sportnexus.vn');
+    expect(await repo.getDisabledGroups(), isEmpty);
   });
 }

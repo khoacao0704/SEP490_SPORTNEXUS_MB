@@ -4,6 +4,7 @@ import '../../widgets/main_drawer.dart';
 import '../../core/constants/fair_play_rules.dart';
 import '../../core/strings/profile_strings.dart';
 import '../../core/strings/review_strings.dart';
+import '../../core/strings/team_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
 import '../../core/strings/wallet_strings.dart';
 import '../../core/utils/formatters.dart';
@@ -15,7 +16,9 @@ import '../../models/app_user.dart';
 import '../../widgets/profile/user_avatar.dart';
 import '../booking/split_payments_screen.dart';
 import '../fair_play/fair_play_screen.dart';
+import '../review/my_reviews_screen.dart';
 import '../review/pending_reviews_screen.dart';
+import '../team/my_teams_screen.dart';
 import '../wallet/transaction_history_screen.dart';
 import '../wallet/withdraw_screen.dart';
 import 'change_password_screen.dart';
@@ -74,9 +77,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     }
 
-    final pendingReviews = await AppRepositories.review.getPendingReviews();
-    if (!mounted) return;
-    setState(() => _pendingReviews = pendingReviews.length);
+    try {
+      final pendingReviews = await AppRepositories.review.getPendingReviews();
+      if (mounted) setState(() => _pendingReviews = pendingReviews.length);
+    } catch (_) {
+      // Chỉ ảnh hưởng số trên mục "Chờ đánh giá".
+    }
   }
 
   /// Mở màn nạp / rút; BE chưa hỗ trợ thì báo đang phát triển. Quay lại thì tải lại số dư.
@@ -139,6 +145,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.verified_user_outlined,
               title: ReviewStrings.fairPlayTitle,
               screen: const FairPlayScreen(),
+            ),
+            _menuTile(
+              icon: Icons.reviews_outlined,
+              title: ReviewStrings.myReviews,
+              screen: const MyReviewsScreen(),
+            ),
+            _menuTile(
+              icon: Icons.groups_outlined,
+              title: TeamStrings.myTeams,
+              screen: const MyTeamsScreen(),
             ),
             _menuTile(
               icon: Icons.lock_outline,
