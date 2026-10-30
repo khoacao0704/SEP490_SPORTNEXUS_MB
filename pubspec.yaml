@@ -49,6 +49,7 @@ dependencies:
   google_sign_in: ^7.2.0
   flutter_facebook_auth: ^7.3.2
   firebase_auth: ^7.0.1
+  signalr_netcore: ^1.4.4
 
 dev_dependencies:
   flutter_test:

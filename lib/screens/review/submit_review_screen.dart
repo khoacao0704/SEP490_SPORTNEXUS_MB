@@ -7,7 +7,7 @@ import '../../models/review.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/review/star_rating.dart';
 
-/// Đánh giá một buổi chơi: sân (mọi buổi) + từng người chơi cùng (chỉ trận LFG).
+/// Chấm từng người chơi cùng trận, kèm đánh giá sân nếu BE cho phép (đã check-in, chưa đánh giá sân này).
 /// Pop về `true` khi gửi thành công.
 class SubmitReviewScreen extends StatefulWidget {
   final PendingReview session;
@@ -32,9 +32,29 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
   };
   bool _isSubmitting = false;
 
+  /// `null` khi đang tải hoặc không tải được (khi đó ẩn phần đánh giá sân).
+  ReviewEligibility? _eligibility;
+
   PendingReview get _session => widget.session;
 
-  bool get _hasAnyRating => _facilityStars > 0 || _players.values.any((d) => d.stars > 0);
+  bool get _canReviewFacility => _eligibility?.canReview ?? false;
+
+  bool get _hasAnyRating => (_canReviewFacility && _facilityStars > 0) || _players.values.any((d) => d.stars > 0);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEligibility();
+  }
+
+  Future<void> _loadEligibility() async {
+    try {
+      final eligibility = await AppRepositories.review.getEligibility(_session.facilityId);
+      if (mounted) setState(() => _eligibility = eligibility);
+    } catch (_) {
+      // Không chặn việc chấm người chơi.
+    }
+  }
 
   @override
   void dispose() {
@@ -70,22 +90,25 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
 
     setState(() => _isSubmitting = true);
     try {
-      await AppRepositories.review.submitReview(
-        _session.sessionId,
-        facility: _facilityStars == 0
-            ? null
-            : FacilityReviewInput(stars: _facilityStars, comment: _facilityComment.text.trim()),
-        players: [
-          for (final entry in _players.entries)
-            if (entry.value.stars > 0)
-              PlayerReviewInput(
-                playerId: entry.key,
-                stars: entry.value.stars,
-                tags: entry.value.tags,
-                comment: entry.value.comment.text.trim(),
-              ),
-        ],
-      );
+      if (_canReviewFacility && _facilityStars > 0) {
+        final review = await AppRepositories.review.submitFacilityReview(
+          _session.facilityId,
+          FacilityReviewInput(stars: _facilityStars, comment: _facilityComment.text.trim()),
+        );
+        // Gửi người chơi lỗi thì lần bấm sau không gửi lại đánh giá sân.
+        if (mounted) setState(() => _eligibility = ReviewEligibility(canReview: false, existingReviewId: review.id));
+      }
+      final players = [
+        for (final entry in _players.entries)
+          if (entry.value.stars > 0)
+            PlayerReviewInput(
+              playerId: entry.key,
+              stars: entry.value.stars,
+              tags: entry.value.tags,
+              comment: entry.value.comment.text.trim(),
+            ),
+      ];
+      if (players.isNotEmpty) await AppRepositories.review.ratePlayers(_session.sessionId, players);
       if (mounted) Navigator.pop(context, true);
     } on ReviewException catch (e) {
       if (!mounted) return;
@@ -111,20 +134,35 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           _buildSessionHeader(),
-          const SizedBox(height: 16),
-          _sectionTitle(ReviewStrings.facilitySection),
-          _card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_session.facilityName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                StarRating(value: _facilityStars, onChanged: (v) => setState(() => _facilityStars = v)),
-                const SizedBox(height: 8),
-                _commentField(_facilityComment),
-              ],
+          if (_canReviewFacility || (_eligibility?.alreadyReviewed ?? false)) ...[
+            const SizedBox(height: 16),
+            _sectionTitle(ReviewStrings.facilitySection),
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_session.facilityName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  if (_canReviewFacility) ...[
+                    StarRating(value: _facilityStars, onChanged: (v) => setState(() => _facilityStars = v)),
+                    const SizedBox(height: 8),
+                    _commentField(_facilityComment, maxLength: 1000),
+                    const Text(
+                      ReviewStrings.facilityPublicNote,
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ] else
+                    const Row(
+                      children: [
+                        Icon(Icons.check_circle, size: 16, color: AppColors.primaryGreen),
+                        SizedBox(width: 6),
+                        Text(ReviewStrings.facilityAlreadyReviewed, style: TextStyle(color: AppColors.textSecondary)),
+                      ],
+                    ),
+                ],
+              ),
             ),
-          ),
+          ],
           if (_session.players.isNotEmpty) ...[
             const SizedBox(height: 20),
             _sectionTitle(ReviewStrings.playersSection),
@@ -174,7 +212,7 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${_session.type == SessionType.lfg ? ReviewStrings.lfgMatch : ReviewStrings.booking} • ${_session.sport.label}',
+                  '${_session.type == SessionType.lfg ? ReviewStrings.lfgMatch : ReviewStrings.booking} • ${_session.sportLabel}',
                   style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
                 ),
                 Text(
@@ -201,10 +239,13 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
               children: [
                 CircleAvatar(
                   backgroundColor: AppColors.primaryGreen,
-                  child: Text(
-                    player.name.characters.first.toUpperCase(),
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
+                  backgroundImage: player.avatarUrl == null ? null : NetworkImage(player.avatarUrl!),
+                  child: player.avatarUrl != null
+                      ? null
+                      : Text(
+                          player.name.isEmpty ? '?' : player.name.characters.first.toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -276,10 +317,10 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
         child: child,
       );
 
-  Widget _commentField(TextEditingController controller) => TextField(
+  Widget _commentField(TextEditingController controller, {int maxLength = 400}) => TextField(
         controller: controller,
         maxLines: 2,
-        maxLength: 300,
+        maxLength: maxLength,
         decoration: InputDecoration(
           hintText: ReviewStrings.commentHint,
           counterText: '',

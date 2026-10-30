@@ -149,7 +149,7 @@ class _PendingReviewsScreenState extends State<PendingReviewsScreen> {
                     CircleAvatar(
                       radius: 24,
                       backgroundColor: AppColors.lightGreen,
-                      child: Icon(sportIcon(item.sport), color: AppColors.primaryGreen),
+                      child: Icon(item.sport == null ? Icons.sports : sportIcon(item.sport!), color: AppColors.primaryGreen),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -157,7 +157,7 @@ class _PendingReviewsScreenState extends State<PendingReviewsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            item.facilityName,
+                            item.courtName == null ? item.facilityName : '${item.facilityName} • ${item.courtName}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain),
@@ -165,7 +165,7 @@ class _PendingReviewsScreenState extends State<PendingReviewsScreen> {
                           const SizedBox(height: 2),
                           Text(
                             '${item.type == SessionType.lfg ? ReviewStrings.lfgMatch : ReviewStrings.booking}'
-                            ' • ${item.sport.label}'
+                            ' • ${item.sportLabel}'
                             '${item.players.isEmpty ? '' : ' • ${ReviewStrings.playerCount(item.players.length)}'}',
                             style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                           ),

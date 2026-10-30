@@ -4,6 +4,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/strings/common_strings.dart';
 import '../../core/strings/owner_strings.dart';
 import '../../core/utils/formatters.dart';
+import '../../data/api/api_owner_repository.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/owner_repository.dart';
 import '../../models/court_session.dart';
@@ -11,13 +12,19 @@ import '../../theme/app_colors.dart';
 import '../../widgets/owner/owner_actions.dart';
 import 'owner_session_detail_screen.dart';
 
+
 /// Quét mã QR người chơi (camera) hoặc nhập mã vé để check-in.
 /// Pop trả về `true` nếu đã check-in được ít nhất một người.
 class OwnerScanScreen extends StatefulWidget {
   /// Tắt camera (dùng trong test, nơi không có plugin camera).
   final bool enableCamera;
+  final String facilityId;
 
-  const OwnerScanScreen({super.key, this.enableCamera = true});
+  const OwnerScanScreen({
+    super.key,
+    this.enableCamera = true,
+    required this.facilityId,
+  });
 
   @override
   State<OwnerScanScreen> createState() => _OwnerScanScreenState();
@@ -53,35 +60,87 @@ class _OwnerScanScreenState extends State<OwnerScanScreen> {
     _handle(code);
   }
 
+
   Future<void> _handle(String code) async {
-    if (_busy || code.trim().isEmpty) return;
+    final qrCode = code.trim();
+    if (_busy || qrCode.isEmpty) return;
+
     setState(() => _busy = _looking = true);
-    _lastCode = code;
+    _lastCode = qrCode;
     FocusScope.of(context).unfocus();
+
     try {
-      final found = await AppRepositories.owner.lookupTicket(code);
+      final ownerRepository = AppRepositories.owner;
+
+      // Real API: scanning performs check-in immediately.
+      if (ownerRepository is ApiOwnerRepository) {
+        await ownerRepository.scanQr(
+          facilityId: widget.facilityId,
+          qrCode: qrCode,
+        );
+
+        if (!mounted) return;
+
+        _changed = true;
+        _codeController.clear();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Check-in thành công!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        return;
+      }
+
+      // Mock: preserve the existing preview-and-confirm workflow.
+      final found = await ownerRepository.lookupTicket(qrCode);
       if (!mounted) return;
+
       setState(() => _looking = false);
-      final block = found.session.checkInBlock(found.player, DateTime.now());
+
+      final block = found.session.checkInBlock(
+        found.player,
+        DateTime.now(),
+      );
+
       if (block == null) {
-        final updated = await checkInPlayer(context, found.session, found.player);
+        final updated = await checkInPlayer(
+          context,
+          found.session,
+          found.player,
+        );
+
         if (updated != null) {
           _changed = true;
           _codeController.clear();
         }
       } else {
-        await _showBlocked(found, OwnerStrings.checkInBlocked(found.session, block));
+        await _showBlocked(
+          found,
+          OwnerStrings.checkInBlocked(found.session, block),
+        );
       }
     } catch (e) {
       if (mounted) {
-        final message = e is OwnerException ? e.message : CommonStrings.genericError;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
+        final message =
+        e is OwnerException ? e.message : CommonStrings.genericError;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } finally {
       _lastHandledAt = DateTime.now();
-      if (mounted) setState(() => _busy = _looking = false);
+      if (mounted) {
+        setState(() => _busy = _looking = false);
+      }
     }
   }
+
 
   Future<void> _showBlocked(TicketLookup found, String reason) async {
     final s = found.session;

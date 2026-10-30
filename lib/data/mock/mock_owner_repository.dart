@@ -67,6 +67,27 @@ class MockOwnerRepository implements OwnerRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> getAmenities() async {
+    return [
+      {
+        'id': 'mock-amenity-1',
+        'name': 'Parking',
+        'iconCode': 'parking',
+      },
+      {
+        'id': 'mock-amenity-2',
+        'name': 'Changing Room',
+        'iconCode': 'changing-room',
+      },
+      {
+        'id': 'mock-amenity-3',
+        'name': 'Shower',
+        'iconCode': 'shower',
+      },
+    ];
+  }
+
+  @override
   Future<List<CourtSession>> getSessions({required DateTime day, String? facilityId}) async {
     await _delay();
     final ids = await _myFacilityIds();
@@ -96,6 +117,17 @@ class MockOwnerRepository implements OwnerRepository {
       }
     }
     throw const OwnerException(OwnerStrings.ticketNotFound);
+  }
+
+
+  @override
+  Future<void> scanQr({
+    required String facilityId,
+    required String qrCode,
+  }) async {
+    throw const OwnerException(
+      'Quét QR trực tiếp qua API chưa được bật trong mock.',
+    );
   }
 
   @override
