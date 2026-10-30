@@ -56,8 +56,24 @@ class ApiClient {
 
   /// [refreshOnUnauthorized] = false: bị 401 thì chỉ báo lỗi, không refresh và không gọi [onUnauthorized]
   /// (vd. đăng xuất bằng token có thể đã bị thu hồi).
-  Future<dynamic> post(String path, {Object? body, bool auth = true, bool refreshOnUnauthorized = true}) =>
-      _send('POST', path, body: body, auth: auth, refreshOnUnauthorized: refreshOnUnauthorized);
+
+
+  Future<dynamic> post(
+      String path, {
+        Map<String, dynamic>? query,
+        Object? body,
+        bool auth = true,
+        bool refreshOnUnauthorized = true,
+      }) =>
+      _send(
+        'POST',
+        path,
+        query: query,
+        body: body,
+        auth: auth,
+        refreshOnUnauthorized: refreshOnUnauthorized,
+      );
+
 
   Future<dynamic> put(String path, {Object? body, bool auth = true}) => _send('PUT', path, body: body, auth: auth);
 
@@ -70,6 +86,23 @@ class ApiClient {
     return _send('POST', path, body: form, auth: true);
   }
 
+  Future<dynamic> uploadFiles(
+      String path, {
+        required List<String> filePaths,
+        String field = 'files',
+      }) async {
+    final files = <MultipartFile>[];
+
+    for (final filePath in filePaths) {
+      files.add(await MultipartFile.fromFile(filePath));
+    }
+
+    final form = FormData.fromMap({
+      field: files,
+    });
+
+    return _send('POST', path, body: form, auth: true);
+  }
   /// Đổi refresh token lấy cặp token mới. `false` khi BE từ chối (hết hạn, đã thu hồi, tài khoản bị khóa).
   Future<bool> refreshSession() => _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
 

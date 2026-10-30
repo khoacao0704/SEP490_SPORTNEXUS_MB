@@ -1,4 +1,3 @@
-import '../../core/strings/auth_strings.dart';          // for featureInDevelopment
 import '../../core/strings/owner_strings.dart';
 import '../../models/court_session.dart';               // ← CourtSession + TicketLookup
 import '../../models/court_type.dart';
@@ -17,7 +16,7 @@ import 'api_client.dart';
 class ApiOwnerRepository implements OwnerRepository {
   final ApiClient _api;
 
-  ApiOwnerRepository({required ApiClient api}) : _api = api;
+  ApiOwnerRepository(this._api);
 
   // ==================== A. Facilities list ====================
 
@@ -35,6 +34,32 @@ class ApiOwnerRepository implements OwnerRepository {
   Future<List<Facility>> getMyFacilities() async {
     final all = await getOwnerFacilities();
     return all.where((f) => f.isApproved).map((f) => f.toFacility()).toList();
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getAmenities() async {
+    try {
+      final data = await _api.get('/api/v1/master-data/amenities');
+
+      final List<dynamic> items;
+
+      if (data is List) {
+        items = data;
+      } else if (data is Map && data['items'] is List) {
+        items = data['items'] as List;
+      } else if (data is Map && data['data'] is List) {
+        items = data['data'] as List;
+      } else {
+        return [];
+      }
+
+      return items
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    } on ApiException catch (e) {
+      throw OwnerException(e.message);
+    }
   }
 
   @override
@@ -78,7 +103,7 @@ class ApiOwnerRepository implements OwnerRepository {
         (json['location'] is Map ? (json['location']['longitude'] as num?)?.toDouble() : null) ??
         0.0;
 
-    final statusStr = (json['status'] ?? json['approvalStatus'] ?? 'Approved').toString();
+    final statusStr = (json['approvalStatus'] ?? 'Pending').toString();
     final status = _mapStatus(statusStr);
 
     final openTime = (json['openTime'] ?? '06:00').toString();
@@ -260,6 +285,23 @@ class ApiOwnerRepository implements OwnerRepository {
       return Sport.football; // safe fallback
     }
   }
+  String _minutesToTimeString(int minutes) {
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+
+    return '${hours.toString().padLeft(2, '0')}:'
+        '${remainingMinutes.toString().padLeft(2, '0')}:00';
+  }
+
+  List<String> _validImageUrls(List<String> images) {
+    return images.where((value) {
+      final uri = Uri.tryParse(value);
+
+      return uri != null &&
+          (uri.scheme == 'http' || uri.scheme == 'https') &&
+          uri.host.isNotEmpty;
+    }).toList();
+  }
   // ==================== Chưa nối (làm sau) ====================
 
   Never _todo() => throw Exception('Tính năng đang phát triển');
@@ -297,7 +339,30 @@ class ApiOwnerRepository implements OwnerRepository {
   }
 
   @override
-  Future<TicketLookup> lookupTicket(String code) async => _todo();
+  Future<TicketLookup> lookupTicket(String code) async {
+    throw const OwnerException(
+      'Tra cứu vé chưa được hỗ trợ qua API.',
+    );
+  }
+
+  @override
+  Future<void> scanQr({
+    required String facilityId,
+    required String qrCode,
+  }) async {
+    try {
+      await _api.post(
+        '/api/v1/checkin/scan',
+        query: {
+          'facilityId': facilityId,
+          'qrCode': qrCode.trim(),
+        },
+      );
+    } on ApiException catch (e) {
+      throw OwnerException(e.message);
+    }
+  }
+
 
   @override
   Future<CourtSession> checkIn({required String sessionId, required String userId}) async => _todo();
@@ -306,7 +371,77 @@ class ApiOwnerRepository implements OwnerRepository {
   Future<CourtSession> checkOut(String sessionId) async => _todo();
 
   @override
-  Future<OwnerFacility> submitFacility(FacilitySubmission submission) async => _todo();
+  @override
+  Future<OwnerFacility> submitFacility(FacilitySubmission submission) async {
+    try {
+      final profile = submission.profile;
+      final operations = submission.operations;
+
+      final payload = <String, dynamic>{
+        'name': profile.name,
+        'address': profile.address,
+        'latitude': profile.location.latitude,
+        'longitude': profile.location.longitude,
+        'description': operations.description,
+        'phone': operations.phone,
+        'openTime': _minutesToTimeString(operations.openMinutes),
+        'closeTime': _minutesToTimeString(operations.closeMinutes),
+        'rules': operations.rules.join('\n'),
+        'autoGenerateSlots': true,
+
+        // Do not send amenity labels as GUIDs.
+        // Connect these after confirming the amenity IDs from the backend.
+        'amenityIds': <String>[],
+
+        // Only send image URLs; local file paths are not valid ImageUrls.
+        'imageUrls': _validImageUrls(operations.images),
+      };
+
+      final data = await _api.post(
+        '/api/v1/facilities',
+        body: payload,
+      );
+
+      if (data is! Map) {
+        throw const OwnerException(OwnerStrings.loadError);
+      }
+
+      final facilityJson = Map<String, dynamic>.from(data);
+      final facilityId = (facilityJson['id'] ?? '').toString();
+
+      if (facilityId.isEmpty) {
+        throw const OwnerException(OwnerStrings.loadError);
+      }
+
+      final localImages = submission.operations.images
+          .where((path) {
+        final uri = Uri.tryParse(path);
+        return uri == null ||
+            (uri.scheme != 'http' && uri.scheme != 'https');
+      })
+          .toList();
+
+      if (localImages.isNotEmpty) {
+        await _api.uploadFiles(
+          '/api/v1/facilities/$facilityId/images',
+          filePaths: localImages,
+          field: 'files',
+        );
+      }
+
+      final updated = await _api.get(
+        '/api/v1/facilities/$facilityId',
+      );
+
+      if (updated is! Map) {
+        throw const OwnerException(OwnerStrings.loadError);
+      }
+
+      return _mapOwnerFacility(Map<String, dynamic>.from(updated));
+    } on ApiException catch (e) {
+      throw OwnerException(e.message);
+    }
+  }
 
   @override
   Future<OwnerFacility> resubmitFacility(String facilityId, FacilitySubmission submission) async => _todo();

@@ -73,7 +73,7 @@ class AppRepositories {
 
   /// Phía Chủ sân — đã nối API cho danh sách cơ sở.
   static final MockOwnerRepository _mockOwner = MockOwnerRepository(wallet: _mockOwnerWallet);
-  static OwnerRepository owner = ApiOwnerRepository(api: api);
+  static OwnerRepository owner = ApiOwnerRepository(api);
 
 // Nếu cần quay lại mock nhanh khi debug:
 // static OwnerRepository owner = _mockOwner;
