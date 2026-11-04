@@ -371,7 +371,6 @@ class ApiOwnerRepository implements OwnerRepository {
   Future<CourtSession> checkOut(String sessionId) async => _todo();
 
   @override
-  @override
   Future<OwnerFacility> submitFacility(FacilitySubmission submission) async {
     try {
       final profile = submission.profile;
