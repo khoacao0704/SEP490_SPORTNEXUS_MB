@@ -4,6 +4,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/strings/common_strings.dart';
 import '../../core/strings/owner_strings.dart';
 import '../../core/utils/formatters.dart';
+import '../../data/api/api_client.dart';
 import '../../data/api/api_owner_repository.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/owner_repository.dart';
@@ -63,16 +64,20 @@ class _OwnerScanScreenState extends State<OwnerScanScreen> {
 
   Future<void> _handle(String code) async {
     final qrCode = code.trim();
+
     if (_busy || qrCode.isEmpty) return;
 
-    setState(() => _busy = _looking = true);
+    setState(() {
+      _busy = true;
+      _looking = true;
+    });
+
     _lastCode = qrCode;
     FocusScope.of(context).unfocus();
 
     try {
       final ownerRepository = AppRepositories.owner;
 
-      // Real API: scanning performs check-in immediately.
       if (ownerRepository is ApiOwnerRepository) {
         await ownerRepository.scanQr(
           facilityId: widget.facilityId,
@@ -90,11 +95,13 @@ class _OwnerScanScreenState extends State<OwnerScanScreen> {
             backgroundColor: Colors.green,
           ),
         );
+
         return;
       }
 
-      // Mock: preserve the existing preview-and-confirm workflow.
+      // Mock repository: preserve the existing workflow.
       final found = await ownerRepository.lookupTicket(qrCode);
+
       if (!mounted) return;
 
       setState(() => _looking = false);
@@ -122,21 +129,28 @@ class _OwnerScanScreenState extends State<OwnerScanScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
-        final message =
-        e is OwnerException ? e.message : CommonStrings.genericError;
+      if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      final message = e is OwnerException
+          ? e.message
+          : e is ApiException
+          ? e.message
+          : CommonStrings.genericError;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       _lastHandledAt = DateTime.now();
+
       if (mounted) {
-        setState(() => _busy = _looking = false);
+        setState(() {
+          _busy = false;
+          _looking = false;
+        });
       }
     }
   }
