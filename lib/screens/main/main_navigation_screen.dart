@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import '../../data/app_repositories.dart';
+import '../../models/app_notification.dart';
 import '../../theme/app_colors.dart';
+import '../notification/notification_opener.dart';
 import '../home_screen.dart'; // Tab 0: Home
 import '../lfg/lfg_screen.dart'; // Tab 1: LFG
 import '../ai_chat/ai_chat_screen.dart'; // Tab 2: AI Chat
@@ -32,10 +37,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         const ProfileScreen(),
       ];
 
+  StreamSubscription<AppNotification>? _pushOpens;
+
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    // Thông báo đẩy chỉ cho người chơi: đăng ký token khi vào màn chính (đã qua khảo sát / thêm SĐT).
+    final push = AppRepositories.push;
+    unawaited(push.register());
+    _pushOpens = push.opens.listen(_openPush);
+    final pending = push.takePendingOpen(); // bấm thông báo khi app đang tắt
+    if (pending != null) WidgetsBinding.instance.addPostFrameCallback((_) => _openPush(pending));
+  }
+
+  @override
+  void dispose() {
+    _pushOpens?.cancel();
+    super.dispose();
+  }
+
+  void _openPush(AppNotification n) {
+    if (!mounted) return;
+    unawaited(AppRepositories.notification.markAsRead(n.id).catchError((_) {}));
+    unawaited(openPlayerNotification(Navigator.of(context), n));
   }
 
   @override

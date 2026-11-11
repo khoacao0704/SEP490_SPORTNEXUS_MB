@@ -12,11 +12,14 @@ import 'package:test1/core/utils/jwt_utils.dart';
 import 'package:test1/data/api/api_auth_repository.dart';
 import 'package:test1/data/api/api_client.dart';
 import 'package:test1/data/api/token_store.dart';
+import 'package:test1/data/push/push_service.dart';
 import 'package:test1/data/repositories/auth_repository.dart';
 import 'package:test1/data/repositories/phone_verifier.dart';
 import 'package:test1/data/session_store.dart';
 import 'package:test1/models/app_user.dart';
 import 'package:test1/models/user_role.dart';
+
+import '../helpers/fake_push_platform.dart';
 
 /// Giả lập server: trả JSON theo "METHOD path", ghi lại request đã gửi. Không gọi mạng.
 class _FakeServer implements HttpClientAdapter {
@@ -656,6 +659,23 @@ void main() {
       );
       await expectLater(api.get('/api/v1/wallet'), throwsA(isA<ApiException>()));
       expect(unauthorizedCalls, 1);
+    });
+
+    test('đăng xuất khi đã đăng ký thông báo đẩy: gửi deviceToken rồi huỷ token trên máy', () async {
+      final platform = FakePushPlatform();
+      final push = PushService(api: api, platform: platform);
+      repo = ApiAuthRepository(api: api, tokens: tokens, phoneVerifier: phone, push: push);
+      await loggedIn(token: validToken);
+      server.routes['POST ${PushService.devicesPath}'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
+      server.routes['POST /api/auth/logout'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
+      await push.start();
+      await push.register();
+
+      await repo.logout();
+      expect(server.requests.last.path, '/api/auth/logout');
+      expect(server.requests.last.data, {'deviceToken': 'fcm-token-1'});
+      expect(platform.deleteTokenCalls, 1);
+      expect(push.registeredToken, isNull);
     });
 
     test('đăng xuất: báo BE thu hồi phiên (có Bearer token), xóa token và phiên', () async {

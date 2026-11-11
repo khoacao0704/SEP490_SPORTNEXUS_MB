@@ -6,6 +6,10 @@ class NotificationStrings {
 
   static const String title = 'Thông Báo';
   static const String bellTooltip = 'Thông báo';
+
+  // Kênh thông báo đẩy (Cài đặt Android > Ứng dụng > Thông báo).
+  static const String pushChannelName = 'Thông báo SportNexus';
+  static const String pushChannelDescription = 'Đặt sân, kèo, ví, giải đấu và đội';
   static const String markAllRead = 'Đánh dấu tất cả đã đọc';
   static const String allMarkedRead = 'Đã đánh dấu tất cả là đã đọc';
   static const String simulate = 'Giả lập thông báo mới';
