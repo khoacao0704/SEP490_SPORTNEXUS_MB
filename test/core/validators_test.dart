@@ -40,9 +40,9 @@ void main() {
     test('yêu cầu tối thiểu 8 ký tự, có chữ và số', () {
       expect(Validators.password('Player@123'), isNull);
       expect(Validators.password('abc12345'), isNull);
-      expect(Validators.password('abc123'), AuthStrings.invalidPassword);
-      expect(Validators.password('abcdefgh'), AuthStrings.invalidPassword);
-      expect(Validators.password('12345678'), AuthStrings.invalidPassword);
+      expect(Validators.password('abc123'), AuthStrings.passwordNotMet);
+      expect(Validators.password('abcdefgh'), AuthStrings.passwordNotMet);
+      expect(Validators.password('12345678'), AuthStrings.passwordNotMet);
     });
   });
 

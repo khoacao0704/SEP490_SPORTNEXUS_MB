@@ -1,10 +1,23 @@
+import '../../models/sport.dart';
 import '../../models/team.dart';
+import '../api/api_error_codes.dart';
 
 /// Lỗi quản lý đội; [message] sẵn sàng để hiển thị.
-class TeamException implements Exception {
+class TeamException implements Exception, CodedError {
+  @override
   final String message;
 
-  const TeamException(this.message);
+  /// Mã lỗi của BE (xem [ApiErrorCodes]); lỗi của mock không có.
+  @override
+  final String? code;
+
+  @override
+  final Map<String, dynamic>? detail;
+
+  const TeamException(this.message, {this.code, this.detail});
+
+  /// Giữ nguyên câu và mã lỗi của BE.
+  TeamException.fromApi(CodedError e) : this(e.message, code: e.code, detail: e.detail);
 
   @override
   String toString() => 'TeamException: $message';
@@ -17,10 +30,17 @@ abstract class TeamRepository {
 
   Future<Team> getTeam(String teamId);
 
-  /// Tạo đội và gửi lời mời tới các SĐT (SĐT không có tài khoản bị bỏ qua).
-  Future<Team> createTeam({required String name, String description = '', List<String> invitePhones = const []});
+  /// Tạo đội của môn [sport] và gửi lời mời tới các SĐT (SĐT không có tài khoản bị bỏ qua).
+  /// Người tạo phải có Elo môn đó, không thì lỗi RATING_REQUIRED.
+  Future<Team> createTeam({
+    required String name,
+    required Sport sport,
+    String description = '',
+    List<String> invitePhones = const [],
+  });
 
-  Future<Team> updateTeam(String teamId, {required String name, String description = ''});
+  /// Sửa tên / giới thiệu; [sport] chỉ gửi khi đội chưa khai môn (đội cũ).
+  Future<Team> updateTeam(String teamId, {required String name, String description = '', Sport? sport});
 
   Future<Team> uploadLogo(String teamId, String filePath);
 

@@ -203,6 +203,8 @@ class MockAuthRepository implements AuthRepository {
   Future<String?> requestPhoneOtp(String phone) async {
     await _delay();
     final accounts = await _loadAccounts();
+    final me = await SessionStore.readUser();
+    if (me != null && me.phone == _normalizePhone(phone)) throw const AuthException(ProfileStrings.samePhone);
     if (accounts.any((a) => a.user.phone == _normalizePhone(phone))) throw const AuthException(AuthStrings.phoneTaken);
     return null;
   }
@@ -285,6 +287,19 @@ class MockAuthRepository implements AuthRepository {
     final name = fullName.trim();
     if (name.isEmpty) throw const AuthException(AuthStrings.requiredField);
     return _update((u) => u.copyWith(fullName: name));
+  }
+
+  @override
+  Future<AppUser> updateProfile({required String fullName, required String username, required String bio}) async {
+    final name = fullName.trim();
+    final user = username.trim();
+    if (name.isEmpty || user.isEmpty) throw const AuthException(AuthStrings.requiredField);
+    final me = await _me();
+    final accounts = await _loadAccounts();
+    if (accounts.any((a) => a.user.id != me.user.id && a.user.username.toLowerCase() == user.toLowerCase())) {
+      throw const AuthException(AuthStrings.usernameTaken);
+    }
+    return _update((u) => u.copyWith(fullName: name, username: user, bio: bio.trim()));
   }
 
   /// Bản giả lập lưu đường dẫn ảnh trong máy thay cho URL Cloudinary.

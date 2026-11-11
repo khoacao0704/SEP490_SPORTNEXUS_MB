@@ -13,8 +13,23 @@ class ProfileStrings {
   static const String usernameLabel = 'Tên đăng nhập';
   static const String phoneLabel = 'Số điện thoại';
   static const String emailLabel = 'Email';
-  static const String lockedFieldsNote =
-      'Tên đăng nhập, số điện thoại và email chưa đổi được trên app. Liên hệ Quản trị viên nếu cần thay đổi.';
+  static const String lockedFieldsNote = 'Email chưa đổi được trên app. Liên hệ Quản trị viên nếu cần thay đổi.';
+  static const String usernameNote = 'Đổi tên đăng nhập thì lần sau đăng nhập bằng tên mới.';
+  static const String bioLabel = 'Giới thiệu bản thân (không bắt buộc)';
+  static const String bioHint = 'Ví dụ: Chơi cầu lông 3 năm, thích đánh đôi buổi tối';
+  static const int bioMaxLength = 500;
+  static String matchesPlayed(int n) => '$n trận đã chơi';
+
+  // Đổi số điện thoại
+  static const String changePhone = 'Đổi';
+  static const String changePhoneTitle = 'Đổi Số Điện Thoại';
+  static const String changePhoneNote =
+      'Nhập số mới, SportNexus sẽ gửi mã xác thực qua SMS. Số mới dùng để đăng nhập và nhận thông báo.';
+  static String currentPhone(String phone) => 'Số hiện tại: $phone';
+  static const String newPhoneLabel = 'Số điện thoại mới';
+  static const String sendCode = 'GỬI MÃ XÁC THỰC';
+  static const String phoneChanged = 'Đã đổi số điện thoại';
+  static const String samePhone = 'Đây đã là số điện thoại hiện tại của bạn.';
   static const String save = 'LƯU THAY ĐỔI';
   static const String saved = 'Đã cập nhật hồ sơ';
   static const String nameTooLong = 'Họ và tên tối đa 100 ký tự';
@@ -27,7 +42,8 @@ class ProfileStrings {
   static const String avatarUpdated = 'Đã cập nhật ảnh đại diện';
   static const String avatarRemoved = 'Đã xóa ảnh đại diện';
   static const String pickPhotoError = 'Không mở được camera / thư viện ảnh. Hãy kiểm tra quyền truy cập của ứng dụng.';
-  static const String avatarRule = 'Ảnh JPG, PNG hoặc WEBP, tối đa 5MB.';
+  static const String avatarUploadFailed = 'Không tải được ảnh lên. Vui lòng thử lại.';
+  static const String avatarRule ='Ảnh JPG, PNG hoặc WEBP, tối đa 5MB.';
   static const String avatarTooLarge = 'Ảnh đại diện không được vượt quá 5MB.';
   static const String avatarBadFormat = 'Chỉ hỗ trợ ảnh định dạng JPG, PNG hoặc WEBP.';
 

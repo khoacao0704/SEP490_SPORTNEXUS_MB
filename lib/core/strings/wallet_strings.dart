@@ -7,6 +7,7 @@ class WalletStrings {
   static String pendingWithdrawal(String amount) => 'Đang chờ rút: $amount';
   static String frozenBalance(String amount) => 'Đang tạm giữ: $amount';
   static const String featureInDevelopment = 'Chức năng đang được phát triển. Vui lòng thử lại sau.';
+  static const String playerWalletNote = 'Số dư ví dùng để thanh toán trong SportNexus, không rút về ngân hàng.';
 
   // Lịch sử giao dịch
   static const String historyTitle = 'Lịch Sử Giao Dịch';

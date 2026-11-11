@@ -31,4 +31,16 @@ abstract class PlayerTournamentRepository {
   Future<void> withdraw(String divisionId);
 
   Future<TournamentTicket> getTicket(String divisionId);
+
+  /// Người thi đấu của một trận (cả hai bên, trừ mình) để nhận xét trình độ; đấu đội thì là từng thành viên.
+  Future<List<MatchPlayer>> getMatchPlayers(String matchId);
+
+  /// Bảng xếp hạng vòng bảng của một bảng con; giải không có vòng bảng thì rỗng.
+  Future<List<StandingGroup>> getStandings(String divisionId);
+
+  /// Lời mời tham gia giải nội bộ gửi cho mình (hoặc đội mình làm đội trưởng); [pendingOnly] chỉ lời mời đang chờ.
+  Future<List<TournamentInvitation>> getMyInvitations({bool pendingOnly = true});
+
+  /// Nhận lời = đăng ký thật (trừ lệ phí từ ví người nhận lời); từ chối thì thôi.
+  Future<void> respondInvitation(String invitationId, {required bool accept});
 }

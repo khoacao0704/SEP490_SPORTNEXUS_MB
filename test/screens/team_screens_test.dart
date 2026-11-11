@@ -4,7 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/team_strings.dart';
 import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
+import 'package:test1/data/mock/mock_rating_repository.dart';
 import 'package:test1/data/mock/mock_team_repository.dart';
+import 'package:test1/models/sport.dart';
 import 'package:test1/screens/team/my_teams_screen.dart';
 import 'package:test1/screens/team/team_detail_screen.dart';
 import 'package:test1/screens/team/team_form_screen.dart';
@@ -20,6 +22,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     teams = MockTeamRepository(latency: Duration.zero);
     AppRepositories.team = teams;
+    AppRepositories.rating = MockRatingRepository();
     AppRepositories.auth = MockAuthRepository(latency: Duration.zero);
     await loginAs('player@sportnexus.vn');
   });
@@ -57,10 +60,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, TeamStrings.teamName), 'Đội Mới');
     await tester.enterText(find.widgetWithText(TextField, TeamStrings.invitePhonesLabel), '0911111111, 0999999999');
+    // Chưa chọn môn: không tạo được.
+    await tester.tap(find.text(TeamStrings.create));
+    await tester.pump();
+    expect(find.text(TeamStrings.sportRequired), findsOneWidget);
+    expect(find.byType(TeamDetailScreen), findsNothing);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, Sport.badminton.label));
+    await tester.pump();
     await tester.tap(find.text(TeamStrings.create));
     await tester.pumpAndSettle();
 
     expect(find.byType(TeamDetailScreen), findsOneWidget);
+    expect(find.textContaining(Sport.badminton.label), findsWidgets);
     expect(find.text('${TeamStrings.pendingInvitations} (1)'), findsOneWidget);
     expect(find.text('Lan Anh'), findsOneWidget);
 
@@ -98,7 +110,7 @@ void main() {
 
   testWidgets('thành viên rời đội', (tester) async {
     await loginAs('restricted@sportnexus.vn');
-    final team = await tester.runAsync(() => teams.createTeam(name: 'X'));
+    final team = await tester.runAsync(() => teams.createTeam(name: 'X', sport: Sport.badminton));
     await loginAs('player@sportnexus.vn');
     await tester.runAsync(() => teams.invite('team-pickle-q7', '0908888888'));
     await loginAs('restricted@sportnexus.vn');

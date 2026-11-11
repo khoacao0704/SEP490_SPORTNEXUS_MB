@@ -85,7 +85,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     final others = m.members.where((x) => x.userId != _myId).toList()..sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
     final message = now.isBefore(m.leaveDeadline)
         ? LfgStrings.confirmLeaveMessage(m.depositPerSlot, isHost: isHost, nextHost: others.firstOrNull?.name)
-        : LfgStrings.confirmLateLeaveMessage(m.depositPerSlot, fairPlayPenalty: !now.isBefore(m.cancelRequestDeadline));
+        : LfgStrings.confirmLateLeaveMessage(m.depositPerSlot, fairPlayPenalty: !now.isBefore(m.fairPlayPenaltyFrom));
     final alone = others.isEmpty;
     final reason = await confirmLfgWithReason(
       context,
@@ -100,7 +100,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     });
   }
 
-  /// Host không rời được (BE): hủy kèo, mọi người được hoàn 100%.
+  /// Host không rời được (BE): tự hủy kèo tới T−24h, mọi người được hoàn 100%.
   Future<void> _hostCancel() async {
     final m = _match!;
     if (!await _confirm(LfgStrings.confirmCancelTitle, LfgStrings.hostCancelMessage(m.courtPrice), LfgStrings.cancelMatch)) {
@@ -296,7 +296,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
 
   Widget _buildHeader(LfgMatch m, DateTime now) {
     return _section(
-      '${m.sport.label} • ${m.formatLabel}',
+      [m.sport.label, m.formatLabel, if (m.skillLevel != null) LfgStrings.skillTag(m.skillLevel!.label)].join(' • '),
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -408,7 +408,8 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
   Widget _buildCancelRequest(LfgMatch m, LfgCancelRequest request) {
     final iApproved = request.hasApproved(_myId!);
     final approvedCount = m.members.where((x) => request.hasApproved(x.userId)).length;
-    final deadline = '${Formatters.time(m.cancelRequestDeadline)} ${Formatters.weekdayDayMonth(m.cancelRequestDeadline)}';
+    final due = request.expiresAt ?? m.cancelRequestDeadline;
+    final deadline = '${Formatters.time(due)} ${Formatters.weekdayDayMonth(due)}';
     final isSandbox = AppRepositories.lfg is SandboxLfgSimulator;
 
     return Container(
@@ -566,10 +567,8 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
         ],
       );
     } else if (isMember && active && m.isHostedBy(_myId!) && !repo.hostCanLeave) {
-      // Host (BE): không rời được; trước T−48h hủy kèo, sau đó như mọi người.
-      button = now.isBefore(m.leaveDeadline)
-          ? _redButton(LfgStrings.cancelMatch, _hostCancel)
-          : _lateActions(m, now, status);
+      // Host (BE): không rời được; tự hủy kèo tới T−24h, sau đó gửi yêu cầu hủy (T−24h tới T−1h).
+      button = m.canHostCancel(now) ? _redButton(LfgStrings.cancelMatch, _hostCancel) : _lateActions(m, now, status);
     } else if (!isMember && m.isClaimable(now)) {
       button = ElevatedButton.icon(
         onPressed: _isBusy ? null : _claim,
@@ -600,16 +599,17 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     );
   }
 
-  /// Sau T−48h: từ T−48h tới T−24h kèo đã chốt chỉ hủy được khi tất cả đồng ý; sau T−24h không hủy được.
-  /// BE: chỉ host gửi yêu cầu hủy; người tham gia vẫn tự rời được tới giờ chơi (không hoàn).
+  /// Sau T−48h: kèo đã chốt chỉ hủy được khi tất cả đồng ý, yêu cầu gửi trong khoảng T−24h tới T−1h
+  /// (trước T−24h host tự hủy được). BE: chỉ host gửi yêu cầu; người tham gia vẫn tự rời được tới giờ chơi (không hoàn).
   Widget _lateActions(LfgMatch m, DateTime now, LfgStatus status) {
     final repo = AppRepositories.lfg;
     final isHost = m.isHostedBy(_myId!);
-    final canRequest = status == LfgStatus.confirmed &&
-        now.isBefore(m.cancelRequestDeadline) &&
-        (isHost || !repo.onlyHostRequestsCancel);
+    final mayRequest = status == LfgStatus.confirmed && (isHost || !repo.onlyHostRequestsCancel);
+    final canRequest = mayRequest && m.inCancelRequestWindow(now);
+    final requestLater = mayRequest && now.isBefore(m.cancelRequestOpensAt);
     final hasRequest = m.activeCancelRequest(now) != null;
     final canLateLeave = repo.lateLeaveAllowed && !isHost && now.isBefore(m.start);
+    final opensAt = '${Formatters.time(m.cancelRequestOpensAt)} ${Formatters.weekdayDayMonth(m.cancelRequestOpensAt)}';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -618,7 +618,9 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
               ? LfgStrings.lateLeaveNote
               : canRequest
                   ? LfgStrings.confirmedNote
-                  : LfgStrings.tooLateNote,
+                  : requestLater
+                      ? LfgStrings.requestOpensNote(opensAt)
+                      : LfgStrings.tooLateNote,
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),

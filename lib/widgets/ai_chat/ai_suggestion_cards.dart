@@ -151,3 +151,48 @@ class _CardFrame extends StatelessWidget {
     );
   }
 }
+
+/// Thẻ giải đấu AI gợi ý.
+class AiTournamentCard extends StatelessWidget {
+  final AiTournamentSuggestion tournament;
+  final VoidCallback onTap;
+
+  const AiTournamentCard({super.key, required this.tournament, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tournament;
+    final start = t.startDate;
+    final deadline = t.registrationDeadline;
+    return _CardFrame(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(t.sport == null ? Icons.emoji_events_outlined : sportIcon(t.sport!), size: 18, color: AppColors.primaryGreen),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(t.name, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain)),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+            ],
+          ),
+          Text(
+            [t.sportLabel, t.facilityName, AiChatStrings.tierLabel(t.tier)].where((s) => s.isNotEmpty).join(' • '),
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          if (start != null) Text(AiChatStrings.tournamentStart(Formatters.weekdayDayMonth(start)), style: const TextStyle(fontSize: 12)),
+          if (deadline != null)
+            Text(AiChatStrings.tournamentDeadline(Formatters.weekdayDayMonth(deadline)), style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 4),
+          Text(
+            t.minEntryFee > 0 ? AiChatStrings.entryFeeFrom(Formatters.vnd(t.minEntryFee)) : AiChatStrings.freeEntry,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primaryGreen),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -258,9 +258,16 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
           const Expanded(
             child: Text(WalletStrings.availableBalance, style: TextStyle(color: Colors.white70)),
           ),
-          Text(
-            Formatters.vnd(_balance),
-            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          const SizedBox(width: 8),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                Formatters.vnd(_balance),
+                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+            ),
           ),
         ],
       ),

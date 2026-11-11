@@ -3,11 +3,15 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/data/api/api_client.dart';
 import 'package:test1/data/api/api_facility_repository.dart';
 import 'package:test1/data/api/api_player_tournament_repository.dart';
 import 'package:test1/data/api/api_team_repository.dart';
 import 'package:test1/data/api/token_store.dart';
+import 'package:test1/data/session_store.dart';
+import 'package:test1/models/app_user.dart';
+import 'package:test1/models/user_role.dart';
 import 'package:test1/data/repositories/player_tournament_repository.dart';
 import 'package:test1/data/repositories/team_repository.dart';
 import 'package:test1/models/sport.dart';
@@ -52,7 +56,7 @@ void main() {
     final dio = Dio(BaseOptions(baseUrl: 'https://be.test', validateStatus: (_) => true))..httpClientAdapter = server;
     final api = ApiClient(tokens: tokens, dio: dio);
     tournaments = ApiPlayerTournamentRepository(api: api, facility: ApiFacilityRepository(api: api));
-    teams = ApiTeamRepository(api: api);
+    teams = ApiTeamRepository(api: api, categoryIdOf: (s) async => 'cat-${s.name}');
   });
 
   group('giải đấu', () {
@@ -258,6 +262,168 @@ void main() {
       );
       expect(server.requests.last.queryParameters, isEmpty);
     });
+
+    test('cấp độ / mục đích giải; giải nội bộ chỉ qua lời mời', () {
+      final item = ApiPlayerTournamentRepository.listItemFromApi({
+        'id': 't1',
+        'name': 'Giải nội bộ',
+        'status': 'OPEN',
+        'tier': 'semi_pro',
+        'purpose': 'INTERNAL',
+      });
+      expect(item.tier, TournamentTier.semiPro);
+      expect(item.purpose, TournamentPurpose.internal);
+      expect(item.isInviteOnly, isTrue);
+      expect(ApiPlayerTournamentRepository.listItemFromApi({'id': 't2', 'name': 'x'}).isInviteOnly, isFalse);
+    });
+
+    test('sơ đồ: vòng bảng / loại trực tiếp, hoà không có người thắng, xử thắng', () {
+      final draw = ApiPlayerTournamentRepository.matchFromApi({
+        'id': 'm1',
+        'matchIndex': 1,
+        'roundName': 'Lượt 1',
+        'stage': 'GROUP',
+        'groupName': 'A',
+        'resultType': 'DRAW',
+        'status': 'FINISHED',
+        'p1': 'FC A',
+        'p2': 'FC B',
+        'winner': null,
+        'courtName': 'Sân 1',
+        'startTime': '2026-12-01T10:00:00Z',
+      });
+      expect(draw.stage, MatchStage.group);
+      expect(draw.groupName, 'A');
+      expect(draw.isDraw, isTrue);
+      expect(draw.isFinished, isTrue);
+      expect(draw.winner, isNull);
+      expect(draw.courtName, 'Sân 1');
+
+      final walkover = ApiPlayerTournamentRepository.matchFromApi({
+        'id': 'm2',
+        'roundName': 'Chung kết',
+        'stage': 'KNOCKOUT',
+        'resultType': 'WALKOVER',
+        'p1': 'FC A',
+        'p2': 'FC C',
+        'winner': 'FC A',
+      });
+      expect(walkover.stage, MatchStage.knockout);
+      expect(walkover.resultType, MatchResultType.walkover);
+      expect(walkover.isFinished, isTrue);
+    });
+
+    test('bảng xếp hạng vòng bảng: [{group, rows}] đã sắp; hiệu số lấy từ diff; không có vòng bảng → rỗng', () async {
+      server.routes['GET ${ApiPlayerTournamentRepository.standingsPath('d1')}'] = (
+        200,
+        _ok([
+          {
+            'group': 'A',
+            'rows': [
+              {'rank': 1, 'name': 'FC A', 'played': 3, 'won': 2, 'drawn': 1, 'lost': 0, 'points': 7, 'scored': 7, 'diff': 5},
+              {'rank': 2, 'name': 'FC B', 'played': 3, 'won': 0, 'drawn': 1, 'lost': 2, 'points': 1, 'scored': 2, 'diff': -4},
+            ],
+          },
+          {
+            'group': 'B',
+            'rows': [
+              {'rank': 1, 'name': 'FC C', 'played': 1, 'won': 1, 'drawn': 0, 'lost': 0, 'points': 3, 'scored': 2, 'diff': 2},
+            ],
+          },
+        ]),
+      );
+      final groups = await tournaments.getStandings('d1');
+      expect(groups.map((g) => g.name), ['A', 'B']);
+      expect(groups.first.rows.map((r) => r.name), ['FC A', 'FC B']);
+      expect(groups.first.rows.first.position, 1);
+      expect(groups.first.rows.first.difference, 5);
+      expect(groups.first.rows.last.difference, -4);
+      expect(groups.first.rows.first.points, 7);
+      expect(groups.first.rows.first.scored, 7);
+
+      server.routes['GET ${ApiPlayerTournamentRepository.standingsPath('d1')}'] = (200, _ok([]));
+      expect(await tournaments.getStandings('d1'), isEmpty);
+    });
+
+    test('người cùng trận giải: nối participantId với danh sách đăng ký; đội lấy teamMembers, bỏ chính mình', () async {
+      SharedPreferences.setMockInitialValues({});
+      await SessionStore.save(
+        const AppUser(id: 'me', fullName: 'Tôi', email: '', phone: '09', role: UserRole.player),
+        rememberMe: true,
+      );
+      server.routes['GET ${ApiPlayerTournamentRepository.matchDetailPath('m1')}'] = (
+        200,
+        _ok({
+          'id': 'm1',
+          'tournamentId': 'd1',
+          'status': 'FINISHED',
+          'participant1Id': 'p1',
+          'participant1Name': 'FC Tôi',
+          'participant2Id': 'p2',
+          'participant2Name': 'FC Bạn',
+        }),
+      );
+      server.routes['GET ${ApiPlayerTournamentRepository.participantsPath('d1')}'] = (
+        200,
+        _ok([
+          {
+            'participantId': 'p1',
+            'userId': 'me',
+            'teamName': 'FC Tôi',
+            'teamMembers': [
+              {'accountId': 'me', 'fullName': 'Tôi'},
+              {'accountId': 'u2', 'fullName': 'Đồng Đội'},
+            ],
+          },
+          {
+            'participantId': 'p2',
+            'userId': 'u3',
+            'teamName': 'FC Bạn',
+            'teamMembers': [
+              {'accountId': 'u3', 'fullName': 'Đội Trưởng Bạn'},
+              {'accountId': 'u4', 'fullName': 'Cầu Thủ Bạn'},
+            ],
+          },
+          {'participantId': 'p9', 'userId': 'u9', 'fullName': 'Khác'},
+        ]),
+      );
+      final players = await tournaments.getMatchPlayers('m1');
+      expect(players.map((p) => p.userId), ['u2', 'u3', 'u4']);
+      expect(players.first.isTeammate, isTrue);
+      expect(players[1].isTeammate, isFalse);
+      expect(players[1].sideName, 'FC Bạn');
+    });
+
+    test('lời mời giải nội bộ: chỉ lấy PENDING; trả lời gửi {accept}', () async {
+      server.routes['GET ${ApiPlayerTournamentRepository.myInvitationsPath}'] = (
+        200,
+        _ok([
+          {
+            'id': 'inv1',
+            'tournamentId': 'd1',
+            'tournamentName': 'Nam',
+            'parentTournamentId': 't1',
+            'parentTournamentName': 'Giải nội bộ công ty',
+            'categoryType': 'PREMADE_TEAMS',
+            'entryFee': 200000,
+            'teamId': 'tm',
+            'teamName': 'FC Q7',
+            'invitedByName': 'BTC',
+            'status': 'PENDING',
+          },
+        ]),
+      );
+      server.routes['POST ${ApiPlayerTournamentRepository.respondPath('inv1')}'] = (200, _ok(null));
+      final list = await tournaments.getMyInvitations();
+      expect(server.requests.last.queryParameters, {'status': 'PENDING'});
+      expect(list.single.title, 'Giải nội bộ công ty • Nam');
+      expect(list.single.divisionId, 'd1');
+      expect(list.single.entryFee, 200000);
+      expect(list.single.teamName, 'FC Q7');
+
+      await tournaments.respondInvitation('inv1', accept: false);
+      expect(server.requests.last.data, {'accept': false});
+    });
   });
 
   group('đội', () {
@@ -298,9 +464,10 @@ void main() {
       );
       server.routes['PUT ${ApiTeamRepository.captainPath('tm')}'] = (200, _ok(null));
 
-      await teams.createTeam(name: ' Đội X ', invitePhones: ['0911', '0922']);
+      await teams.createTeam(name: ' Đội X ', sport: Sport.football, invitePhones: ['0911', '0922']);
       expect(server.requests.last.data, {
         'name': 'Đội X',
+        'sportCategoryId': 'cat-football',
         'memberPhones': ['0911', '0922'],
       });
 

@@ -5,17 +5,19 @@ import '../../core/strings/profile_strings.dart';
 import '../../core/utils/validators.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../data/session_store.dart';
 import '../../models/app_user.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/auth/auth_primary_button.dart';
 import '../../widgets/auth/auth_text_field.dart';
 import '../../widgets/profile/profile_actions.dart';
 import '../../widgets/profile/user_avatar.dart';
+import 'change_phone_screen.dart';
 
 enum _AvatarAction { camera, gallery, remove }
 
-/// Sửa hồ sơ: đổi ảnh đại diện và họ tên. Tên đăng nhập / SĐT / email chỉ xem (BE chưa cho đổi).
-/// Cuối màn có nút xóa tài khoản.
+/// Sửa hồ sơ: ảnh đại diện, họ tên, tên đăng nhập, giới thiệu; đổi SĐT qua màn riêng (xác thực SMS).
+/// Email chỉ xem. Cuối màn có nút xóa tài khoản.
 class EditProfileScreen extends StatefulWidget {
   final AppUser user;
 
@@ -28,6 +30,8 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   late final _nameController = TextEditingController(text: widget.user.fullName);
+  late final _usernameController = TextEditingController(text: widget.user.username);
+  late final _bioController = TextEditingController(text: widget.user.bio);
   late AppUser _user = widget.user;
   bool _saving = false;
   bool _uploading = false;
@@ -35,7 +39,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _usernameController.dispose();
+    _bioController.dispose();
     super.dispose();
+  }
+
+  Future<void> _changePhone() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => ChangePhoneScreen(currentPhone: _user.phone)),
+    );
+    if (changed != true || !mounted) return;
+    final user = await SessionStore.readUser();
+    if (!mounted) return;
+    if (user != null) setState(() => _user = user);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(ProfileStrings.phoneChanged)));
   }
 
   String? _validateName(String? value) {
@@ -47,13 +65,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Future<void> _saveName() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_nameController.text.trim() == _user.fullName) {
+    if (_nameController.text.trim() == _user.fullName &&
+        _usernameController.text.trim() == _user.username &&
+        _bioController.text.trim() == _user.bio) {
       Navigator.pop(context);
       return;
     }
     setState(() => _saving = true);
     try {
-      _user = await AppRepositories.auth.updateFullName(_nameController.text);
+      _user = await AppRepositories.auth.updateProfile(
+        fullName: _nameController.text,
+        username: _usernameController.text,
+        bio: _bioController.text,
+      );
     } on AuthException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -122,6 +146,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _uploading = true);
     try {
       final updated = await request();
+      // BE có thể ghi đè ảnh cùng URL: xóa bản cũ trong bộ nhớ đệm để ảnh mới hiện ngay.
+      final url = updated.avatarUrl;
+      if (url != null && url.startsWith('http')) await NetworkImage(url).evict();
       if (!mounted) return;
       setState(() {
         _user = updated;
@@ -132,6 +159,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!mounted) return;
       setState(() => _uploading = false);
       showProfileError(context, e.message);
+    } catch (e) {
+      // Lỗi ngoài dự kiến (đọc file, dữ liệu BE lạ...): không để vòng xoay quay mãi.
+      debugPrint('[EditProfile] avatar error: $e');
+      if (!mounted) return;
+      setState(() => _uploading = false);
+      showProfileError(context, ProfileStrings.avatarUploadFailed);
     }
   }
 
@@ -185,13 +218,47 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 controller: _nameController,
                 validator: _validateName,
                 keyboardType: TextInputType.name,
-                textInputAction: TextInputAction.done,
+                textInputAction: TextInputAction.next,
                 autofillHints: const [AutofillHints.name],
-                onFieldSubmitted: (_) => _saveName(),
               ),
               const SizedBox(height: 16),
-              _readOnly(ProfileStrings.usernameLabel, _user.username, Icons.alternate_email),
-              _readOnly(ProfileStrings.phoneLabel, _user.phone, Icons.phone_outlined),
+              AuthTextField(
+                label: ProfileStrings.usernameLabel,
+                hint: ProfileStrings.usernameLabel,
+                controller: _usernameController,
+                validator: Validators.username,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.username],
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text(ProfileStrings.usernameNote, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _bioController,
+                maxLength: ProfileStrings.bioMaxLength,
+                maxLines: 4,
+                minLines: 2,
+                decoration: InputDecoration(
+                  labelText: ProfileStrings.bioLabel,
+                  hintText: ProfileStrings.bioHint,
+                  alignLabelWithHint: true,
+                  filled: true,
+                  fillColor: AppColors.white,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _readOnly(
+                ProfileStrings.phoneLabel,
+                _user.phone,
+                Icons.phone_outlined,
+                action: TextButton(
+                  onPressed: _saving || _uploading ? null : _changePhone,
+                  child: const Text(ProfileStrings.changePhone),
+                ),
+              ),
               _readOnly(ProfileStrings.emailLabel, _user.email, Icons.email_outlined),
               const Text(
                 ProfileStrings.lockedFieldsNote,
@@ -253,13 +320,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _readOnly(String label, String value, IconData icon) {
+  Widget _readOnly(String label, String value, IconData icon, {Widget? action}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon, size: 20, color: AppColors.textSecondary),
+          suffixIcon: action,
           filled: true,
           fillColor: AppColors.divider,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),

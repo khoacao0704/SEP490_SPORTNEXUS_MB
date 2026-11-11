@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import '../../core/strings/team_strings.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/team_repository.dart';
+import '../../models/sport.dart';
 import '../../models/team.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/common/onboarding_required.dart';
+import '../../widgets/common/rating_required.dart';
 
 /// Tạo đội mới (kèm mời thành viên bằng SĐT) hoặc sửa tên / giới thiệu đội ([team] khác null).
 /// Pop về đội vừa tạo / sửa.
@@ -25,9 +28,13 @@ class _TeamFormScreenState extends State<TeamFormScreen> {
   late final TextEditingController _name = TextEditingController(text: widget.team?.name ?? '');
   late final TextEditingController _description = TextEditingController(text: widget.team?.description ?? '');
   final TextEditingController _phones = TextEditingController();
+  late Sport? _sport = widget.team?.sport;
   bool _saving = false;
 
   bool get _isEdit => widget.team != null;
+
+  /// Tạo mới, hoặc đội cũ chưa khai môn: được chọn môn. Đội đã có môn thì không đổi.
+  bool get _canPickSport => !_isEdit || widget.team!.needsSport;
 
   @override
   void dispose() {
@@ -44,13 +51,26 @@ class _TeamFormScreenState extends State<TeamFormScreen> {
         ..showSnackBar(const SnackBar(content: Text(TeamStrings.nameRequired)));
       return;
     }
+    final sport = _sport;
+    if (!_isEdit && sport == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text(TeamStrings.sportRequired)));
+      return;
+    }
     setState(() => _saving = true);
     try {
       final repo = AppRepositories.team;
       final team = _isEdit
-          ? await repo.updateTeam(widget.team!.id, name: _name.text, description: _description.text)
+          ? await repo.updateTeam(
+              widget.team!.id,
+              name: _name.text,
+              description: _description.text,
+              sport: _canPickSport ? sport : null,
+            )
           : await repo.createTeam(
               name: _name.text,
+              sport: sport!,
               description: _description.text,
               invitePhones: TeamFormScreen.parsePhones(_phones.text),
             );
@@ -58,6 +78,8 @@ class _TeamFormScreenState extends State<TeamFormScreen> {
     } on TeamException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
+      if (await handleOnboardingRequired(context, e) || !mounted) return;
+      if (await handleRatingRequired(context, e) || !mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
@@ -90,6 +112,26 @@ class _TeamFormScreenState extends State<TeamFormScreen> {
         children: [
           TextField(controller: _name, maxLength: 100, decoration: _decoration(TeamStrings.teamName)),
           const SizedBox(height: 8),
+          const Text(TeamStrings.sport, style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          if (_canPickSport)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in Sport.values)
+                  ChoiceChip(
+                    label: Text(s.label),
+                    selected: _sport == s,
+                    onSelected: _saving ? null : (_) => setState(() => _sport = s),
+                  ),
+              ],
+            )
+          else
+            Text(widget.team!.sportLabel, style: const TextStyle(fontSize: 15)),
+          const SizedBox(height: 6),
+          const Text(TeamStrings.sportFixedNote, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          const SizedBox(height: 16),
           TextField(
             controller: _description,
             maxLength: 1000,

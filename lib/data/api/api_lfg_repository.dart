@@ -1,10 +1,10 @@
-import '../../core/constants/fair_play_rules.dart';
 import '../../core/constants/lfg_rules.dart';
 import '../../core/strings/lfg_strings.dart';
 import '../../models/booking.dart' show CancelReason;
 import '../../models/facility.dart';
 import '../../models/geo_point.dart';
 import '../../models/lfg_match.dart';
+import '../../models/player_survey.dart' show SkillLevel;
 import '../../models/sport.dart';
 import '../../models/time_slot.dart';
 import '../repositories/lfg_repository.dart';
@@ -19,10 +19,10 @@ import 'api_facility_repository.dart';
 /// - `totalSlots` / `remainingSlots` của BE KHÔNG tính host → app cộng thêm 1 chỗ của host.
 /// - Kèo tạo trên app luôn ghép lẻ (không chia phe), không cần duyệt; Team vs Team = 1 vs 1 giữa 2 đại diện.
 /// - Rời kèo: đã vào kèo thì BE bắt buộc lý do. Trước T−48h hoàn 100%; sau đó vẫn rời được tới giờ chơi nhưng
-///   không hoàn (tiền chuyển cho host), trong 24h cuối còn bị −10 Fair Play. Host không rời được, chỉ hủy kèo
-///   trước T−48h (mọi người + host hoàn 100%, host −10 Fair Play).
-/// - Yêu cầu hủy kèo đã chốt: chỉ host gửi; BE cho tới 1 giờ trước giờ chơi nhưng nhóm chốt chỉ trước T−24h
-///   (app chặn). Người tham gia bỏ phiếu; một người từ chối là bác.
+///   không hoàn (tiền chuyển cho host), trong 24h cuối còn bị −10 Fair Play. Host không rời được, chỉ tự hủy kèo
+///   tới T−24h (`hostCancelUntil`; mọi người + host hoàn 100%, host −10 Fair Play).
+/// - Yêu cầu hủy kèo đã chốt: chỉ host gửi, chỉ trong khoảng T−24h tới T−1h (nhóm chốt theo BE 11/2026).
+///   Người tham gia bỏ phiếu; một người từ chối là bác.
 /// - BE chưa có: giữ chỗ khi Flash Claim (app đếm 10 phút trên máy, vào kèo + trừ tiền ở bước xác nhận),
 ///   chuyển quyền host, lọc tỉnh/quận cho bảng tin kèo.
 class ApiLfgRepository implements LfgRepository {
@@ -37,6 +37,9 @@ class ApiLfgRepository implements LfgRepository {
   static String declinePath(String id) => '/api/v1/lfgs/$id/invitation/decline';
   static String ticketPath(String id) => '/api/v1/lfgs/$id/qr-ticket';
   static const String leaveReasonsPath = '/api/v1/lfgs/cancel-reasons';
+  static const String recommendedPath = '/api/v1/lfgs/recommended';
+  /// Lý do cuối trong danh sách của BE: chọn thì người dùng tự nhập lý do.
+  static const String otherReasonLabel = 'lý do khác';
   static String cancelRequestsPath(String id) => '/api/v1/lfgs/$id/cancel-requests';
   static String latestCancelRequestPath(String id) => '/api/v1/lfgs/$id/cancel-requests/latest';
   static String votePath(String id, String requestId) => '/api/v1/lfgs/$id/cancel-requests/$requestId/vote';
@@ -79,6 +82,39 @@ class ApiLfgRepository implements LfgRepository {
   @override
   int createCost(int courtPrice, LfgFormat format) => courtPrice;
 
+  /// BE: POST /lfgs numberOfSlots 1–6 (gộp các ca liên tiếp cùng sân con).
+  @override
+  int get maxSlotsPerMatch => 6;
+
+  @override
+  bool get supportsExtraFilters => true;
+
+  // ---------------- Gợi ý ----------------
+
+  /// GET /lfgs/recommended?limit → [{card, score, reasons[]}]; card cùng dạng phần tử bảng tin.
+  @override
+  Future<List<LfgRecommendation>> getRecommended({int limit = 20}) async {
+    final data = await _call(() => _api.get(recommendedPath, query: {'limit': limit.clamp(1, 50)}));
+    final myId = await _myId();
+    final result = <LfgRecommendation>[];
+    for (final item in _items(data)) {
+      final card = item['card'];
+      if (card is! Map) continue;
+      final json = Map<String, dynamic>.from(card);
+      final match = matchFromApi(json, myId: myId);
+      if (match == null) continue;
+      result.add(
+        LfgRecommendation(
+          match: match,
+          score: (item['score'] as num?)?.round() ?? 0,
+          reasons: (item['reasons'] as List? ?? const []).map((e) => e.toString()).where((s) => s.isNotEmpty).toList(),
+          distanceKm: (json['distanceKm'] as num?)?.toDouble(),
+        ),
+      );
+    }
+    return result;
+  }
+
   // ---------------- Bảng tin & chi tiết ----------------
 
   /// BE chỉ trả kèo còn nhận người, chưa tới giờ chơi; sớm nhất trước.
@@ -98,6 +134,8 @@ class ApiLfgRepository implements LfgRepository {
       if (categoryId == null) return [];
       params['categoryId'] = categoryId;
     }
+    if (query.skillLevel != null) params['skillLevelTag'] = query.skillLevel!.apiValue;
+    if (query.maxPricePerPerson != null) params['maxPricePerPerson'] = query.maxPricePerPerson;
     final data = await _call(() => _api.get(feedPath, query: params));
     final myId = await _myId();
     return _items(data)
@@ -184,20 +222,30 @@ class ApiLfgRepository implements LfgRepository {
     required Facility facility,
     required LfgFormat format,
     String note = '',
+    SkillLevel? skillLevel,
   }) async {
-    if (hold.slots.length != 1) throw const LfgException(LfgStrings.singleSlotOnly);
-    final slot = hold.slots.single;
+    final slots = [...hold.slots]..sort((a, b) => a.start.compareTo(b.start));
+    if (slots.isEmpty || slots.length > maxSlotsPerMatch) throw const LfgException(LfgStrings.singleSlotOnly);
+    // Nhiều ca: phải liên tiếp trên cùng một sân con (BE gộp từ ca đầu theo numberOfSlots).
+    for (var i = 1; i < slots.length; i++) {
+      if (slots[i].courtName != slots[0].courtName || !slots[i].start.isAtSameMomentAs(slots[i - 1].end)) {
+        throw const LfgException(LfgStrings.slotsNotConsecutive);
+      }
+    }
+    final slot = slots.first;
     final me = await SessionStore.readUser();
     if (me == null) throw const LfgException(LfgStrings.loginRequired);
-    // BE không kiểm tra Fair Play / giới hạn 5 ngày của host: app tự chặn theo quy tắc nhóm.
-    if (!FairPlayRules.canJoinLfg(me.fairPlayScore)) throw const LfgException(LfgStrings.blocked);
+    // Fair Play / lệnh cấm của host: BE tự chặn (403, mức tối thiểu do Admin đặt) → app không chặn bằng điểm
+    // lưu trên máy (có thể cũ). BE không chặn quá 5 ngày: app tự chặn theo quy tắc nhóm.
     if (!LfgRules.canCreateFor(slot.start, DateTime.now())) throw const LfgException(LfgStrings.createWindow);
 
     final text = note.trim();
     final data = await _call(() => _api.post(feedPath, body: {
           'courtSlotId': slot.id,
+          if (slots.length > 1) 'numberOfSlots': slots.length,
           'slotsNeeded': format.totalSlots - 1,
           'requireApproval': false,
+          'skillLevelTag': ?skillLevel?.apiValue,
           if (text.isNotEmpty) 'description': text,
         })) as Map<String, dynamic>;
     final match = matchFromApi(data, myId: me.id);
@@ -215,7 +263,8 @@ class ApiLfgRepository implements LfgRepository {
     return match.myStatus == null && DateTime.now().isBefore(match.leaveDeadline) ? match.depositPerSlot : 0;
   }
 
-  /// BE trả [{code, label, isCustom}] như lý do hủy đặt sân; phần tử là chuỗi thì dùng làm nhãn.
+  /// BE trả mảng chuỗi ("Bận việc đột xuất", …, "Lý do khác"); vẫn đọc được dạng [{code, label, isCustom}].
+  /// "Lý do khác" mở ô tự nhập.
   @override
   Future<List<CancelReason>> getLeaveReasons() async {
     final list = await _call(() => _api.get(leaveReasonsPath)) as List? ?? const [];
@@ -229,7 +278,7 @@ class ApiLfgRepository implements LfgRepository {
             isCustom: r['isCustom'] == true,
           )
         else if (r is String)
-          CancelReason(code: ++i, label: r),
+          CancelReason(code: ++i, label: r, isCustom: r.trim().toLowerCase() == otherReasonLabel),
     ];
   }
 
@@ -363,6 +412,8 @@ class ApiLfgRepository implements LfgRepository {
       formatLabelOverride: formatLabel,
       myStatus: myStatus,
       bookingId: json['bookingId']?.toString(),
+      skillLevel: SkillLevel.fromApi(json['skillLevelTag']),
+      hostCancelUntilOverride: _time(json['hostCancelUntil']),
     );
   }
 
@@ -387,6 +438,7 @@ class ApiLfgRepository implements LfgRepository {
       requestedBy: data['requestedById']?.toString() ?? host.userId,
       requestedByName: data['requestedByName'] as String? ?? host.name,
       createdAt: _time(data['createdAt']) ?? DateTime.now(),
+      expiresAt: _time(data['expiresAt']),
       approvals: approvals.toList(),
     );
   }
@@ -414,7 +466,7 @@ class ApiLfgRepository implements LfgRepository {
     try {
       return await request();
     } on ApiException catch (e) {
-      throw LfgException(e.message);
+      throw LfgException.fromApi(e);
     }
   }
 }

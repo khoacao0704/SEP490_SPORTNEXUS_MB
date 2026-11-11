@@ -12,6 +12,8 @@ import '../../widgets/tournament/tournament_actions.dart';
 import '../../widgets/tournament/tournament_list_card.dart';
 import '../team/my_teams_screen.dart';
 import 'tournament_detail_screen.dart';
+import 'tournament_invitations_screen.dart';
+import 'tournament_match_feedback_screen.dart';
 
 /// Giải đấu: khám phá giải, các lượt đã đăng ký và lịch thi đấu của tôi.
 class TournamentsScreen extends StatefulWidget {
@@ -325,6 +327,9 @@ class _MyRegistrationsTab extends StatefulWidget {
 
 class _MyRegistrationsTabState extends State<_MyRegistrationsTab> {
   List<TournamentRegistrationItem>? _items;
+
+  /// Số lời mời giải nội bộ đang chờ trả lời.
+  int _invitations = 0;
   String? _error;
 
   @override
@@ -339,10 +344,30 @@ class _MyRegistrationsTabState extends State<_MyRegistrationsTab> {
       final items = await AppRepositories.playerTournament.getMyRegistrations();
       final far = DateTime(9999);
       items.sort((a, b) => (a.startDate ?? far).compareTo(b.startDate ?? far));
-      if (mounted) setState(() => _items = items);
+      var invitations = 0;
+      try {
+        invitations = (await AppRepositories.playerTournament.getMyInvitations()).length;
+      } catch (_) {
+        // Chỉ ảnh hưởng dòng lời mời.
+      }
+      if (mounted) {
+        setState(() {
+          _items = items;
+          _invitations = invitations;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _error = PlayerTournamentStrings.loadError);
     }
+  }
+
+  Future<void> _openInvitations() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const TournamentInvitationsScreen()),
+    );
+    // Nhận lời = đã đăng ký: tải lại để thấy lượt đăng ký mới.
+    if (mounted && changed != null) _load();
   }
 
   @override
@@ -356,6 +381,20 @@ class _MyRegistrationsTabState extends State<_MyRegistrationsTab> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_invitations > 0)
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              color: AppColors.lightGreen,
+              child: ListTile(
+                leading: const Icon(Icons.mail_outline, color: AppColors.primaryGreen),
+                title: Text(
+                  PlayerTournamentStrings.invitationsBanner(_invitations),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _openInvitations,
+              ),
+            ),
           if (items.isEmpty)
             const _EmptyView(icon: Icons.how_to_reg_outlined, title: PlayerTournamentStrings.emptyMine)
           else
@@ -473,6 +512,18 @@ class _MyMatchTile extends StatelessWidget {
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: won ? AppColors.primaryGreen : Colors.red),
             ),
           ],
+          if (m.canGiveFeedback(DateTime.now()))
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => TournamentMatchFeedbackScreen(match: m)),
+                ),
+                icon: const Icon(Icons.rate_review_outlined, size: 18),
+                label: const Text(PlayerTournamentStrings.feedbackButton),
+              ),
+            ),
         ],
       ),
     );

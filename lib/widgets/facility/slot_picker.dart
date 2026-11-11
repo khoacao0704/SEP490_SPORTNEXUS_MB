@@ -239,11 +239,12 @@ class TimeSlotGrid extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: slots.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      // Ô cao 76 ở cỡ chữ gốc, tăng theo chữ phóng to (tối đa ×1.6) để 2 dòng chữ không tràn.
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
-        mainAxisExtent: 76,
+        mainAxisExtent: 46 + 30 * MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6),
       ),
       itemBuilder: (context, index) {
         final slot = slots[index];

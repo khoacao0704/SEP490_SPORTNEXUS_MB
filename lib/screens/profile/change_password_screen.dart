@@ -28,6 +28,21 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _confirmController = TextEditingController();
   bool _isLoading = false;
 
+  bool get _canSubmit =>
+      (!widget.hasPassword || _oldController.text.isNotEmpty) &&
+      _validateNew(_newController.text) == null &&
+      Validators.confirmPassword(() => _newController.text)(_confirmController.text) == null;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final c in [_oldController, _newController, _confirmController]) {
+      c.addListener(_refresh);
+    }
+  }
+
+  void _refresh() => setState(() {});
+
   @override
   void dispose() {
     _oldController.dispose();
@@ -128,7 +143,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 controller: _newController,
                 validator: _validateNew,
                 isPassword: true,
-                helperText: AuthStrings.passwordRule,
+                showPasswordChecklist: true,
+                revalidateOn: _oldController,
                 autofillHints: const [AutofillHints.newPassword],
               ),
               const SizedBox(height: 16),
@@ -137,6 +153,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 hint: AuthStrings.confirmPasswordHint,
                 controller: _confirmController,
                 validator: Validators.confirmPassword(() => _newController.text),
+                revalidateOn: _newController,
                 isPassword: true,
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) => _submit(),
@@ -146,7 +163,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 label: hasPassword ? ProfileStrings.changePasswordButton : ProfileStrings.setPasswordButton,
                 isLoading: _isLoading,
                 trailingIcon: null,
-                onPressed: _submit,
+                onPressed: _canSubmit ? _submit : null,
               ),
             ],
           ),

@@ -1,6 +1,7 @@
 import '../core/constants/lfg_rules.dart';
 import 'court_type.dart';
 import 'geo_point.dart';
+import 'player_survey.dart' show SkillLevel;
 import 'sport.dart';
 
 enum LfgFormat {
@@ -56,12 +57,15 @@ enum LfgCancelReason {
   static LfgCancelReason fromApi(String value) => values.firstWhere((r) => r.apiValue == value);
 }
 
-/// Yêu cầu hủy một kèo đã chốt. Người gửi tự tính là đồng ý; một người từ chối là bác ngay.
-/// Hết hạn ở T−24h nếu chưa đủ tất cả đồng ý (kèo vẫn diễn ra).
+/// Yêu cầu hủy một kèo đã chốt (gửi trong khoảng T−24h tới T−1h). Người gửi tự tính là đồng ý; một người từ chối
+/// là bác ngay. Hết hạn ([expiresAt], mặc định T−1h) nếu chưa đủ tất cả đồng ý (kèo vẫn diễn ra).
 class LfgCancelRequest {
   final String requestedBy;
   final String requestedByName;
   final DateTime createdAt;
+
+  /// Hạn trả lời BE trả; `null` thì dùng [LfgMatch.cancelRequestDeadline].
+  final DateTime? expiresAt;
 
   /// userId các thành viên đã đồng ý (gồm người gửi).
   final List<String> approvals;
@@ -71,6 +75,7 @@ class LfgCancelRequest {
     required this.requestedByName,
     required this.createdAt,
     required this.approvals,
+    this.expiresAt,
   });
 
   bool hasApproved(String userId) => approvals.contains(userId);
@@ -79,6 +84,7 @@ class LfgCancelRequest {
         requestedBy: requestedBy,
         requestedByName: requestedByName,
         createdAt: createdAt,
+        expiresAt: expiresAt,
         approvals: [...approvals, if (!approvals.contains(userId)) userId],
       );
 
@@ -86,6 +92,7 @@ class LfgCancelRequest {
         requestedBy: json['requestedBy'] as String,
         requestedByName: json['requestedByName'] as String,
         createdAt: DateTime.parse(json['createdAt'] as String),
+        expiresAt: json['expiresAt'] == null ? null : DateTime.parse(json['expiresAt'] as String),
         approvals: (json['approvals'] as List).cast<String>(),
       );
 
@@ -93,6 +100,7 @@ class LfgCancelRequest {
         'requestedBy': requestedBy,
         'requestedByName': requestedByName,
         'createdAt': createdAt.toIso8601String(),
+        if (expiresAt != null) 'expiresAt': expiresAt!.toIso8601String(),
         'approvals': approvals,
       };
 }
@@ -195,6 +203,12 @@ class LfgMatch {
   /// Đơn đặt sân của chủ kèo (vé QR của chủ kèo là vé đặt sân).
   final String? bookingId;
 
+  /// Trình độ kèo (thẻ trình độ của BE); `null` = mọi trình độ.
+  final SkillLevel? skillLevel;
+
+  /// Hạn chủ kèo tự hủy do BE trả (`hostCancelUntil`); bản giả lập để trống → T−24h.
+  final DateTime? hostCancelUntilOverride;
+
   const LfgMatch({
     required this.id,
     required this.facilityId,
@@ -221,6 +235,8 @@ class LfgMatch {
     this.formatLabelOverride,
     this.myStatus,
     this.bookingId,
+    this.skillLevel,
+    this.hostCancelUntilOverride,
   });
 
   LfgMember get host => members.firstWhere((m) => m.isHost, orElse: () => members.first);
@@ -241,8 +257,22 @@ class LfgMatch {
 
   int get depositPerSlot => pricePerPersonOverride ?? LfgRules.depositPerSlot(courtPrice, totalSlots);
 
-  /// Hạn tự rời kèo (hoàn 100%); từ mốc này tới T−24h muốn hủy phải tất cả đồng ý.
+  /// Hạn tự rời kèo (hoàn 100%).
   DateTime get leaveDeadline => start.subtract(LfgRules.fillDeadlineBeforeStart);
+
+  /// Hạn chủ kèo tự hủy kèo (T−24h). Từ mốc này muốn hủy phải gửi yêu cầu và tất cả đồng ý.
+  DateTime get hostCancelDeadline => hostCancelUntilOverride ?? start.subtract(LfgRules.hostCancelBeforeStart);
+
+  /// Mở gửi yêu cầu hủy (= hết hạn chủ kèo tự hủy).
+  DateTime get cancelRequestOpensAt => hostCancelDeadline;
+
+  /// Rời kèo từ mốc này bị trừ Fair Play.
+  DateTime get fairPlayPenaltyFrom => start.subtract(LfgRules.lateLeavePenaltyBeforeStart);
+
+  bool canHostCancel(DateTime now) => now.isBefore(hostCancelDeadline);
+
+  /// Đang trong khoảng gửi yêu cầu hủy (T−24h tới T−1h).
+  bool inCancelRequestWindow(DateTime now) => !now.isBefore(cancelRequestOpensAt) && now.isBefore(cancelRequestDeadline);
 
   DateTime get fillDeadline => start.subtract(LfgRules.fillDeadlineBeforeStart);
 
@@ -256,11 +286,12 @@ class LfgMatch {
     return isFull ? LfgStatus.confirmed : LfgStatus.open;
   }
 
-  /// Hạn chót gửi / đồng ý yêu cầu hủy kèo đã chốt.
-  DateTime get cancelRequestDeadline => start.subtract(LfgRules.mutualCancelBeforeStart);
+  /// Hạn chót gửi / đồng ý yêu cầu hủy kèo đã chốt (T−1h).
+  DateTime get cancelRequestDeadline => start.subtract(LfgRules.cancelRequestClosesBeforeStart);
 
-  /// Yêu cầu hủy còn hiệu lực (chưa tới T−24h).
-  LfgCancelRequest? activeCancelRequest(DateTime now) => now.isBefore(cancelRequestDeadline) ? cancelRequest : null;
+  /// Yêu cầu hủy còn hiệu lực (chưa hết hạn trả lời).
+  LfgCancelRequest? activeCancelRequest(DateTime now) =>
+      now.isBefore(cancelRequest?.expiresAt ?? cancelRequestDeadline) ? cancelRequest : null;
 
   /// Còn nhận người: chưa hủy/chốt, chưa tới T−48h, còn chỗ trống.
   bool isClaimable(DateTime now) => status(now) == LfgStatus.open && now.isBefore(fillDeadline) && slotsLeft > 0;
@@ -301,6 +332,8 @@ class LfgMatch {
         formatLabelOverride: formatLabelOverride,
         myStatus: myStatus,
         bookingId: bookingId,
+        skillLevel: skillLevel,
+        hostCancelUntilOverride: hostCancelUntilOverride,
       );
 
   factory LfgMatch.fromJson(Map<String, dynamic> json) => LfgMatch(
@@ -325,6 +358,7 @@ class LfgMatch {
         cancelRequest: json['cancelRequest'] == null
             ? null
             : LfgCancelRequest.fromJson(json['cancelRequest'] as Map<String, dynamic>),
+        skillLevel: SkillLevel.fromApi(json['skillLevel']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -347,6 +381,7 @@ class LfgMatch {
         'note': note,
         if (cancelReason != null) 'cancelReason': cancelReason!.apiValue,
         if (cancelRequest != null) 'cancelRequest': cancelRequest!.toJson(),
+        if (skillLevel != null) 'skillLevel': skillLevel!.apiValue,
       };
 }
 
@@ -372,7 +407,34 @@ class LfgFeedQuery {
   /// Vị trí GPS để tính khoảng cách; `null` thì không tính.
   final GeoPoint? userLocation;
 
-  const LfgFeedQuery({required this.city, this.district, this.sport, this.format, this.courtType, this.userLocation});
+  /// Chỉ kèo đúng trình độ này; `null` = mọi trình độ.
+  final SkillLevel? skillLevel;
+
+  /// Giá mỗi người tối đa; `null` = không giới hạn.
+  final int? maxPricePerPerson;
+
+  const LfgFeedQuery({
+    required this.city,
+    this.district,
+    this.sport,
+    this.format,
+    this.courtType,
+    this.userLocation,
+    this.skillLevel,
+    this.maxPricePerPerson,
+  });
+
+  bool get hasExtraFilters => skillLevel != null || maxPricePerPerson != null;
+}
+
+/// Kèo gợi ý theo hồ sơ thể thao: điểm phù hợp 0–100 và lý do (do BE tính).
+class LfgRecommendation {
+  final LfgMatch match;
+  final int score;
+  final List<String> reasons;
+  final double? distanceKm;
+
+  const LfgRecommendation({required this.match, required this.score, this.reasons = const [], this.distanceKm});
 }
 
 class LfgFeedItem {

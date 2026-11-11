@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/lfg_strings.dart';
 import 'package:test1/data/api/api_client.dart';
+import 'package:test1/data/api/api_error_codes.dart';
 import 'package:test1/data/api/api_facility_repository.dart';
 import 'package:test1/data/api/api_lfg_repository.dart';
 import 'package:test1/data/api/token_store.dart';
@@ -14,6 +15,7 @@ import 'package:test1/data/session_store.dart';
 import 'package:test1/models/app_user.dart';
 import 'package:test1/models/facility.dart';
 import 'package:test1/models/lfg_match.dart';
+import 'package:test1/models/player_survey.dart';
 import 'package:test1/models/sport.dart';
 import 'package:test1/models/time_slot.dart';
 import 'package:test1/models/user_role.dart';
@@ -110,6 +112,98 @@ void main() {
     server.ok('GET', ApiFacilityRepository.sportsPath, [
       {'id': _badminton, 'name': 'Cầu lông'},
     ]);
+  });
+
+  test('gợi ý: đọc card + điểm + lý do; bỏ phần tử không có card', () async {
+    server.ok('GET', ApiLfgRepository.recommendedPath, [
+      {
+        'card': _card(id: 'r1', extra: {'skillLevelTag': 'INTERMEDIATE'}),
+        'score': 87.4,
+        'reasons': ['Cùng trình độ Trung bình', 'Cách bạn 2.5 km'],
+      },
+      {'score': 50},
+    ]);
+    final recs = await repo.getRecommended(limit: 99);
+    expect(server.requests.last.queryParameters, {'limit': 50});
+    expect(recs.single.match.id, 'r1');
+    expect(recs.single.score, 87);
+    expect(recs.single.reasons, hasLength(2));
+    expect(recs.single.distanceKm, 1.5);
+    expect(recs.single.match.skillLevel, SkillLevel.intermediate);
+  });
+
+  test('bảng tin: gửi trình độ + giá mỗi người tối đa', () async {
+    server.ok('GET', ApiLfgRepository.feedPath, {'items': <Object>[]});
+    await repo.getFeed(
+      const LfgFeedQuery(city: 'x', skillLevel: SkillLevel.advanced, maxPricePerPerson: 100000),
+    );
+    expect(server.requests.last.queryParameters['skillLevelTag'], 'ADVANCED');
+    expect(server.requests.last.queryParameters['maxPricePerPerson'], 100000);
+  });
+
+  test('tạo kèo nhiều ca: gửi ca đầu + numberOfSlots + trình độ; ca không liền nhau bị chặn', () async {
+    final start = DateTime.now().add(const Duration(days: 3));
+    TimeSlot slot(String id, DateTime s, {String court = 'Sân 1'}) => TimeSlot(
+      id: id,
+      facilityId: 'f1',
+      sport: Sport.badminton,
+      courtName: court,
+      start: s,
+      end: s.add(const Duration(hours: 2)),
+      price: 200000,
+      isAvailable: true,
+    );
+    final facility = Facility(
+      id: 'f1',
+      name: 'X',
+      address: '',
+      city: '',
+      district: '',
+      location: Facility.noLocation,
+      offerings: const [],
+      rating: 0,
+      reviewCount: 0,
+      imageUrls: const [],
+      openTime: '06:00',
+      closeTime: '22:00',
+      phone: '',
+    );
+    server.routes['POST ${ApiLfgRepository.feedPath}'] = (
+      201,
+      {'statusCode': 201, 'message': 'OK', 'data': _card(hostId: _me, extra: {'skillLevelTag': 'ADVANCED'})},
+    );
+    final a = slot('s1', start);
+    final b = slot('s2', start.add(const Duration(hours: 2)));
+    final match = await repo.createMatch(
+      hold: SlotHold(holdId: 'h', slots: [b, a], expiresAt: start),
+      facility: facility,
+      format: LfgFormat.doubles,
+      skillLevel: SkillLevel.advanced,
+    );
+    expect(server.requests.last.data, {
+      'courtSlotId': 's1',
+      'numberOfSlots': 2,
+      'slotsNeeded': 3,
+      'requireApproval': false,
+      'skillLevelTag': 'ADVANCED',
+    });
+    expect(match.skillLevel, SkillLevel.advanced);
+
+    final gap = slot('s3', start.add(const Duration(hours: 5)));
+    await expectLater(
+      repo.createMatch(hold: SlotHold(holdId: 'h', slots: [a, gap], expiresAt: start), facility: facility, format: LfgFormat.doubles),
+      throwsA(isA<LfgException>().having((e) => e.message, 'message', LfgStrings.slotsNotConsecutive)),
+    );
+    final otherCourt = slot('s4', start.add(const Duration(hours: 2)), court: 'Sân 2');
+    await expectLater(
+      repo.createMatch(
+        hold: SlotHold(holdId: 'h', slots: [a, otherCourt], expiresAt: start),
+        facility: facility,
+        format: LfgFormat.doubles,
+      ),
+      throwsA(isA<LfgException>()),
+    );
+    expect(repo.maxSlotsPerMatch, 6);
   });
 
   test('khác bản giả lập: không lọc khu vực, host trả cả sân và chỉ hủy kèo', () {
@@ -232,7 +326,7 @@ void main() {
     );
   });
 
-  test('tạo kèo: ghép lẻ không duyệt, cần thêm (số người − 1); chặn Fair Play thấp / ngoài 48h–5 ngày', () async {
+  test('tạo kèo: ghép lẻ không duyệt, cần thêm (số người − 1); chặn ngoài 48h–5 ngày; Fair Play / khảo sát do BE chặn', () async {
     final start = DateTime.now().add(const Duration(days: 3));
     final slot = TimeSlot(
       id: 's1',
@@ -294,13 +388,26 @@ void main() {
       throwsA(isA<LfgException>().having((e) => e.message, 'message', LfgStrings.createWindow)),
     );
 
+    // Fair Play thấp: app KHÔNG tự chặn bằng điểm lưu trên máy, BE chặn (403) → hiện nguyên câu của BE.
     await SessionStore.save(
       const AppUser(id: _me, fullName: 'Khoa Cao', email: 'k@x.com', phone: '0978809952', role: UserRole.player, fairPlayScore: 25),
       rememberMe: true,
     );
+    const blocked = 'Điểm Fair Play của bạn (25) thấp hơn mức tối thiểu 30 để tham gia ghép kèo.';
+    server.routes['POST ${ApiLfgRepository.feedPath}'] = (403, {'statusCode': 403, 'message': blocked, 'data': null});
     await expectLater(
       repo.createMatch(hold: SlotHold(holdId: 'x', slots: [slot], expiresAt: start), facility: facility, format: LfgFormat.doubles),
-      throwsA(isA<LfgException>().having((e) => e.message, 'message', LfgStrings.blocked)),
+      throwsA(isA<LfgException>().having((e) => e.message, 'message', blocked)),
+    );
+
+    // Chưa làm khảo sát: giữ mã lỗi của BE để app mở màn khảo sát.
+    server.routes['POST ${ApiLfgRepository.feedPath}'] = (
+      403,
+      {'statusCode': 403, 'message': 'Bạn cần hoàn thành khảo sát.', 'errorCode': 'ONBOARDING_REQUIRED', 'data': null},
+    );
+    await expectLater(
+      repo.createMatch(hold: SlotHold(holdId: 'x', slots: [slot], expiresAt: start), facility: facility, format: LfgFormat.doubles),
+      throwsA(isA<LfgException>().having((e) => e.isOnboardingRequired, 'isOnboardingRequired', isTrue)),
     );
   });
 

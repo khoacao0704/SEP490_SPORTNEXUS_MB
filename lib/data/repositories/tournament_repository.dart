@@ -1,10 +1,22 @@
 import '../../models/tournament.dart';
+import '../api/api_error_codes.dart';
 
 /// Lỗi nghiệp vụ giải đấu; [message] sẵn sàng để hiển thị.
-class TournamentException implements Exception {
+class TournamentException implements Exception, CodedError {
+  @override
   final String message;
 
-  const TournamentException(this.message);
+  /// Mã lỗi của BE (xem [ApiErrorCodes]); lỗi của mock không có.
+  @override
+  final String? code;
+
+  @override
+  final Map<String, dynamic>? detail;
+
+  const TournamentException(this.message, {this.code, this.detail});
+
+  /// Giữ nguyên câu và mã lỗi của BE.
+  TournamentException.fromApi(CodedError e) : this(e.message, code: e.code, detail: e.detail);
 
   @override
   String toString() => 'TournamentException: $message';

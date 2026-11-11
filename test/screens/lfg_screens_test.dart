@@ -9,7 +9,10 @@ import 'package:test1/data/mock/mock_facility_repository.dart';
 import 'package:test1/data/mock/mock_lfg_repository.dart';
 import 'package:test1/data/mock/mock_review_repository.dart';
 import 'package:test1/data/mock/mock_wallet_repository.dart';
+import 'package:test1/core/constants/lfg_rules.dart';
+import 'package:test1/models/facility_search.dart';
 import 'package:test1/models/lfg_match.dart';
+import 'package:test1/models/sport.dart';
 import 'package:test1/screens/lfg/create_lfg_match_screen.dart';
 import 'package:test1/screens/lfg/lfg_match_detail_screen.dart';
 import 'package:test1/screens/lfg/lfg_payment_screen.dart';
@@ -19,8 +22,7 @@ void main() {
   late MockWalletRepository wallet;
   late MockLfgRepository lfg;
 
-  Future<void> loginAs(String identifier) =>
-      MockAuthRepository(latency: Duration.zero).login(identifier, 'Player@123');
+  Future<void> loginAs(String identifier) => MockAuthRepository(latency: Duration.zero).login(identifier, 'Player@123');
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -54,6 +56,15 @@ void main() {
     expect(find.text('Sân Bóng Hoa Lư • Sân 1 • Quận 1'), findsOneWidget);
     expect(find.text(LfgStrings.joined), findsOneWidget); // kèo Gò Vấp đang tham gia
 
+    // Hàng chip môn chỉ dựng chip đang hiện: cuộn ngang tới Bóng Đá.
+    await tester.scrollUntilVisible(
+      find.widgetWithText(ChoiceChip, 'Bóng Đá'),
+      120,
+      scrollable: find
+          .ancestor(of: find.widgetWithText(ChoiceChip, LfgStrings.allSports), matching: find.byType(Scrollable))
+          .first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, 'Bóng Đá'));
     await tester.pumpAndSettle();
     expect(find.text('Sân Bóng Hoa Lư • Sân 1 • Quận 1'), findsOneWidget);
@@ -67,6 +78,24 @@ void main() {
     await tester.tap(find.text(LfgStrings.tabMine));
     await tester.pumpAndSettle();
     expect(find.text('Gò Vấp Arena • Sân 4 • Gò Vấp'), findsOneWidget);
+  });
+
+  testWidgets('Gợi ý cho bạn: hiện điểm phù hợp + lý do, không có kèo mình đã vào; bộ lọc trình độ', (tester) async {
+    await pump(tester, const LfgScreen());
+    await tester.tap(find.widgetWithText(ChoiceChip, LfgStrings.recommended));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Phù hợp '), findsWidgets);
+    expect(find.textContaining('Đúng môn bạn chơi'), findsWidgets);
+    expect(find.text(LfgStrings.joined), findsNothing);
+
+    // Bộ lọc: chọn trình độ → quay về bảng tin, chip hiện số bộ lọc.
+    await tester.tap(find.widgetWithText(ChoiceChip, LfgStrings.filters));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Khá'));
+    await tester.tap(find.text(LfgStrings.applyFilters));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ChoiceChip, LfgStrings.filtersCount(1)), findsOneWidget);
+    expect(find.textContaining('Phù hợp '), findsNothing);
   });
 
   testWidgets('Flash Claim từ chi tiết kèo: thanh toán bằng ví, có vé QR và nút Rời kèo', (tester) async {
@@ -139,6 +168,28 @@ void main() {
     expect(find.byType(LfgMatchDetailScreen), findsOneWidget);
     expect(find.text(LfgStrings.cancelMatch), findsOneWidget);
     expect(find.text(LfgStrings.yourTicket), findsOneWidget);
+  });
+
+  testWidgets('tạo kèo từ ca AI gợi ý: chọn sẵn sân + ca + hình thức theo số người cần tìm', (tester) async {
+    final preset = await tester.runAsync(() async {
+      final facility = (await AppRepositories.lfgFacility.searchFacilities(
+        const FacilitySearchQuery(city: 'Hồ Chí Minh', sport: Sport.badminton),
+      )).map((r) => r.facility).firstWhere((f) => f.name == 'Sân Cầu Lông Thiên Triều');
+      final day = DateTime.now().add(const Duration(days: 4));
+      final slots = await AppRepositories.lfgFacility.getTimeSlots(facility.id, Sport.badminton, day);
+      final slot = slots.firstWhere((s) => s.isAvailable && LfgRules.canCreateFor(s.start, DateTime.now()));
+      return LfgCreatePreset(
+        sport: Sport.badminton,
+        facilityId: facility.id,
+        courtSlotId: slot.id,
+        start: slot.start,
+        slotsNeeded: 1,
+      );
+    });
+    await pump(tester, CreateLfgMatchScreen(preset: preset));
+    // Ca đã chọn sẵn → có nút thanh toán; 1 người cần tìm = ghép 2.
+    expect(find.text(LfgStrings.continueToPay), findsOneWidget);
+    expect(find.text(LfgStrings.depositExplain(LfgFormat.singles.label, 2, false)), findsOneWidget);
   });
 
   testWidgets('kèo đã chốt nhưng còn trước T−48h: vẫn rời được, không cần gửi yêu cầu hủy', (tester) async {

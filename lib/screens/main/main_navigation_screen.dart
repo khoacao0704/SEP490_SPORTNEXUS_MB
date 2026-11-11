@@ -73,12 +73,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
               activeIcon: Icon(Icons.home),
-              label: 'Trang Chủ',
+              label: 'Trang chủ',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.people_outline),
               activeIcon: Icon(Icons.people),
-              label: 'Ghép Trận LFG',
+              label: 'Ghép trận',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.chat_bubble_outline),
@@ -88,12 +88,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             BottomNavigationBarItem(
               icon: Icon(Icons.calendar_today_outlined),
               activeIcon: Icon(Icons.calendar_today),
-              label: 'Lịch Đặt & QR',
+              label: 'Lịch đặt',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),
               activeIcon: Icon(Icons.person),
-              label: 'Tài Khoản',
+              label: 'Tài khoản',
             ),
           ],
         ),

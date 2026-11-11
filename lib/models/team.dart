@@ -1,4 +1,7 @@
-/// Đội của người chơi (dùng cho giải đôi / đội cố định). Đội không gắn với môn nào.
+import 'sport.dart';
+
+/// Đội của người chơi (dùng cho giải đôi / đội cố định). Đội mới phải gắn một môn (BE bắt buộc từ 07/11/2026);
+/// đội cũ có thể chưa có môn ([sport] null) → đội trưởng phải khai môn mới đăng ký giải được.
 class Team {
   static const int maxMembers = 20;
 
@@ -6,6 +9,15 @@ class Team {
   final String name;
   final String description;
   final String? logoUrl;
+
+  /// Môn của đội; `null` khi đội cũ chưa khai môn hoặc môn của BE không có trong app.
+  final Sport? sport;
+
+  /// Tên môn BE trả (vẫn hiện được khi app không nhận ra môn).
+  final String sportName;
+
+  /// Trình độ do hệ thống tính (chuỗi hiển thị của BE), rỗng khi chưa có.
+  final String skillLevel;
 
   /// Đội trưởng (người tạo đội hoặc người được chuyển quyền).
   final String captainId;
@@ -22,6 +34,9 @@ class Team {
     required this.name,
     this.description = '',
     this.logoUrl,
+    this.sport,
+    this.sportName = '',
+    this.skillLevel = '',
     required this.captainId,
     this.captainName = '',
     this.createdAt,
@@ -31,6 +46,12 @@ class Team {
   });
 
   int get memberCount => members.length;
+
+  /// Chưa khai môn: BE từ chối đăng ký giải (TEAM_SPORT_REQUIRED).
+  bool get needsSport => sport == null && sportName.isEmpty;
+
+  /// Tên môn để hiển thị.
+  String get sportLabel => sport?.label ?? sportName;
 
   bool isCaptain(String? userId) => userId != null && userId == captainId;
 }

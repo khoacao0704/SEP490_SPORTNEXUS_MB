@@ -3,7 +3,9 @@ import '../../core/constants/vietnam_cities.dart';
 import '../../core/strings/lfg_strings.dart';
 import '../../data/app_repositories.dart';
 import '../../models/court_type.dart';
+import '../../core/utils/formatters.dart';
 import '../../models/lfg_match.dart';
+import '../../models/player_survey.dart' show SkillLevel;
 import '../../models/sport.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/facility/sport_icon.dart';
@@ -127,7 +129,16 @@ class _LfgFeedViewState extends State<LfgFeedView> {
   Sport? _sport;
   LfgFormat? _format;
   CourtType? _courtType;
+  SkillLevel? _skill;
+  int? _maxPrice;
+
+  /// Đang xem kèo gợi ý theo hồ sơ thể thao (thay cho bảng tin theo bộ lọc).
+  bool _showRecommended = false;
+  List<LfgRecommendation> _recommendations = [];
   List<LfgFeedItem> _items = [];
+
+  /// Lượt tải hiện tại: đổi bộ lọc liên tục thì bỏ kết quả của lượt cũ.
+  int _seq = 0;
   String? _myId;
   bool _isLoading = true;
   String? _error;
@@ -145,28 +156,60 @@ class _LfgFeedViewState extends State<LfgFeedView> {
   }
 
   Future<void> _load() async {
+    final seq = ++_seq;
     setState(() {
       _isLoading = true;
       _error = null;
     });
     try {
-      final items = await AppRepositories.lfg.getFeed(
-        LfgFeedQuery(city: _city, district: _district, sport: _sport, format: _format, courtType: _courtType),
-      );
+      final repo = AppRepositories.lfg;
+      var items = _items;
+      var recommendations = _recommendations;
+      if (_showRecommended) {
+        recommendations = await repo.getRecommended();
+      } else {
+        items = await repo.getFeed(
+          LfgFeedQuery(
+            city: _city,
+            district: _district,
+            sport: _sport,
+            format: _format,
+            courtType: _courtType,
+            skillLevel: _skill,
+            maxPricePerPerson: _maxPrice,
+          ),
+        );
+      }
       final user = await AppRepositories.auth.getCurrentUser();
-      if (!mounted) return;
+      if (!mounted || seq != _seq) return;
       setState(() {
         _items = items;
+        _recommendations = recommendations;
         _myId = user?.id;
         _isLoading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || seq != _seq) return;
       setState(() {
         _isLoading = false;
         _error = LfgStrings.loadError;
       });
     }
+  }
+
+  Future<void> _pickFilters() async {
+    final picked = await showModalBottomSheet<({SkillLevel? skill, int? maxPrice})>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _FilterSheet(skill: _skill, maxPrice: _maxPrice),
+    );
+    if (picked == null) return;
+    setState(() {
+      _skill = picked.skill;
+      _maxPrice = picked.maxPrice;
+      _showRecommended = false;
+    });
+    _load();
   }
 
   Future<void> _pickLocation() async {
@@ -207,6 +250,15 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
+                    if (AppRepositories.lfg.supportsExtraFilters) ...[
+                      _chip(
+                        label: _filterCount == 0 ? LfgStrings.filters : LfgStrings.filtersCount(_filterCount),
+                        icon: Icons.tune,
+                        selected: _filterCount > 0 && !_showRecommended,
+                        onTap: _pickFilters,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     // BE chưa lọc được theo tỉnh/quận: ẩn chọn khu vực.
                     if (AppRepositories.lfg.supportsAreaFilter) ...[
                       _chip(
@@ -223,7 +275,10 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                         label: LfgStrings.allCourtTypes,
                         selected: _courtType == null,
                         onTap: () {
-                          setState(() => _courtType = null);
+                          setState(() {
+                            _courtType = null;
+                            _showRecommended = false;
+                          });
                           _load();
                         },
                       ),
@@ -233,7 +288,10 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                           label: t.matchup,
                           selected: t == _courtType,
                           onTap: () {
-                            setState(() => _courtType = t);
+                            setState(() {
+                              _courtType = t;
+                              _showRecommended = false;
+                            });
                             _load();
                           },
                         ),
@@ -243,7 +301,10 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                         label: LfgStrings.allFormats,
                         selected: _format == null,
                         onTap: () {
-                          setState(() => _format = null);
+                          setState(() {
+                            _format = null;
+                            _showRecommended = false;
+                          });
                           _load();
                         },
                       ),
@@ -253,7 +314,10 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                           label: f.label,
                           selected: f == _format,
                           onTap: () {
-                            setState(() => _format = f);
+                            setState(() {
+                              _format = f;
+                              _showRecommended = false;
+                            });
                             _load();
                           },
                         ),
@@ -270,11 +334,22 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
                     _chip(
+                      label: LfgStrings.recommended,
+                      icon: Icons.auto_awesome,
+                      selected: _showRecommended,
+                      onTap: () {
+                        setState(() => _showRecommended = true);
+                        _load();
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _chip(
                       label: LfgStrings.allSports,
                       icon: Icons.sports,
-                      selected: _sport == null,
+                      selected: _sport == null && !_showRecommended,
                       onTap: () {
                         setState(() {
+                          _showRecommended = false;
                           _sport = null;
                           _courtType = null;
                         });
@@ -286,9 +361,10 @@ class _LfgFeedViewState extends State<LfgFeedView> {
                       _chip(
                         label: s.label,
                         icon: sportIcon(s),
-                        selected: s == _sport,
+                        selected: s == _sport && !_showRecommended,
                         onTap: () {
                           setState(() {
+                            _showRecommended = false;
                             _sport = s;
                             _courtType = null;
                             if (_format != null && !LfgFormat.forSport(s).contains(_format)) _format = null;
@@ -309,19 +385,28 @@ class _LfgFeedViewState extends State<LfgFeedView> {
     );
   }
 
+  int get _filterCount => (_skill == null ? 0 : 1) + (_maxPrice == null ? 0 : 1);
+
   Widget _buildList() {
-    if (_isLoading && _items.isEmpty) {
+    final count = _showRecommended ? _recommendations.length : _items.length;
+    if (_isLoading && count == 0) {
       return const Center(child: CircularProgressIndicator(color: AppColors.primaryGreen));
     }
     if (_error != null) {
       return _Message(icon: Icons.cloud_off, title: _error!, action: TextButton(onPressed: _load, child: const Text(LfgStrings.retry)));
     }
-    if (_items.isEmpty) {
+    if (count == 0) {
       return RefreshIndicator(
         onRefresh: _load,
-        child: ListView(children: const [
-          SizedBox(height: 60),
-          _Message(icon: Icons.search_off, title: LfgStrings.emptyFeed, subtitle: LfgStrings.emptyFeedHint),
+        child: ListView(children: [
+          const SizedBox(height: 60),
+          _showRecommended
+              ? const _Message(
+                  icon: Icons.auto_awesome,
+                  title: LfgStrings.recommendedEmpty,
+                  subtitle: LfgStrings.recommendedEmptyHint,
+                )
+              : const _Message(icon: Icons.search_off, title: LfgStrings.emptyFeed, subtitle: LfgStrings.emptyFeedHint),
         ]),
       );
     }
@@ -331,8 +416,21 @@ class _LfgFeedViewState extends State<LfgFeedView> {
       onRefresh: _load,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _items.length,
+        itemCount: count,
         itemBuilder: (context, index) {
+          if (_showRecommended) {
+            final rec = _recommendations[index];
+            return LfgMatchCard(
+              match: rec.match,
+              now: now,
+              myUserId: _myId,
+              distanceKm: rec.distanceKm,
+              matchScore: rec.score,
+              reasons: rec.reasons,
+              onTap: () => _openDetail(context, rec.match, widget.onChanged),
+              onClaim: () => _claim(rec.match),
+            );
+          }
           final item = _items[index];
           return LfgMatchCard(
             match: item.match,
@@ -343,6 +441,86 @@ class _LfgFeedViewState extends State<LfgFeedView> {
             onClaim: () => _claim(item.match),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Bộ lọc thêm của bảng tin: trình độ kèo, giá mỗi người tối đa.
+class _FilterSheet extends StatefulWidget {
+  final SkillLevel? skill;
+  final int? maxPrice;
+
+  const _FilterSheet({this.skill, this.maxPrice});
+
+  static const List<int?> prices = [null, 50000, 100000, 150000, 200000];
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late SkillLevel? _skill = widget.skill;
+  late int? _maxPrice = widget.maxPrice;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(LfgStrings.filters, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            const Text(LfgStrings.filterSkill, style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text(LfgStrings.anySkill),
+                  selected: _skill == null,
+                  onSelected: (_) => setState(() => _skill = null),
+                ),
+                for (final l in SkillLevel.values)
+                  ChoiceChip(label: Text(l.label), selected: _skill == l, onSelected: (_) => setState(() => _skill = l)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(LfgStrings.filterMaxPrice, style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final p in _FilterSheet.prices)
+                  ChoiceChip(
+                    label: Text(p == null ? LfgStrings.noPriceLimit : Formatters.vnd(p)),
+                    selected: _maxPrice == p,
+                    onSelected: (_) => setState(() => _maxPrice = p),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, (skill: null, maxPrice: null)),
+                  child: const Text(LfgStrings.clearFilters),
+                ),
+                const Spacer(),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, (skill: _skill, maxPrice: _maxPrice)),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white),
+                  child: const Text(LfgStrings.applyFilters),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

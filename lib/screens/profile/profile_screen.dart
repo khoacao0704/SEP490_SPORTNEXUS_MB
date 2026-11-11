@@ -5,6 +5,8 @@ import '../../core/constants/fair_play_rules.dart';
 import '../../core/strings/profile_strings.dart';
 import '../../core/strings/review_strings.dart';
 import '../../core/strings/team_strings.dart';
+import '../../core/strings/rating_strings.dart';
+import '../../core/strings/survey_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
 import '../../core/strings/wallet_strings.dart';
 import '../../core/utils/formatters.dart';
@@ -16,6 +18,7 @@ import '../../models/app_user.dart';
 import '../../widgets/profile/user_avatar.dart';
 import '../booking/split_payments_screen.dart';
 import '../fair_play/fair_play_screen.dart';
+import '../rating/my_elo_screen.dart';
 import '../review/my_reviews_screen.dart';
 import '../review/pending_reviews_screen.dart';
 import '../team/my_teams_screen.dart';
@@ -23,6 +26,7 @@ import '../wallet/transaction_history_screen.dart';
 import '../wallet/withdraw_screen.dart';
 import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
+import 'player_survey_screen.dart';
 import 'top_up_wallet_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -142,6 +146,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               highlight: _pendingReviews > 0,
             ),
             _menuTile(
+              icon: Icons.sports_handball_outlined,
+              title: SurveyStrings.profileMenu,
+              screen: const PlayerSurveyScreen(),
+            ),
+            _menuTile(
+              icon: Icons.emoji_events_outlined,
+              title: RatingStrings.profileMenu,
+              screen: const MyEloScreen(),
+            ),
+            _menuTile(
               icon: Icons.verified_user_outlined,
               title: ReviewStrings.fairPlayTitle,
               screen: const FairPlayScreen(),
@@ -217,7 +231,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               if (user.username.isNotEmpty)
                 Text('@${user.username}', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+              if (user.bio.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  user.bio,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, color: AppColors.textMain, height: 1.3),
+                ),
+              ],
               const SizedBox(height: 4),
+              Text(
+                ProfileStrings.matchesPlayed(user.matchesPlayed),
+                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 2),
               InkWell(
                 onTap: () => _openAndReload(const FairPlayScreen()),
                 child: Row(
@@ -225,9 +253,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     Icon(Icons.star, color: FairPlayRules.canJoinLfg(fairPlay) ? Colors.amber : Colors.red, size: 16),
                     const SizedBox(width: 4),
-                    Text(
-                      ReviewStrings.scoreLabel(fairPlay),
-                      style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold),
+                    Flexible(
+                      child: Text(
+                        ReviewStrings.scoreLabel(fairPlay),
+                        style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold),
+                      ),
                     ),
                     const Icon(Icons.chevron_right, size: 16, color: AppColors.textSecondary),
                   ],
@@ -270,7 +300,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Icon(Icons.account_balance_wallet, color: Colors.white),
               SizedBox(width: 8),
-              Text('SportNexus Escrow Wallet', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              Expanded(
+                child: Text(
+                  'SportNexus Escrow Wallet',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -301,21 +338,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () =>
-                      _openWalletAction(AppRepositories.wallet.supportsWithdrawal, const WithdrawScreen()),
-                  icon: const Icon(Icons.arrow_upward, color: Colors.white),
-                  label: const Text('Rút tiền', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.white),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+              // BE chỉ cho Chủ sân rút tiền: ví người chơi không có nút Rút tiền.
+              if (AppRepositories.wallet.supportsWithdrawal) ...[
+                const SizedBox(width: 16),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openWalletAction(true, const WithdrawScreen()),
+                    icon: const Icon(Icons.arrow_upward, color: Colors.white),
+                    label: const Text('Rút tiền', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
-          )
+          ),
+          if (!AppRepositories.wallet.supportsWithdrawal) ...[
+            const SizedBox(height: 10),
+            const Text(WalletStrings.playerWalletNote, style: TextStyle(color: Colors.white70, fontSize: 12)),
+          ],
         ],
       ),
     );

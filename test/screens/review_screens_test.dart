@@ -4,7 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/review_strings.dart';
 import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
+import 'package:test1/data/mock/mock_rating_repository.dart';
 import 'package:test1/data/mock/mock_review_repository.dart';
+import 'package:test1/models/sport_rating.dart';
 import 'package:test1/models/review.dart';
 import 'package:test1/screens/fair_play/fair_play_screen.dart';
 import 'package:test1/screens/review/pending_reviews_screen.dart';
@@ -17,6 +19,7 @@ import 'package:test1/widgets/review/fair_play_guard.dart';
 
 void main() {
   late MockReviewRepository review;
+  late MockRatingRepository rating;
 
   Future<void> loginAs(String identifier) =>
       MockAuthRepository(latency: Duration.zero).login(identifier, 'Player@123');
@@ -25,6 +28,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     review = MockReviewRepository(latency: Duration.zero);
     AppRepositories.review = review;
+    rating = MockRatingRepository();
+    AppRepositories.rating = rating;
     await loginAs('player@sportnexus.vn');
   });
 
@@ -58,6 +63,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(ReviewTag.onTime.label));
     await tester.pumpAndSettle();
+    // Nhận xét trình độ Minh Tuấn: mạnh hơn khai báo.
+    await tester.ensureVisible(find.widgetWithText(ChoiceChip, SkillVerdict.higher.label).first);
+    await tester.tap(find.widgetWithText(ChoiceChip, SkillVerdict.higher.label).first);
+    await tester.pumpAndSettle();
 
     await tester.tap(submit);
     await tester.pumpAndSettle();
@@ -67,6 +76,7 @@ void main() {
 
     expect(find.byType(PendingReviewsScreen), findsOneWidget);
     expect(find.text(ReviewStrings.submitted), findsOneWidget);
+    expect(rating.sentFeedback.single.verdict, SkillVerdict.higher);
     expect(find.textContaining(ReviewStrings.playerCount(2)), findsOneWidget);
 
     // Mở lại: sân đã đánh giá, chỉ còn 2 người chưa chấm.

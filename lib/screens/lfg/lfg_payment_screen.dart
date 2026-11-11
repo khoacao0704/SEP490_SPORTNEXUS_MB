@@ -10,6 +10,7 @@ import '../../models/court_type.dart';
 import '../../models/lfg_match.dart';
 import '../../models/sport.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/common/onboarding_required.dart';
 import '../../widgets/facility/sport_icon.dart';
 import '../wallet/vietqr_payment_screen.dart';
 
@@ -151,6 +152,10 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
       _done = true;
       if (mounted) Navigator.pop(context, match);
     } on LfgException catch (e) {
+      if (mounted && await handleOnboardingRequired(context, e)) {
+        if (mounted) setState(() => _isPaying = false);
+        return;
+      }
       _fail(e.message);
     } on WalletException catch (e) {
       _fail(e.message);
@@ -299,17 +304,26 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
                   ],
                 ),
               ),
-              ElevatedButton(
-                onPressed: _isPaying || _secondsLeft == 0 ? null : _pay,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryGreen,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              const SizedBox(width: 8),
+              // Flexible: chữ to trên máy hẹp thì nút co lại thay vì đẩy tràn số tiền.
+              Flexible(
+                child: ElevatedButton(
+                  onPressed: _isPaying || _secondsLeft == 0 ? null : _pay,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryGreen,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: _isPaying
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text(
+                          LfgStrings.confirmPay,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                 ),
-                child: _isPaying
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text(LfgStrings.confirmPay, style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           ),

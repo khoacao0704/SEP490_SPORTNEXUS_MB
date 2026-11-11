@@ -457,9 +457,11 @@ class _FacilitySearchScreenState extends State<FacilitySearchScreen> {
             if (index == 0) {
               return Row(
                 children: [
-                  Text(
-                    FacilityStrings.resultCount(_total < _results.length ? _results.length : _total),
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                  Flexible(
+                    child: Text(
+                      FacilityStrings.resultCount(_total < _results.length ? _results.length : _total),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                    ),
                   ),
                   if (_isLoading) ...[
                     const SizedBox(width: 8),

@@ -3,6 +3,7 @@ import '../../core/strings/lfg_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/geo_utils.dart';
 import '../../models/lfg_match.dart';
+import '../../models/player_survey.dart' show SkillLevel;
 import '../../theme/app_colors.dart';
 import '../facility/sport_icon.dart';
 
@@ -120,6 +121,10 @@ class LfgMatchCard extends StatelessWidget {
   /// `null` thì không hiện nút Flash Claim (vd. ở "Kèo của tôi").
   final VoidCallback? onClaim;
 
+  /// Kèo gợi ý: điểm phù hợp 0–100 và lý do (BE tính).
+  final int? matchScore;
+  final List<String> reasons;
+
   const LfgMatchCard({
     super.key,
     required this.match,
@@ -128,6 +133,8 @@ class LfgMatchCard extends StatelessWidget {
     this.myUserId,
     this.distanceKm,
     this.onClaim,
+    this.matchScore,
+    this.reasons = const [],
   });
 
   @override
@@ -201,10 +208,22 @@ class LfgMatchCard extends StatelessWidget {
                   ],
                 ),
                 const Divider(height: 20, color: AppColors.divider),
-                Text(
-                  match.formatLabel,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textMain),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      match.formatLabel,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textMain),
+                    ),
+                    if (match.skillLevel != null) LfgSkillChip(level: match.skillLevel!),
+                  ],
                 ),
+                if (matchScore != null || reasons.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  LfgReasons(score: matchScore, reasons: reasons),
+                ],
                 const SizedBox(height: 6),
                 _infoRow(
                   Icons.location_on_outlined,
@@ -231,32 +250,49 @@ class LfgMatchCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          LfgStrings.depositPerSlot,
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
-                        ),
-                        Text(
-                          Formatters.vnd(match.depositPerSlot),
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
-                        ),
-                      ],
+                    // Giá co lại theo chỗ trống, nút Flash Claim luôn đủ chỗ (máy hẹp / chữ to).
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            LfgStrings.depositPerSlot,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                          ),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              Formatters.vnd(match.depositPerSlot),
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     if (isMine || joined)
                       _badge(isMine ? LfgStrings.yourMatch : LfgStrings.joined)
                     else if (onClaim != null && match.isClaimable(now))
-                      ElevatedButton.icon(
-                        onPressed: onClaim,
-                        icon: const Icon(Icons.flash_on, size: 16, color: Colors.white),
-                        label: const Text(LfgStrings.flashClaim, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.authPrimary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      // Flexible: chữ rất to trên máy hẹp thì nút co lại (chữ "…") thay vì tràn.
+                      Flexible(
+                        child: ElevatedButton.icon(
+                          onPressed: onClaim,
+                          icon: const Icon(Icons.flash_on, size: 16, color: Colors.white),
+                          label: const Text(
+                            LfgStrings.flashClaim,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.authPrimary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
                         ),
                       )
                     else
@@ -324,4 +360,48 @@ class LfgMatchCard extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Nhãn trình độ của kèo.
+class LfgSkillChip extends StatelessWidget {
+  final SkillLevel level;
+
+  const LfgSkillChip({super.key, required this.level});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(color: AppColors.tagPurpleBg, borderRadius: BorderRadius.circular(10)),
+    child: Text(
+      LfgStrings.skillTag(level.label),
+      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.tagPurpleText),
+    ),
+  );
+}
+
+/// Điểm phù hợp + lý do gợi ý kèo.
+class LfgReasons extends StatelessWidget {
+  final int? score;
+  final List<String> reasons;
+
+  const LfgReasons({super.key, this.score, this.reasons = const []});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(color: AppColors.lightGreen, borderRadius: BorderRadius.circular(8)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (score != null)
+          Text(
+            LfgStrings.matchScore(score!),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.darkGreen),
+          ),
+        for (final r in reasons.take(3))
+          Text('• $r', style: const TextStyle(fontSize: 12, color: AppColors.textMain)),
+      ],
+    ),
+  );
 }

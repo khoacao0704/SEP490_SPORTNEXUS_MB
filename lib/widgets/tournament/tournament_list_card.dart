@@ -110,7 +110,12 @@ class TournamentListCard extends StatelessWidget {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              [t.sportLabel, t.facilityName].where((s) => s.isNotEmpty).join(' • '),
+                              [
+                                t.sportLabel,
+                                ?t.tier?.label,
+                                ?t.purpose?.label,
+                                t.facilityName,
+                              ].where((s) => s.isNotEmpty).join(' • '),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
@@ -120,20 +125,19 @@ class TournamentListCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Icon(Icons.event_outlined, size: 16, color: AppColors.textSecondary),
                           const SizedBox(width: 6),
-                          Text(
-                            PlayerTournamentStrings.dateRange(t.startDate, t.endDate),
-                            style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                          ),
-                          if (t.divisionCount > 1) ...[
-                            const Text('  •  ', style: TextStyle(color: AppColors.textSecondary)),
-                            Text(
-                              PlayerTournamentStrings.divisionCount(t.divisionCount),
+                          Expanded(
+                            child: Text(
+                              [
+                                PlayerTournamentStrings.dateRange(t.startDate, t.endDate),
+                                if (t.divisionCount > 1) PlayerTournamentStrings.divisionCount(t.divisionCount),
+                              ].join('  •  '),
                               style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
                             ),
-                          ],
+                          ),
                         ],
                       ),
                       if (t.isRegistrationOpen && t.registrationDeadline != null) ...[

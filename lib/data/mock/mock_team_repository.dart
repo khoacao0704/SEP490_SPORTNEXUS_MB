@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/strings/team_strings.dart';
+import '../../models/sport.dart';
 import '../../models/team.dart';
 import '../repositories/team_repository.dart';
 import 'mock_auth_repository.dart';
@@ -43,13 +44,19 @@ class MockTeamRepository implements TeamRepository {
   }
 
   @override
-  Future<Team> createTeam({required String name, String description = '', List<String> invitePhones = const []}) async {
+  Future<Team> createTeam({
+    required String name,
+    required Sport sport,
+    String description = '',
+    List<String> invitePhones = const [],
+  }) async {
     final me = await _me();
     if (name.trim().isEmpty) throw const TeamException(TeamStrings.nameRequired);
     final team = Team(
       id: 'team-${++_seq}-${_now().microsecondsSinceEpoch}',
       name: name.trim(),
       description: description.trim(),
+      sport: sport,
       captainId: me.id,
       captainName: me.name,
       createdAt: _now(),
@@ -64,10 +71,10 @@ class MockTeamRepository implements TeamRepository {
   }
 
   @override
-  Future<Team> updateTeam(String teamId, {required String name, String description = ''}) async {
+  Future<Team> updateTeam(String teamId, {required String name, String description = '', Sport? sport}) async {
     final me = await _me();
     final team = _captainTeam(teamId, me.id);
-    return _replace(_copy(team, name: name.trim(), description: description.trim()));
+    return _replace(_copy(team, name: name.trim(), description: description.trim(), sport: sport));
   }
 
   @override
@@ -178,6 +185,7 @@ class MockTeamRepository implements TeamRepository {
       Team(
         id: 'team-pickle-q7',
         name: 'Pickleball Q7',
+        sport: Sport.pickleball,
         description: 'Chơi tối thứ 3, 5 ở Eco Sport.',
         captainId: 'u-player-001',
         captainName: 'Khoa Cao',
@@ -190,6 +198,7 @@ class MockTeamRepository implements TeamRepository {
       Team(
         id: 'team-cl-govap',
         name: 'Cầu Lông Gò Vấp',
+        sport: Sport.badminton,
         captainId: 'u-minhtuan',
         captainName: 'Minh Tuấn',
         createdAt: t.subtract(const Duration(days: 10)),
@@ -274,11 +283,15 @@ class MockTeamRepository implements TeamRepository {
     String? captainId,
     String? captainName,
     List<TeamMember>? members,
+    Sport? sport,
   }) => Team(
     id: t.id,
     name: name ?? t.name,
     description: description ?? t.description,
     logoUrl: logoUrl ?? t.logoUrl,
+    sport: sport ?? t.sport,
+    sportName: t.sportName,
+    skillLevel: t.skillLevel,
     captainId: captainId ?? t.captainId,
     captainName: captainName ?? t.captainName,
     createdAt: t.createdAt,

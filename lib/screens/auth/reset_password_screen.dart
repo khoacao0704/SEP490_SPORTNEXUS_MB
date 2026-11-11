@@ -24,6 +24,19 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
 
+  bool get _canSubmit =>
+      Validators.password(_passwordController.text) == null &&
+      Validators.confirmPassword(() => _passwordController.text)(_confirmPasswordController.text) == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _passwordController.addListener(_refresh);
+    _confirmPasswordController.addListener(_refresh);
+  }
+
+  void _refresh() => setState(() {});
+
   @override
   void dispose() {
     _passwordController.dispose();
@@ -62,7 +75,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               controller: _passwordController,
               validator: Validators.password,
               isPassword: true,
-              helperText: AuthStrings.passwordRule,
+              showPasswordChecklist: true,
               autofillHints: const [AutofillHints.newPassword],
             ),
             const SizedBox(height: 16),
@@ -71,6 +84,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               hint: AuthStrings.confirmPasswordHint,
               controller: _confirmPasswordController,
               validator: Validators.confirmPassword(() => _passwordController.text),
+              revalidateOn: _passwordController,
               isPassword: true,
               textInputAction: TextInputAction.done,
               onFieldSubmitted: (_) => _handleReset(),
@@ -79,7 +93,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             AuthPrimaryButton(
               label: AuthStrings.resetButton,
               isLoading: _isLoading,
-              onPressed: _handleReset,
+              onPressed: _canSubmit ? _handleReset : null,
               trailingIcon: null,
             ),
           ],

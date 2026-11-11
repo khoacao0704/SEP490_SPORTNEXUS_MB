@@ -4,6 +4,7 @@ import 'core/strings/api_strings.dart';
 import 'data/app_repositories.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/splash_screen.dart';
+import 'widgets/common/system_bottom_inset.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<ScaffoldMessengerState> appMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -44,6 +45,8 @@ class SportNexusApp extends StatelessWidget {
       navigatorKey: appNavigatorKey,
       scaffoldMessengerKey: appMessengerKey,
       debugShowCheckedModeBanner: false,
+      // Mọi màn hình kết thúc phía trên thanh điều hướng Android (không bị che nội dung cuối).
+      builder: (context, child) => SystemBottomInset(child: child ?? const SizedBox.shrink()),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF139C4F)),
         useMaterial3: true,

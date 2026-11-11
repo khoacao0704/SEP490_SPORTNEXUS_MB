@@ -11,9 +11,12 @@ import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/ai_chat/ai_suggestion_cards.dart';
 import '../../widgets/facility/slot_picker.dart';
+import '../../widgets/review/fair_play_guard.dart';
 import '../booking/booking_checkout_screen.dart';
 import '../facility/facility_detail_screen.dart';
+import '../lfg/create_lfg_match_screen.dart';
 import '../lfg/lfg_match_detail_screen.dart';
+import '../tournament/tournament_detail_screen.dart';
 import 'ai_sessions_screen.dart';
 
 /// Một dòng trong khung chat: tin nhắn kèm trạng thái gửi lỗi (tin lỗi không được BE lưu).
@@ -219,6 +222,34 @@ class _AiChatScreenState extends State<AiChatScreen> {
     }
   }
 
+  /// Mở màn tạo kèo với sân + ca AI gợi ý chọn sẵn (không gọi /ai/messages/{id}/lfg vì API đó trừ tiền ngay).
+  Future<void> _createLfg(AiMessage m, AiFacilitySuggestion facility, AiSlot s) async {
+    final sport = facility.sport;
+    if (sport == null) {
+      _snack(AiChatStrings.sportUnsupported);
+      return;
+    }
+    if (!await ensureCanJoinLfg(context) || !mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateLfgMatchScreen(
+          preset: LfgCreatePreset(
+            sport: sport,
+            facilityId: facility.facilityId,
+            courtSlotId: s.courtSlotId,
+            start: s.start,
+            slotsNeeded: m.slotsNeeded,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openTournament(AiTournamentSuggestion t) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => TournamentDetailScreen(tournamentId: t.tournamentId)));
+  }
+
   void _openMatch(AiLfgSuggestion card) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => LfgMatchDetailScreen(matchId: card.lfgCardId)));
   }
@@ -244,15 +275,24 @@ class _AiChatScreenState extends State<AiChatScreen> {
               child: Icon(Icons.smart_toy, color: Colors.white),
             ),
             SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  AiChatStrings.title,
-                  style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                Text(AiChatStrings.subtitle, style: TextStyle(color: AppColors.primaryGreen, fontSize: 12)),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    AiChatStrings.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  Text(
+                    AiChatStrings.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: AppColors.primaryGreen, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -347,12 +387,21 @@ class _AiChatScreenState extends State<AiChatScreen> {
         children: [
           _botBubble(m.displayText),
           for (final f in m.facilities)
-            AiFacilityCard(facility: f, onSlot: (s) => _bookSlot(f, s), onView: () => _viewFacility(f)),
+            AiFacilityCard(
+              facility: f,
+              // Ý định mở kèo: ca bấm vào dùng để tạo kèo (không đặt sân thường).
+              onSlot: (s) => m.wantsCreateLfg ? _createLfg(m, f, s) : _bookSlot(f, s),
+              onView: () => _viewFacility(f),
+            ),
           for (final c in m.lfgCards) AiLfgCard(card: c, onTap: () => _openMatch(c)),
+          for (final t in m.tournaments) AiTournamentCard(tournament: t, onTap: () => _openTournament(t)),
           if (m.facilities.isNotEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 6),
-              child: Text(AiChatStrings.staleNote, style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                m.wantsCreateLfg ? '${AiChatStrings.createLfgNote}\n${AiChatStrings.staleNote}' : AiChatStrings.staleNote,
+                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
             ),
         ],
       ),

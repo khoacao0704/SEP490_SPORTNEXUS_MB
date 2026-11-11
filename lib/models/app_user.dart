@@ -19,6 +19,12 @@ class AppUser {
   final bool hasPassword;
   final DateTime? createdAt;
 
+  /// Giới thiệu bản thân (tối đa 500 ký tự).
+  final String bio;
+
+  /// Số trận đã chơi (BE tính theo số lần check-in).
+  final int matchesPlayed;
+
   const AppUser({
     required this.id,
     this.username = '',
@@ -31,6 +37,8 @@ class AppUser {
     this.isPhoneVerified = false,
     this.hasPassword = true,
     this.createdAt,
+    this.bio = '',
+    this.matchesPlayed = 0,
   });
 
   /// Tài khoản tạo bằng Google / Facebook chưa có SĐT (BE: login trả null, /auth/me trả "") → phải thêm SĐT.
@@ -60,6 +68,8 @@ class AppUser {
       isPhoneVerified: json['isPhoneVerified'] as bool? ?? false,
       hasPassword: json['hasPassword'] as bool? ?? true,
       createdAt: json['createdAt'] == null ? null : DateTime.tryParse(json['createdAt'] as String)?.toLocal(),
+      bio: json['bio'] as String? ?? '',
+      matchesPlayed: (json['matchesPlayed'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -78,21 +88,33 @@ class AppUser {
       isPhoneVerified: json['isPhoneVerified'] as bool? ?? false,
       hasPassword: json['hasPassword'] as bool? ?? true,
       createdAt: createdAt == null ? null : DateTime.tryParse(createdAt)?.toLocal(),
+      bio: json['bio'] as String? ?? '',
+      matchesPlayed: (json['matchesPlayed'] as num?)?.toInt() ?? 0,
     );
   }
 
-  AppUser copyWith({String? fullName, String? avatarUrl, bool clearAvatar = false, bool? hasPassword}) => AppUser(
+  AppUser copyWith({
+    String? fullName,
+    String? username,
+    String? bio,
+    String? phone,
+    String? avatarUrl,
+    bool clearAvatar = false,
+    bool? hasPassword,
+  }) => AppUser(
         id: id,
-        username: username,
+        username: username ?? this.username,
         fullName: fullName ?? this.fullName,
         email: email,
-        phone: phone,
+        phone: phone ?? this.phone,
         role: role,
         fairPlayScore: fairPlayScore,
         avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
         isPhoneVerified: isPhoneVerified,
         hasPassword: hasPassword ?? this.hasPassword,
         createdAt: createdAt,
+        bio: bio ?? this.bio,
+        matchesPlayed: matchesPlayed,
       );
 
   Map<String, dynamic> toJson() => {
@@ -107,5 +129,7 @@ class AppUser {
         'isPhoneVerified': isPhoneVerified,
         'hasPassword': hasPassword,
         'createdAt': createdAt?.toUtc().toIso8601String(),
+        'bio': bio,
+        'matchesPlayed': matchesPlayed,
       };
 }

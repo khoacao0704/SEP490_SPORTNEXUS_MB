@@ -101,16 +101,16 @@ class TransactionTile extends StatelessWidget {
             ? AppColors.primaryGreen
             : AppColors.textMain;
 
+    // Icon nhỏ, không nền tròn: tiền vào / ra phân biệt bằng dấu và màu của số tiền.
+    // Nhãn trạng thái chỉ hiện khi khác "Thành công" (đang xử lý, thất bại, đã hủy...).
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: CircleAvatar(
-        backgroundColor: tx.type.isCredit ? AppColors.lightGreen : AppColors.background,
-        child: Icon(
-          transactionIcon(tx.type),
-          size: 20,
-          color: tx.type.isCredit ? AppColors.primaryGreen : AppColors.textSecondary,
-        ),
+      horizontalTitleGap: 12,
+      minLeadingWidth: 28,
+      leading: SizedBox(
+        width: 28,
+        child: Icon(transactionIcon(tx.type), size: 22, color: AppColors.textSecondary),
       ),
       title: Text(
         tx.description,
@@ -135,11 +135,13 @@ class TransactionTile extends StatelessWidget {
               decoration: inactive ? TextDecoration.lineThrough : null,
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            transactionStatusLabel(tx),
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: transactionStatusColor(tx.status)),
-          ),
+          if (tx.status != TransactionStatus.success) ...[
+            const SizedBox(height: 2),
+            Text(
+              transactionStatusLabel(tx),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: transactionStatusColor(tx.status)),
+            ),
+          ],
         ],
       ),
     );

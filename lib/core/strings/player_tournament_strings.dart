@@ -52,6 +52,41 @@ class PlayerTournamentStrings {
   static const String full = 'Hết suất';
   static const String bracket = 'Sơ đồ thi đấu';
   static const String bracketEmpty = 'Chưa bốc thăm. Sơ đồ sẽ hiện khi ban tổ chức xếp cặp.';
+  static const String matchesTab = 'Các trận';
+  static const String standingsTab = 'Bảng xếp hạng';
+  static String groupHeading(String group) => group.toLowerCase().startsWith('bảng') ? group : 'Bảng $group';
+  static const String standingName = 'Đội / VĐV';
+  static const String standingPlayed = 'Tr';
+  static const String standingRecord = 'T-H-B';
+  static const String standingDiff = 'HS';
+  static const String standingPoints = 'Đ';
+
+  // Cấp độ / mục đích / lời mời giải nội bộ
+  static const String inviteOnlyNote = 'Giải nội bộ: chỉ tham gia được qua lời mời của Ban tổ chức.';
+  static const String invitationsTitle = 'Lời mời tham gia giải';
+  static String invitationsBanner(int n) => 'Bạn có $n lời mời tham gia giải';
+  static const String noInvitations = 'Chưa có lời mời nào';
+  static String invitedBy(String name) => 'Ban tổ chức: $name';
+  static String invitedTeam(String team) => 'Mời đội: $team';
+  static String entryFeeLabel(String fee) => 'Lệ phí: $fee';
+  static const String free = 'Miễn phí';
+  static const String acceptInvite = 'Nhận lời';
+  static const String declineInvite = 'Từ chối';
+  static const String confirmAcceptTitle = 'Nhận lời tham gia giải?';
+  static String confirmAcceptMessage(String fee) => 'Nhận lời là đăng ký chính thức. Lệ phí $fee sẽ được tạm giữ trong ví của bạn.';
+  static const String acceptedInvite = 'Đã nhận lời, bạn đã được đăng ký vào giải';
+
+  // Nhận xét trình độ sau trận giải
+  static const String feedbackButton = 'Nhận xét trình độ';
+  static const String feedbackTitle = 'Nhận Xét Trình Độ';
+  static const String feedbackNote =
+      'Trình độ thực tế so với Elo hiện tại của từng người (trong 72 giờ sau trận, không bắt buộc). '
+      '3 người cùng nhận xét lệch một phía thì Elo người đó được điều chỉnh.';
+  static const String feedbackNoPlayers = 'Không tìm thấy người cùng trận để nhận xét.';
+  static const String teammate = 'Đồng đội';
+  static const String feedbackSend = 'GỬI NHẬN XÉT';
+  static const String feedbackSent = 'Đã gửi nhận xét trình độ';
+  static const String declinedInvite = 'Đã từ chối lời mời';
   static const String ticket = 'Vé QR';
   static const String withdraw = 'Rút đăng ký';
   static const String checkedIn = 'Đã check-in';

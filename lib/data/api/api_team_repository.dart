@@ -1,6 +1,9 @@
+import '../../core/strings/team_strings.dart';
+import '../../models/sport.dart';
 import '../../models/team.dart';
 import '../repositories/team_repository.dart';
 import 'api_client.dart';
+import 'api_facility_repository.dart';
 
 /// Đội qua BE. Đội trưởng là `createdById`; BE không trả vai trò của từng người.
 class ApiTeamRepository implements TeamRepository {
@@ -20,7 +23,16 @@ class ApiTeamRepository implements TeamRepository {
 
   final ApiClient _api;
 
-  ApiTeamRepository({required this._api});
+  /// categoryId của môn trên BE (danh mục môn do Admin tạo, ghép với môn của app theo tên).
+  final Future<String?> Function(Sport sport) _categoryIdOf;
+
+  ApiTeamRepository({required this._api, required this._categoryIdOf});
+
+  Future<String> _requireCategoryId(Sport sport) async {
+    final id = await _categoryIdOf(sport);
+    if (id == null) throw const TeamException(TeamStrings.sportUnavailable);
+    return id;
+  }
 
   @override
   Future<List<Team>> getMyTeams() async {
@@ -39,12 +51,19 @@ class ApiTeamRepository implements TeamRepository {
   }
 
   @override
-  Future<Team> createTeam({required String name, String description = '', List<String> invitePhones = const []}) async {
+  Future<Team> createTeam({
+    required String name,
+    required Sport sport,
+    String description = '',
+    List<String> invitePhones = const [],
+  }) async {
+    final categoryId = await _requireCategoryId(sport);
     final data = await _call(
       () => _api.post(
         teamsPath,
         body: {
           'name': name.trim(),
+          'sportCategoryId': categoryId,
           if (description.trim().isNotEmpty) 'description': description.trim(),
           if (invitePhones.isNotEmpty) 'memberPhones': invitePhones,
         },
@@ -54,8 +73,18 @@ class ApiTeamRepository implements TeamRepository {
   }
 
   @override
-  Future<Team> updateTeam(String teamId, {required String name, String description = ''}) async {
-    await _call(() => _api.put(teamPath(teamId), body: {'name': name.trim(), 'description': description.trim()}));
+  Future<Team> updateTeam(String teamId, {required String name, String description = '', Sport? sport}) async {
+    final categoryId = sport == null ? null : await _requireCategoryId(sport);
+    await _call(
+      () => _api.put(
+        teamPath(teamId),
+        body: {
+          'name': name.trim(),
+          'description': description.trim(),
+          'sportCategoryId': ?categoryId,
+        },
+      ),
+    );
     return getTeam(teamId);
   }
 
@@ -147,6 +176,9 @@ class ApiTeamRepository implements TeamRepository {
       name: _str(m['name']),
       description: _str(m['description']),
       logoUrl: _opt(m['logoUrl']),
+      sport: ApiFacilityRepository.sportFromName(_opt(m['sportName'])),
+      sportName: _str(m['sportName']),
+      skillLevel: _str(m['skillLevel']),
       captainId: captainId,
       captainName: captainName,
       createdAt: _date(m['createAt'] ?? m['createdAt']),
@@ -187,7 +219,7 @@ class ApiTeamRepository implements TeamRepository {
     try {
       return await request();
     } on ApiException catch (e) {
-      throw TeamException(e.message);
+      throw TeamException.fromApi(e);
     }
   }
 }
