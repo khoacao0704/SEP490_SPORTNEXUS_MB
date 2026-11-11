@@ -56,6 +56,8 @@ class TournamentListItem {
   final String name;
   final String? imageUrl;
   final TournamentPhase phase;
+  final TournamentTier? tier;
+  final TournamentPurpose? purpose;
   final bool isPromoted;
   final String facilityId;
   final String facilityName;
@@ -75,6 +77,8 @@ class TournamentListItem {
     required this.name,
     this.imageUrl,
     required this.phase,
+    this.tier,
+    this.purpose,
     this.isPromoted = false,
     required this.facilityId,
     required this.facilityName,
@@ -89,6 +93,9 @@ class TournamentListItem {
   });
 
   String get sportLabel => sport?.label ?? sportName;
+
+  /// Giải nội bộ: chỉ tham gia qua lời mời của Ban tổ chức.
+  bool get isInviteOnly => purpose == TournamentPurpose.internal;
 }
 
 class TournamentPrizeItem {
@@ -215,12 +222,19 @@ class SetScore {
   const SetScore({required this.set, required this.a, required this.b, this.isTiebreak = false});
 }
 
-/// Một trận trong sơ đồ loại trực tiếp. Hai bên chỉ có tên ("TBD" khi chưa xác định).
+/// Một trận trong sơ đồ (vòng bảng hoặc loại trực tiếp). Hai bên chỉ có tên ("TBD" khi chưa xác định).
 class BracketMatch {
   final String id;
   final int index;
   final String roundName;
   final String status;
+
+  /// Vòng bảng (GROUP) hay loại trực tiếp (KNOCKOUT).
+  final MatchStage stage;
+
+  /// Tên bảng ở vòng bảng ("Bảng A"); rỗng ở loại trực tiếp.
+  final String groupName;
+  final MatchResultType resultType;
   final DateTime? start;
   final DateTime? end;
   final String courtName;
@@ -234,6 +248,9 @@ class BracketMatch {
     required this.index,
     required this.roundName,
     this.status = 'SCHEDULED',
+    this.stage = MatchStage.knockout,
+    this.groupName = '',
+    this.resultType = MatchResultType.normal,
     this.start,
     this.end,
     this.courtName = '',
@@ -245,7 +262,9 @@ class BracketMatch {
 
   static const String unknownSide = 'TBD';
 
-  bool get isFinished => winner != null && winner!.isNotEmpty && winner != unknownSide;
+  bool get isDraw => resultType == MatchResultType.draw;
+
+  bool get isFinished => isDraw || (winner != null && winner!.isNotEmpty && winner != unknownSide);
 }
 
 /// Một lượt đăng ký của tôi (kể cả khi đội của tôi đăng ký).
@@ -374,4 +393,181 @@ class TournamentPage {
   final bool hasMore;
 
   const TournamentPage({required this.items, required this.hasMore});
+}
+
+/// Cấp độ giải.
+enum TournamentTier {
+  amateur('AMATEUR', 'Nghiệp dư'),
+  semiPro('SEMI_PRO', 'Bán chuyên'),
+  pro('PRO', 'Chuyên nghiệp');
+
+  const TournamentTier(this.apiValue, this.label);
+
+  final String apiValue;
+  final String label;
+
+  static TournamentTier? fromApi(Object? v) => values.where((t) => t.apiValue == v?.toString().toUpperCase()).firstOrNull;
+}
+
+/// Mục đích giải. Giải nội bộ chỉ tham gia qua lời mời.
+enum TournamentPurpose {
+  exchange('EXCHANGE', 'Giao lưu'),
+  commercial('COMMERCIAL', 'Thương mại'),
+  development('DEVELOPMENT', 'Phát triển phong trào'),
+  internal('INTERNAL', 'Nội bộ');
+
+  const TournamentPurpose(this.apiValue, this.label);
+
+  final String apiValue;
+  final String label;
+
+  static TournamentPurpose? fromApi(Object? v) =>
+      values.where((p) => p.apiValue == v?.toString().toUpperCase()).firstOrNull;
+}
+
+enum MatchStage {
+  group,
+  knockout;
+
+  static MatchStage fromApi(Object? v) => v?.toString().toUpperCase() == 'GROUP' ? group : knockout;
+}
+
+/// Kiểu kết quả trận: bình thường, xử thắng (đối thủ vắng), bỏ cuộc giữa trận, hoà.
+enum MatchResultType {
+  normal('NORMAL', ''),
+  walkover('WALKOVER', 'Xử thắng'),
+  retired('RETIRED', 'Bỏ cuộc'),
+  draw('DRAW', 'Hoà');
+
+  const MatchResultType(this.apiValue, this.label);
+
+  final String apiValue;
+  final String label;
+
+  static MatchResultType fromApi(Object? v) =>
+      values.where((t) => t.apiValue == v?.toString().toUpperCase()).firstOrNull ?? normal;
+}
+
+/// Một dòng bảng xếp hạng vòng bảng.
+class StandingRow {
+  final int position;
+  final String name;
+  final int played;
+  final int won;
+  final int drawn;
+  final int lost;
+
+  /// Tổng bàn / điểm ghi được.
+  final int scored;
+
+  /// Hiệu số theo đơn vị của môn: bàn / điểm (bóng đá, bóng rổ) hoặc set (môn vợt). BE không trả số bị thủng.
+  final int difference;
+  final int points;
+
+  const StandingRow({
+    required this.position,
+    required this.name,
+    this.played = 0,
+    this.won = 0,
+    this.drawn = 0,
+    this.lost = 0,
+    this.scored = 0,
+    this.difference = 0,
+    this.points = 0,
+  });
+}
+
+/// Bảng xếp hạng của một bảng đấu ("Bảng A").
+class StandingGroup {
+  final String name;
+  final List<StandingRow> rows;
+
+  const StandingGroup({required this.name, required this.rows});
+}
+
+enum TournamentInvitationStatus {
+  pending('PENDING', 'Đang chờ'),
+  accepted('ACCEPTED', 'Đã nhận lời'),
+  declined('DECLINED', 'Đã từ chối'),
+  cancelled('CANCELLED', 'Đã bị thu hồi');
+
+  const TournamentInvitationStatus(this.apiValue, this.label);
+
+  final String apiValue;
+  final String label;
+
+  static TournamentInvitationStatus fromApi(Object? v) =>
+      values.where((s) => s.apiValue == v?.toString().toUpperCase()).firstOrNull ?? pending;
+}
+
+/// Lời mời Ban tổ chức gửi để tham gia giải nội bộ (mời cá nhân, hoặc mời đội qua đội trưởng).
+class TournamentInvitation {
+  final String id;
+
+  /// Bảng con được mời.
+  final String divisionId;
+  final String divisionName;
+  final String? tournamentId;
+  final String? tournamentName;
+  final DivisionType type;
+  final int entryFee;
+  final DateTime? startDate;
+  final DateTime? registrationDeadline;
+  final String? teamId;
+  final String? teamName;
+  final String invitedByName;
+  final String message;
+  final TournamentInvitationStatus status;
+  final DateTime? createdAt;
+
+  const TournamentInvitation({
+    required this.id,
+    required this.divisionId,
+    required this.divisionName,
+    this.tournamentId,
+    this.tournamentName,
+    required this.type,
+    this.entryFee = 0,
+    this.startDate,
+    this.registrationDeadline,
+    this.teamId,
+    this.teamName,
+    this.invitedByName = '',
+    this.message = '',
+    this.status = TournamentInvitationStatus.pending,
+    this.createdAt,
+  });
+
+  /// "Giải mẹ • Bảng con" (giải không có bảng con thì chỉ một tên).
+  String get title => tournamentName == null || tournamentName == divisionName
+      ? divisionName
+      : '$tournamentName • $divisionName';
+
+  bool get isPending => status == TournamentInvitationStatus.pending;
+}
+
+/// Một người thi đấu trong trận giải (tài khoản), dùng để nhận xét trình độ sau trận.
+class MatchPlayer {
+  /// Id tài khoản (gửi làm revieweeId).
+  final String userId;
+  final String name;
+
+  /// Tên bên thi đấu (tên đội hoặc tên người).
+  final String sideName;
+
+  /// Cùng bên với mình (đồng đội).
+  final bool isTeammate;
+
+  const MatchPlayer({required this.userId, required this.name, required this.sideName, this.isTeammate = false});
+}
+
+extension MyTournamentMatchX on MyTournamentMatch {
+  /// Nhận xét trình độ được trong 72 giờ sau khi trận kết thúc (BE kiểm tra lại theo giờ kết thúc thật).
+  static const Duration feedbackWindow = Duration(hours: 72);
+
+  bool canGiveFeedback(DateTime now) {
+    if (status.toUpperCase() != 'FINISHED') return false;
+    final endedAt = end ?? start;
+    return endedAt == null || now.isBefore(endedAt.add(feedbackWindow));
+  }
 }

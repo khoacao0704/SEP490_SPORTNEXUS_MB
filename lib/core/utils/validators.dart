@@ -1,5 +1,13 @@
 import '../strings/auth_strings.dart';
 
+/// Một điều kiện của mật khẩu: [label] hiện trong checklist, [test] = true khi đạt.
+class PasswordRule {
+  final String label;
+  final bool Function(String value) test;
+
+  const PasswordRule(this.label, this.test);
+}
+
 /// Các hàm kiểm tra dữ liệu nhập, dùng trực tiếp cho `TextFormField.validator`.
 /// Trả về `null` khi hợp lệ, ngược lại trả về thông báo lỗi.
 class Validators {
@@ -48,11 +56,24 @@ class Validators {
     return null;
   }
 
+  /// Bật khi BE bắt buộc ký tự đặc biệt. Swagger hiện chỉ ghi newPassword 6-64 ký tự (không đòi
+  /// ký tự đặc biệt), nên đang tắt để mobile không chặn mật khẩu mà BE / Web vẫn chấp nhận.
+  static const bool requireSpecialChar = false;
+  static const int passwordMaxLength = 64;
+  static final RegExp _hasSpecial = RegExp(r'[^A-Za-z0-9\s]');
+
+  /// Các điều kiện mật khẩu, theo thứ tự hiển thị trong checklist dưới ô mật khẩu.
+  static final List<PasswordRule> passwordRules = [
+    PasswordRule(AuthStrings.pwRuleLength, (v) => v.length >= 8),
+    PasswordRule(AuthStrings.pwRuleLetter, _hasLetter.hasMatch),
+    PasswordRule(AuthStrings.pwRuleDigit, _hasDigit.hasMatch),
+    if (requireSpecialChar) PasswordRule(AuthStrings.pwRuleSpecial, _hasSpecial.hasMatch),
+  ];
+
   static String? password(String? value) {
     if (value == null || value.isEmpty) return AuthStrings.requiredField;
-    if (value.length < 8 || !_hasLetter.hasMatch(value) || !_hasDigit.hasMatch(value)) {
-      return AuthStrings.invalidPassword;
-    }
+    if (value.length > passwordMaxLength) return AuthStrings.pwRuleMaxLength;
+    if (passwordRules.any((rule) => !rule.test(value))) return AuthStrings.passwordNotMet;
     return null;
   }
 

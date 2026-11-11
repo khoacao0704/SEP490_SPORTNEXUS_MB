@@ -16,6 +16,7 @@ import '../../models/wallet_transaction.dart';
 import '../repositories/lfg_repository.dart';
 import '../repositories/review_repository.dart';
 import '../repositories/wallet_repository.dart';
+import '../../models/player_survey.dart' show SkillLevel;
 import 'mock_auth_repository.dart';
 import 'mock_facility_data.dart';
 import 'mock_review_repository.dart';
@@ -63,6 +64,8 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
         .where((m) => query.sport == null || m.sport == query.sport)
         .where((m) => query.format == null || m.format == query.format)
         .where((m) => query.courtType == null || m.courtType == query.courtType)
+        .where((m) => query.skillLevel == null || m.skillLevel == null || m.skillLevel == query.skillLevel)
+        .where((m) => query.maxPricePerPerson == null || m.depositPerSlot <= query.maxPricePerPerson!)
         .map((m) => LfgFeedItem(
               match: m,
               distanceKm: query.userLocation == null ? null : GeoUtils.distanceKm(query.userLocation!, m.location),
@@ -70,6 +73,25 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
         .toList()
       ..sort((a, b) => a.match.start.compareTo(b.match.start));
     return items;
+  }
+
+  /// Gợi ý giả lập: kèo còn nhận người, không phải của mình; điểm giảm dần theo giờ chơi.
+  @override
+  Future<List<LfgRecommendation>> getRecommended({int limit = 20}) async {
+    await _delay();
+    final me = await _currentUser();
+    if (me == null) return const [];
+    final now = _now();
+    final open = (await _all(me.id)).where((m) => m.isClaimable(now) && !m.isMember(me.id)).toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+    return [
+      for (var i = 0; i < open.length && i < limit; i++)
+        LfgRecommendation(
+          match: open[i],
+          score: (90 - i * 7).clamp(10, 100),
+          reasons: ['Đúng môn bạn chơi: ${open[i].sport.label}', if (i == 0) 'Chủ kèo có điểm Fair Play cao'],
+        ),
+    ];
   }
 
   @override
@@ -164,6 +186,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     required Facility facility,
     required LfgFormat format,
     String note = '',
+    SkillLevel? skillLevel,
   }) async {
     await _delay();
     final me = await _requireUser();
@@ -197,6 +220,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
       members: [LfgMember(userId: me.id, name: me.name, fairPlayScore: await _myFairPlay(), joinedAt: now, isHost: true)],
       createdAt: now,
       note: note.trim(),
+      skillLevel: skillLevel,
     );
     await _saveMatch(match);
     await _recordPayment(id, me.id, deposit);
@@ -210,6 +234,12 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
 
   @override
   bool get hostCanLeave => true;
+
+  @override
+  int get maxSlotsPerMatch => 1;
+
+  @override
+  bool get supportsExtraFilters => true;
 
   /// Host chỉ cọc phần của mình.
   @override
@@ -293,6 +323,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     if (!match.isMember(me.id)) throw const LfgException(LfgStrings.notMember);
     _ensureNotEnded(match);
     if (match.status(now) != LfgStatus.confirmed) throw const LfgException(LfgStrings.cancelOnlyConfirmed);
+    if (now.isBefore(match.cancelRequestOpensAt)) throw const LfgException(LfgStrings.cancelRequestTooEarly);
     if (!now.isBefore(match.cancelRequestDeadline)) throw const LfgException(LfgStrings.tooLateToCancel);
     if (match.cancelRequest != null) throw const LfgException(LfgStrings.cancelRequestExists);
 
@@ -452,7 +483,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
   /// Việc BE làm tại T−48h: đủ người thì chốt, thiếu người thì hủy và hoàn 100% cho tất cả.
   Future<LfgMatch> _settle(LfgMatch match) async {
     if (match.cancelReason != null) return match;
-    // Tới T−24h mà chưa đủ tất cả đồng ý: yêu cầu hủy hết hạn, kèo vẫn diễn ra.
+    // Tới T−1h mà chưa đủ tất cả đồng ý: yêu cầu hủy hết hạn, kèo vẫn diễn ra.
     if (match.cancelRequest != null && !_now().isBefore(match.cancelRequestDeadline)) {
       return match.copyWith(clearCancelRequest: true);
     }
@@ -588,8 +619,8 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
         member('u-lananh', 'Lan Anh', 85),
         member('u-quocbao', 'Quốc Bảo', 88),
       ]),
-      // Kèo đã chốt, host đã gửi yêu cầu hủy: Khoa Cao cần đồng ý / từ chối.
-      seed(10, 'f-hcm-kyhoa', Sport.tennis, LfgFormat.singles, 3, 7, [
+      // Kèo đã chốt, sáng mai (trong 24h tới) nên host đã gửi yêu cầu hủy: Khoa Cao cần đồng ý / từ chối.
+      seed(10, 'f-hcm-kyhoa', Sport.tennis, LfgFormat.singles, 1, 7, [
         member('u-thutrang', 'Thu Trang', 100, host: true),
         member('u-player-001', 'Khoa Cao', 93),
       ]).copyWith(

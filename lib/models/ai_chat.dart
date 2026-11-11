@@ -6,6 +6,10 @@ enum AiSender { user, bot }
 enum AiIntent {
   searchCourt('SEARCH_COURT'),
   searchLfg('SEARCH_LFG'),
+  searchTournament('SEARCH_TOURNAMENT'),
+
+  /// Muốn mở kèo: bấm ca thì mở màn tạo kèo với ca đó (người dùng tự xác nhận + thanh toán).
+  createLfg('CREATE_LFG'),
   appHelp('APP_HELP'),
   other('OTHER');
 
@@ -103,6 +107,10 @@ class AiMessage {
   final AiIntent? intent;
   final List<AiFacilitySuggestion> facilities;
   final List<AiLfgSuggestion> lfgCards;
+  final List<AiTournamentSuggestion> tournaments;
+
+  /// Số người cần tìm thêm cho kèo (ý định [AiIntent.createLfg]); `null` khi AI không rõ.
+  final int? slotsNeeded;
 
   const AiMessage({
     required this.id,
@@ -112,9 +120,13 @@ class AiMessage {
     this.intent,
     this.facilities = const [],
     this.lfgCards = const [],
+    this.tournaments = const [],
+    this.slotsNeeded,
   });
 
-  bool get hasCards => facilities.isNotEmpty || lfgCards.isNotEmpty;
+  bool get hasCards => facilities.isNotEmpty || lfgCards.isNotEmpty || tournaments.isNotEmpty;
+
+  bool get wantsCreateLfg => intent == AiIntent.createLfg;
 
   static final RegExp _listLine = RegExp(r'^\s*(\d+\.|•)');
 
@@ -153,4 +165,35 @@ class AiReply {
   final AiMessage message;
 
   const AiReply({required this.sessionId, required this.message});
+}
+
+/// Giải đấu AI gợi ý (bấm để xem chi tiết / đăng ký).
+class AiTournamentSuggestion {
+  final String tournamentId;
+  final String name;
+  final Sport? sport;
+  final String sportName;
+  final String facilityName;
+  final DateTime? startDate;
+  final DateTime? registrationDeadline;
+
+  /// Cấp độ giải (chuỗi BE: AMATEUR / SEMI_PRO / PRO).
+  final String tier;
+
+  /// Lệ phí thấp nhất trong các bảng con.
+  final int minEntryFee;
+
+  const AiTournamentSuggestion({
+    required this.tournamentId,
+    required this.name,
+    this.sport,
+    this.sportName = '',
+    this.facilityName = '',
+    this.startDate,
+    this.registrationDeadline,
+    this.tier = '',
+    this.minEntryFee = 0,
+  });
+
+  String get sportLabel => sport?.label ?? sportName;
 }

@@ -6,6 +6,7 @@ import '../../models/booking.dart' show CancelReason;
 import '../../models/lfg_match.dart';
 import '../../screens/lfg/lfg_payment_screen.dart';
 import '../../theme/app_colors.dart';
+import '../common/onboarding_required.dart';
 import '../review/fair_play_guard.dart';
 
 /// Flash Claim một kèo: kiểm tra Fair Play → giữ chỗ 10 phút → thanh toán cọc.
@@ -17,7 +18,9 @@ Future<LfgMatch?> flashClaimMatch(BuildContext context, LfgMatch match) async {
   try {
     claim = await AppRepositories.lfg.claimSlot(match.id);
   } on LfgException catch (e) {
-    if (context.mounted) showLfgError(context, e.message);
+    if (context.mounted && !await handleOnboardingRequired(context, e) && context.mounted) {
+      showLfgError(context, e.message);
+    }
     return null;
   } catch (_) {
     if (context.mounted) showLfgError(context, LfgStrings.loadError);

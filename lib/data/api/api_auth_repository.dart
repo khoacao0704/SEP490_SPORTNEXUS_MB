@@ -198,10 +198,42 @@ class ApiAuthRepository implements AuthRepository {
     return _call(() async => _saveProfile(await _api.put('/api/auth/me', body: {'fullName': name})));
   }
 
+  /// PUT /auth/me: field null là giữ nguyên → chỉ gửi phần đổi. Tên đăng nhập trùng: BE 409 kèm câu tiếng Việt.
+  @override
+  Future<AppUser> updateProfile({required String fullName, required String username, required String bio}) async {
+    final name = fullName.trim();
+    final user = username.trim();
+    final about = bio.trim();
+    if (name.isEmpty || user.isEmpty) throw const AuthException(AuthStrings.requiredField);
+    final current = await SessionStore.readUser();
+    final body = <String, dynamic>{
+      if (current == null || name != current.fullName) 'fullName': name,
+      if (current == null || user != current.username) 'username': user,
+      if (current == null || about != current.bio) 'bio': about,
+    };
+    if (body.isEmpty && current != null) return current;
+    return _call(() async => _saveProfile(await _api.put('/api/auth/me', body: body)));
+  }
+
   @override
   Future<AppUser> uploadAvatar(String filePath) async {
-    if (await File(filePath).length() > maxAvatarBytes) throw const AuthException(ProfileStrings.avatarTooLarge);
-    return _call(() async => _saveProfile(await _api.upload('/api/auth/me/avatar', filePath: filePath)));
+    final int size;
+    try {
+      size = await File(filePath).length();
+    } on FileSystemException {
+      throw const AuthException(ProfileStrings.pickPhotoError);
+    }
+    if (size > maxAvatarBytes) throw const AuthException(ProfileStrings.avatarTooLarge);
+    final type = await ApiClient.imageSubtypeOf(filePath);
+    if (type != null && !const {'jpeg', 'png', 'webp'}.contains(type)) {
+      throw const AuthException(ProfileStrings.avatarBadFormat);
+    }
+    return _call(() async {
+      final data = await _api.upload('/api/auth/me/avatar', filePath: filePath);
+      // BE trả hồ sơ đầy đủ thì dùng luôn; chỉ trả URL / object rút gọn thì tải lại hồ sơ.
+      if (data is Map<String, dynamic> && data['id'] is String) return _saveProfile(data);
+      return _saveProfile(await _api.get('/api/auth/me'));
+    });
   }
 
   /// BE: gửi avatarUrl rỗng là xóa ảnh (gửi null thì giữ nguyên).
@@ -303,7 +335,11 @@ class ApiAuthRepository implements AuthRepository {
   /// Chỉ gửi SMS, không gọi BE: SĐT không có tài khoản thì báo ở bước đặt mật khẩu mới.
   @override
   Future<String?> requestPasswordReset(String phone) async {
-    await _phone.sendCode(normalizePhone(phone));
+    final normalized = normalizePhone(phone);
+    // Kiểm tra SĐT có tài khoản trước, tránh gửi SMS Firebase cho số không tồn tại.
+    final data = await _call(() => _api.get('/api/auth/check-phone', query: {'phone': normalized}, auth: false));
+    if (data is Map && data['exists'] == false) throw const AuthException(AuthStrings.phoneNotFound);
+    await _phone.sendCode(normalized);
     return null;
   }
 

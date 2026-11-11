@@ -418,10 +418,13 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Chi tiết nạp ví',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                      const Expanded(
+                        child: Text(
+                          'Chi tiết nạp ví',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
@@ -445,22 +448,32 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'TỔNG THANH TOÁN',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
-                          ),
-                          Text(
-                            'Tiền thực trừ',
-                            style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-                          ),
-                        ],
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'TỔNG THANH TOÁN',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                            ),
+                            Text(
+                              'Tiền thực trừ',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                            ),
+                          ],
+                        ),
                       ),
-                      Text(
-                        '${_formatCurrency(_selectedAmount)} đ',
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                      const SizedBox(width: 8),
+                      // Số tiền lớn tự thu nhỏ trên máy hẹp / chữ to.
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '${_formatCurrency(_selectedAmount)} đ',
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -469,10 +482,9 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Confirm Button
-            SizedBox(
-              width: double.infinity,
-              height: 50,
+            // Confirm Button: cao tối thiểu 50, chữ to thì cao thêm (2 dòng) thay vì tràn.
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 50, minWidth: double.infinity),
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _handleConfirmTopUp,
                 style: ElevatedButton.styleFrom(
@@ -488,9 +500,14 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                         children: [
                           const Icon(Icons.check_circle_outline, size: 20),
                           const SizedBox(width: 8),
-                          Text(
-                            'Xác nhận nạp tiền vào ví (${_formatCurrency(_selectedAmount)} đ)',
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          Flexible(
+                            child: Text(
+                              'Xác nhận nạp tiền vào ví (${_formatCurrency(_selectedAmount)} đ)',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
                           ),
                         ],
                       ),
@@ -522,16 +539,22 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
   }
 
   Widget _buildSummaryRow(String label, String value, {Color? valueColor}) {
+    // Nhãn và giá trị chia chỗ, giá trị dài xuống dòng thay vì tràn.
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Color(0xFF64748B), fontSize: 13)),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: valueColor ?? const Color(0xFF1E293B),
-            fontSize: 13,
+        Expanded(child: Text(label, style: const TextStyle(color: Color(0xFF64748B), fontSize: 13))),
+        const SizedBox(width: 12),
+        Flexible(
+          flex: 2,
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: valueColor ?? const Color(0xFF1E293B),
+              fontSize: 13,
+            ),
           ),
         ),
       ],

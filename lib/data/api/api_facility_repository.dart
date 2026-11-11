@@ -412,6 +412,20 @@ class ApiFacilityRepository implements FacilityRepository {
     return _categoryIds[sport];
   }
 
+  /// Môn của app ứng với categoryId của BE; `null` khi BE có môn app không hỗ trợ.
+  Future<Sport?> sportOfCategory(String categoryId) async {
+    for (final entry in _categoryIds.entries) {
+      if (entry.value == categoryId) return entry.key;
+    }
+    if (!_sportsLoaded) {
+      await categoryIdOf(Sport.values.first); // tải danh mục môn
+      for (final entry in _categoryIds.entries) {
+        if (entry.value == categoryId) return entry.key;
+      }
+    }
+    return null;
+  }
+
   /// Cơ sở chưa có tọa độ → [Facility.noLocation] (không hiện trên bản đồ).
   static GeoPoint _location(Map<String, dynamic> json) {
     final lat = (json['latitude'] as num?)?.toDouble();

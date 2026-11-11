@@ -32,6 +32,17 @@ class AiChatStrings {
   static const String viewFacility = 'Xem sân';
   static const String viewMatch = 'Xem kèo';
   static const String staleNote = 'Ca trống và giá là dữ liệu lúc AI trả lời, có thể đã thay đổi.';
+  static const String createLfgNote = 'Bấm vào ca để mở kèo với ca đó: bạn xem lại, chọn trình độ rồi tự thanh toán.';
+  static String tournamentStart(String date) => 'Khởi tranh: $date';
+  static String tournamentDeadline(String date) => 'Hạn đăng ký: $date';
+  static String entryFeeFrom(String fee) => 'Lệ phí từ $fee';
+  static const String freeEntry = 'Miễn phí tham gia';
+  static String tierLabel(String tier) => switch (tier.toUpperCase()) {
+    'AMATEUR' => 'Nghiệp dư',
+    'SEMI_PRO' => 'Bán chuyên',
+    'PRO' => 'Chuyên nghiệp',
+    _ => '',
+  };
   static const String sportUnsupported = 'Môn này chưa đặt được trên app.';
 
   // Lịch sử

@@ -9,6 +9,7 @@ import 'package:test1/data/mock/mock_player_tournament_repository.dart';
 import 'package:test1/data/mock/mock_team_repository.dart';
 import 'package:test1/data/mock/mock_wallet_repository.dart';
 import 'package:test1/data/repositories/team_repository.dart';
+import 'package:test1/models/tournament_listing.dart';
 import 'package:test1/screens/tournament/tournament_bracket_screen.dart';
 import 'package:test1/screens/tournament/tournament_detail_screen.dart';
 import 'package:test1/screens/tournament/tournament_ticket_screen.dart';
@@ -126,6 +127,41 @@ void main() {
 
     await pump(tester, const TournamentBracketScreen(key: ValueKey('empty'), divisionId: 'pd-pickle-singles', title: 'Đơn mở rộng'));
     expect(find.text(PlayerTournamentStrings.bracketEmpty), findsOneWidget);
+  });
+
+  testWidgets('lời mời giải nội bộ: banner ở tab Đã đăng ký, nhận lời thì được đăng ký', (tester) async {
+    final repo = AppRepositories.playerTournament as MockPlayerTournamentRepository;
+    repo.invitations.add(
+      const TournamentInvitation(
+        id: 'inv1',
+        divisionId: 'pd-pickle-singles',
+        divisionName: 'Đơn mở rộng',
+        tournamentName: 'Giải Pickleball Mở Rộng Quận 7',
+        type: DivisionType.singles,
+        entryFee: 150000,
+        invitedByName: 'BTC Q7',
+      ),
+    );
+    await pump(tester, const TournamentsScreen());
+    await tester.tap(find.text(PlayerTournamentStrings.tabMine));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(PlayerTournamentStrings.invitationsBanner(1)));
+    await tester.pumpAndSettle();
+    expect(find.text('Giải Pickleball Mở Rộng Quận 7 • Đơn mở rộng'), findsOneWidget);
+    expect(find.text(PlayerTournamentStrings.invitedBy('BTC Q7')), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, PlayerTournamentStrings.acceptInvite));
+    await tester.pumpAndSettle();
+    expect(find.text(PlayerTournamentStrings.confirmAcceptTitle), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, PlayerTournamentStrings.acceptInvite).last);
+    await tester.pumpAndSettle();
+    expect(find.text(PlayerTournamentStrings.noInvitations), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text(PlayerTournamentStrings.invitationsBanner(1)), findsNothing);
+    expect(find.textContaining('Đơn mở rộng'), findsWidgets);
+    expect((await repo.getMyRegistrations()).map((r) => r.divisionId), contains('pd-pickle-singles'));
   });
 
   testWidgets('vé QR: mã tĩnh của người đăng ký', (tester) async {

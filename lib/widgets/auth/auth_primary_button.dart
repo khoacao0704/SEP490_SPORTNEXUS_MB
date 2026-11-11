@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 
 /// Nút chính của form xác thực; hiện vòng xoay và khóa nút khi [isLoading].
+/// [onPressed] = null: nút bị khóa (vd. form chưa hợp lệ).
 class AuthPrimaryButton extends StatelessWidget {
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool isLoading;
   final IconData? trailingIcon;
 
@@ -26,7 +27,9 @@ class AuthPrimaryButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.authPrimary,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.authPrimary.withValues(alpha: 0.7),
+          // Đang tải: gần như màu thật; form chưa hợp lệ: nhạt hẳn để thấy rõ là chưa bấm được.
+          disabledBackgroundColor: AppColors.authPrimary.withValues(alpha: isLoading ? 0.7 : 0.35),
+          disabledForegroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),

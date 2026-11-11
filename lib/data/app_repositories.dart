@@ -1,4 +1,5 @@
 import '../core/config/api_config.dart';
+import '../models/sport.dart';
 import 'api/api_ai_chat_repository.dart';
 import 'api/api_auth_repository.dart';
 import 'api/api_booking_repository.dart';
@@ -13,6 +14,8 @@ import 'api/api_wallet_repository.dart';
 import 'api/notification_hub.dart';
 import 'api/token_store.dart';
 import 'api/api_owner_repository.dart';
+import 'api/api_player_profile_repository.dart';
+import 'api/api_rating_repository.dart';
 import 'mock/mock_ai_chat_repository.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_booking_repository.dart';
@@ -20,6 +23,8 @@ import 'mock/mock_facility_repository.dart';
 import 'mock/mock_lfg_repository.dart';
 import 'mock/mock_notification_repository.dart';
 import 'mock/mock_owner_repository.dart';
+import 'mock/mock_player_profile_repository.dart';
+import 'mock/mock_rating_repository.dart';
 import 'mock/mock_player_tournament_repository.dart';
 import 'mock/mock_review_repository.dart';
 import 'mock/mock_split_payment_repository.dart';
@@ -34,6 +39,8 @@ import 'repositories/lfg_repository.dart';
 import 'repositories/notification_repository.dart';
 import 'repositories/organizer_tournament_repository.dart';
 import 'repositories/owner_repository.dart';
+import 'repositories/player_profile_repository.dart';
+import 'repositories/rating_repository.dart';
 import 'repositories/player_tournament_repository.dart';
 import 'repositories/review_repository.dart';
 import 'repositories/split_payment_repository.dart';
@@ -65,8 +72,9 @@ class AppRepositories {
   /// Sân mà luồng tạo kèo LFG tìm, xem khung giờ và giữ chỗ (cùng dữ liệu với [facility]).
   static FacilityRepository lfgFacility = ApiConfig.useMockAuth ? _mockFacility : _apiFacility;
 
-  /// Ví người chơi: số dư, lịch sử, nạp tiền PayOS. Rút tiền tạm tắt (BE chỉ mở cho Chủ sân) → báo đang phát triển.
-  static WalletRepository wallet = ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api);
+  /// Ví người chơi: số dư, lịch sử, nạp tiền PayOS. KHÔNG rút tiền (BE từ 07/11/2026 chỉ cho Chủ sân rút, Player 403).
+  static WalletRepository wallet =
+      ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api, supportsWithdrawal: false);
 
   /// Ví mà các luồng chưa nối API (chia tiền, LFG, giải đấu) kiểm tra số dư / trừ tiền / nạp thêm.
   /// Tạm là ví giả lập nên có thể lệch với số dư thật; chuyển sang [wallet] khi nối từng luồng.
@@ -81,8 +89,31 @@ class AppRepositories {
       : ApiPlayerTournamentRepository(api: api, facility: _apiFacility);
 
   /// Đội của người chơi (dữ liệu thật).
-  static TeamRepository team = ApiConfig.useMockAuth ? _mockTeams : ApiTeamRepository(api: api);
+  static TeamRepository team =
+      ApiConfig.useMockAuth ? _mockTeams : ApiTeamRepository(api: api, categoryIdOf: _apiFacility.categoryIdOf);
   static final MockTeamRepository _mockTeams = MockTeamRepository();
+
+  /// Elo theo môn, bảng xếp hạng, khảo sát trình độ.
+  static RatingRepository rating = ApiConfig.useMockAuth
+      ? MockRatingRepository()
+      : ApiRatingRepository(api: api, categoryIdOf: _apiFacility.categoryIdOf, sportOf: _apiFacility.sportOfCategory);
+
+  /// Môn của app ứng với categoryId của BE (mã lỗi RATING_REQUIRED chỉ trả categoryId).
+  static Future<Sport?> Function(String categoryId) sportOfCategory =
+      ApiConfig.useMockAuth ? mockSportOfCategory : _apiFacility.sportOfCategory;
+
+  /// Bản giả lập dùng categoryId dạng `mock-<môn>`.
+  static Future<Sport?> mockSportOfCategory(String categoryId) async =>
+      Sport.values.where((s) => categoryId == 'mock-${s.name}').firstOrNull;
+
+  /// Khảo sát người chơi / hồ sơ thể thao (bắt buộc trước khi vào app).
+  static PlayerProfileRepository playerProfile = ApiConfig.useMockAuth
+      ? MockPlayerProfileRepository()
+      : ApiPlayerProfileRepository(
+          api: api,
+          categoryIdOf: _apiFacility.categoryIdOf,
+          sportOf: _apiFacility.sportOfCategory,
+        );
 
   /// Trợ lý AI (Gemini qua BE): chỉ gợi ý sân / kèo, không tự đặt.
   static AiChatRepository aiChat = ApiConfig.useMockAuth

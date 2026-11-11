@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import '../../core/strings/review_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
+import '../../data/repositories/rating_repository.dart';
 import '../../data/repositories/review_repository.dart';
 import '../../models/review.dart';
+import '../../models/sport_rating.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/review/star_rating.dart';
 
@@ -20,6 +22,9 @@ class SubmitReviewScreen extends StatefulWidget {
 
 class _PlayerDraft {
   int stars = 0;
+
+  /// Nhận xét trình độ (không bắt buộc).
+  SkillVerdict? verdict;
   final Set<ReviewTag> tags = {};
   final TextEditingController comment = TextEditingController();
 }
@@ -39,7 +44,8 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
 
   bool get _canReviewFacility => _eligibility?.canReview ?? false;
 
-  bool get _hasAnyRating => (_canReviewFacility && _facilityStars > 0) || _players.values.any((d) => d.stars > 0);
+  bool get _hasAnyRating =>
+      (_canReviewFacility && _facilityStars > 0) || _players.values.any((d) => d.stars > 0 || d.verdict != null);
 
   @override
   void initState() {
@@ -109,12 +115,39 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
             ),
       ];
       if (players.isNotEmpty) await AppRepositories.review.ratePlayers(_session.sessionId, players);
-      if (mounted) Navigator.pop(context, true);
+      final feedbackError = await _sendSkillFeedback();
+      if (!mounted) return;
+      if (feedbackError != null) {
+        // Chấm Fair Play đã xong: báo lỗi nhận xét trình độ (vd. Fair Play dưới 50) nhưng vẫn đóng màn.
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(feedbackError)));
+      }
+      Navigator.pop(context, true);
     } on ReviewException catch (e) {
       if (!mounted) return;
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
     }
+  }
+
+  /// Gửi nhận xét trình độ; trả câu lỗi đầu tiên (nếu có), không chặn việc gửi đánh giá.
+  Future<String?> _sendSkillFeedback() async {
+    String? error;
+    for (final entry in _players.entries) {
+      final verdict = entry.value.verdict;
+      if (verdict == null) continue;
+      try {
+        await AppRepositories.rating.sendSkillFeedback(
+          revieweeId: entry.key,
+          contextId: _session.sessionId,
+          verdict: verdict,
+        );
+      } on RatingException catch (e) {
+        error ??= e.message;
+        // Fair Play thấp / quá hạn: những người sau cũng sẽ bị từ chối như vậy.
+        break;
+      }
+    }
+    return error;
   }
 
   @override
@@ -258,8 +291,16 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
                     ],
                   ),
                 ),
-                if (draft.stars == 0)
-                  const Text(ReviewStrings.skipped, style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                if (draft.stars == 0) ...[
+                  const SizedBox(width: 8),
+                  const Flexible(
+                    child: Text(
+                      ReviewStrings.skipped,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 8),
@@ -295,6 +336,22 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
               const SizedBox(height: 8),
               _commentField(draft.comment),
             ],
+            const SizedBox(height: 10),
+            const Text(ReviewStrings.skillVerdictTitle, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final v in SkillVerdict.values)
+                  ChoiceChip(
+                    label: Text(v.label, style: const TextStyle(fontSize: 12)),
+                    selected: draft.verdict == v,
+                    // Bấm lại lựa chọn đang chọn thì bỏ chọn (không bắt buộc).
+                    onSelected: (_) => setState(() => draft.verdict = draft.verdict == v ? null : v),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

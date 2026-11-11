@@ -44,7 +44,7 @@ void main() {
     expect(find.byType(EditProfileScreen), findsOneWidget);
     expect(find.text('0901234567'), findsOneWidget); // SĐT chỉ xem
 
-    await tester.enterText(find.byType(TextFormField), 'Khoa Cao Mới');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Khoa Cao'), 'Khoa Cao Mới');
     await tester.tap(find.text(ProfileStrings.save));
     await tester.pumpAndSettle();
 
@@ -54,11 +54,41 @@ void main() {
 
   testWidgets('Sửa hồ sơ: họ tên trống thì báo lỗi, không gửi', (tester) async {
     await pump(tester, EditProfileScreen(user: (await SessionStore.readUser())!));
-    await tester.enterText(find.byType(TextFormField), '   ');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Khoa Cao'), '   ');
     await tester.tap(find.text(ProfileStrings.save));
     await tester.pumpAndSettle();
     expect(find.text(AuthStrings.requiredField), findsOneWidget);
     expect((await SessionStore.readUser())!.fullName, 'Khoa Cao');
+  });
+
+  testWidgets('Sửa hồ sơ: đổi tên đăng nhập + giới thiệu; tên đăng nhập sai định dạng bị chặn', (tester) async {
+    await pump(tester, EditProfileScreen(user: (await SessionStore.readUser())!));
+    final usernameField = find.widgetWithText(TextFormField, 'player1');
+    await tester.enterText(usernameField, 'ab');
+    await tester.tap(find.text(ProfileStrings.save));
+    await tester.pumpAndSettle();
+    expect(find.text(AuthStrings.invalidUsername), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'ab'), 'khoa.cao');
+    await tester.enterText(find.widgetWithText(TextFormField, ProfileStrings.bioLabel), '  Thích đánh đôi  ');
+    await tester.tap(find.text(ProfileStrings.save));
+    await tester.pumpAndSettle();
+    final user = (await SessionStore.readUser())!;
+    expect(user.username, 'khoa.cao');
+    expect(user.bio, 'Thích đánh đôi');
+  });
+
+  testWidgets('Đổi SĐT: số trùng số hiện tại bị chặn ngay, không gửi SMS', (tester) async {
+    await pump(tester, EditProfileScreen(user: (await SessionStore.readUser())!));
+    await tester.tap(find.text(ProfileStrings.changePhone));
+    await tester.pumpAndSettle();
+    expect(find.text(ProfileStrings.changePhoneTitle), findsOneWidget);
+    expect(find.text(ProfileStrings.currentPhone('0901234567')), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField), '0901234567');
+    await tester.tap(find.text(ProfileStrings.sendCode));
+    await tester.pumpAndSettle();
+    expect(find.text(ProfileStrings.samePhone), findsOneWidget);
   });
 
   testWidgets('Đổi mật khẩu: mật khẩu mới trùng cũ bị chặn; đổi xong về màn đăng nhập', (tester) async {
@@ -74,6 +104,8 @@ void main() {
 
     await tester.enterText(fields.at(1), 'MatKhau99');
     await tester.enterText(fields.at(2), 'MatKhau99');
+    await tester.pump();
+    await tester.ensureVisible(find.text(ProfileStrings.changePasswordButton));
     await tester.tap(find.text(ProfileStrings.changePasswordButton));
     await tester.pumpAndSettle();
 

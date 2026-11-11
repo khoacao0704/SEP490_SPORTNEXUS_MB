@@ -188,8 +188,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
             children: List.generate(_otpLength, (index) {
               final isFilled = index < otp.length;
               final isActive = index == otp.length && _otpFocusNode.hasFocus;
-              return Container(
-                width: 44,
+              final box = Container(
                 height: 52,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
@@ -205,6 +204,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.authTitle),
                 ),
               );
+              // Ô rộng tối đa 44, máy hẹp thì 6 ô tự co lại vừa hàng.
+              return Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 44), child: box),
+                ),
+              );
             }),
           ),
         ],
@@ -214,8 +220,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   Widget _buildResendRow() {
     final canResend = _resendSecondsLeft <= 0 && !_isResending;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    // Wrap: máy hẹp / chữ to thì "Gửi lại" xuống dòng thay vì tràn.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         const Text(AuthStrings.otpNotReceived, style: TextStyle(fontSize: 13, color: AppColors.authSubtle)),
         GestureDetector(

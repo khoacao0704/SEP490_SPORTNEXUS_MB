@@ -113,23 +113,36 @@ class FacilityCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const Icon(Icons.star, size: 14, color: Colors.amber),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${facility.rating} (${facility.reviewCount})',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMain),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star, size: 14, color: Colors.amber),
+                            const SizedBox(width: 2),
+                            Flexible(
+                              child: Text(
+                                '${facility.rating} (${facility.reviewCount})',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMain),
+                              ),
+                            ),
+                          ],
                         ),
-                        if (result.distanceKm != null) ...[
-                          const SizedBox(width: 8),
-                          const Icon(Icons.near_me, size: 13, color: AppColors.primaryGreen),
-                          const SizedBox(width: 2),
-                          Text(
-                            GeoUtils.formatDistance(result.distanceKm!),
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primaryGreen),
+                        if (result.distanceKm != null)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.near_me, size: 13, color: AppColors.primaryGreen),
+                              const SizedBox(width: 2),
+                              Text(
+                                GeoUtils.formatDistance(result.distanceKm!),
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primaryGreen),
+                              ),
+                            ],
                           ),
-                        ],
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -140,11 +153,16 @@ class FacilityCard extends StatelessWidget {
                       style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.3),
                     ),
                     const SizedBox(height: 8),
+                    // Biểu tượng môn tự xuống dòng, giá co lại: máy hẹp / chữ to không tràn.
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        ...facility.sports.map((s) => Padding(
-                              padding: const EdgeInsets.only(right: 4),
-                              child: Tooltip(
+                        Expanded(
+                          child: Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: [
+                        ...facility.sports.map((s) => Tooltip(
                                 message: _sportTooltip(facility, s),
                                 child: Container(
                                   padding: const EdgeInsets.all(4),
@@ -158,12 +176,18 @@ class FacilityCard extends StatelessWidget {
                                     color: s == sport ? Colors.white : AppColors.primaryGreen,
                                   ),
                                 ),
-                              ),
                             )),
-                        const Spacer(),
-                        Text(
-                          FacilityStrings.priceFrom(Formatters.vnd(price)),
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          flex: 2,
+                          child: Text(
+                            FacilityStrings.priceFrom(Formatters.vnd(price)),
+                            textAlign: TextAlign.end,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                          ),
                         ),
                       ],
                     ),

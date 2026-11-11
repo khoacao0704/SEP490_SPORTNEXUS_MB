@@ -758,23 +758,33 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    '${_formatCurrency(payAmount)} đ',
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                  // Số tiền lớn tự thu nhỏ trên máy hẹp / chữ to.
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '${_formatCurrency(payAmount)} đ',
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                      ),
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
 
               // Button 1: Green Confirm & Get QR Ticket
-              SizedBox(
-                width: double.infinity,
-                height: 48,
+              // Cao tối thiểu 48, chữ dài / chữ to thì nút cao thêm (2 dòng) thay vì tràn.
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48, minWidth: double.infinity),
                 child: ElevatedButton.icon(
                   onPressed: _isLoading ? null : _handleConfirmPayment,
                   icon: const Icon(Icons.check_circle_outline, size: 20),
                   label: Text(
                     'Xác nhận thanh toán & lấy vé QR (${_formatCurrency(payAmount)} đ)',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                   style: ElevatedButton.styleFrom(
@@ -927,8 +937,8 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
       children: [
         Icon(icon, size: 16, color: AppColors.textSecondary),
         const SizedBox(width: 8),
-        Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-        const Spacer(),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+        const SizedBox(width: 8),
         Expanded(
           flex: 2,
           child: Text(

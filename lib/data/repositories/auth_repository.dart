@@ -84,10 +84,10 @@ abstract class AuthRepository {
   /// Gửi lại OTP. Trả về devOtp như [register].
   Future<String?> resendOtp(String phone, OtpPurpose purpose);
 
-  /// Gửi OTP để thêm SĐT cho tài khoản đang đăng nhập chưa có SĐT ([AppUser.needsPhone]). Trả về devOtp như [register].
+  /// Gửi OTP để thêm SĐT (tài khoản chưa có SĐT, [AppUser.needsPhone]) hoặc đổi sang SĐT mới. Trả về devOtp như [register].
   Future<String?> requestPhoneOtp(String phone);
 
-  /// Nhập đúng OTP thì gắn SĐT (đã xác thực) vào tài khoản; trả hồ sơ mới.
+  /// Nhập đúng OTP thì gắn SĐT (đã xác thực) vào tài khoản, thay SĐT cũ nếu có; trả hồ sơ mới.
   Future<AppUser> addPhone(String phone, String otp);
 
   /// SĐT đã được xác thực trên máy, màn OTP không cần nhập mã (Android tự xác thực SMS, hoặc vừa xác thực
@@ -111,6 +111,10 @@ abstract class AuthRepository {
 
   /// Đổi họ tên (tên đăng nhập, SĐT, email chưa đổi được).
   Future<AppUser> updateFullName(String fullName);
+
+  /// Sửa họ tên, tên đăng nhập (3–30 ký tự, trùng thì lỗi) và giới thiệu (tối đa 500 ký tự).
+  /// Chỉ gửi phần thay đổi so với hồ sơ đang lưu.
+  Future<AppUser> updateProfile({required String fullName, required String username, required String bio});
 
   /// Tải ảnh JPG / PNG / WEBP tối đa 5MB lên làm ảnh đại diện.
   Future<AppUser> uploadAvatar(String filePath);

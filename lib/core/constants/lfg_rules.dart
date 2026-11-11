@@ -5,8 +5,14 @@ class LfgRules {
   /// Kèo phải đủ người (chốt) trước giờ bắt đầu ít nhất chừng này; quá mốc mà thiếu người thì hủy và hoàn 100%.
   static const Duration fillDeadlineBeforeStart = Duration(hours: 48);
 
-  /// Kèo đã chốt chỉ hủy được (khi tất cả đồng ý) trước giờ chơi ít nhất chừng này.
-  static const Duration mutualCancelBeforeStart = Duration(hours: 24);
+  /// Chủ kèo tự hủy kèo được tới mốc này trước giờ chơi (nhóm chốt theo BE 11/2026; BE trả `hostCancelUntil`).
+  static const Duration hostCancelBeforeStart = Duration(hours: 24);
+
+  /// Từ mốc [hostCancelBeforeStart] trở đi, muốn hủy phải gửi yêu cầu và tất cả đồng ý — tới mốc này trước giờ chơi.
+  static const Duration cancelRequestClosesBeforeStart = Duration(hours: 1);
+
+  /// Rời kèo trong khoảng này trước giờ chơi bị trừ Fair Play.
+  static const Duration lateLeavePenaltyBeforeStart = Duration(hours: 24);
 
   /// Chỉ được tạo kèo cho khung giờ bắt đầu trong vòng chừng này kể từ bây giờ.
   static const Duration maxCreateAhead = Duration(days: 5);

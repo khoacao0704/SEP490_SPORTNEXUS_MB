@@ -5,6 +5,7 @@ import '../../data/app_repositories.dart';
 import '../../data/repositories/wallet_repository.dart';
 import '../../models/wallet_transaction.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/common/system_bottom_inset.dart';
 import '../../widgets/wallet/transaction_tile.dart';
 
 enum _Filter { all, moneyIn, moneyOut, pending }
@@ -216,6 +217,7 @@ class _TransactionHistoryScreenState extends State<TransactionHistoryScreen> {
       color: AppColors.primaryGreen,
       onRefresh: _load,
       child: ListView.builder(
+        padding: const EdgeInsets.only(bottom: kScrollEndGap),
         itemCount: rows.length,
         itemBuilder: (context, index) {
           final row = rows[index];

@@ -27,8 +27,9 @@ class OwnerPendingScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
+          // Cuộn được: máy thấp / chữ to thì nội dung không tràn khỏi màn hình.
+          child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

@@ -137,14 +137,23 @@ void main() {
       expect(await wallet.getBalance(), afterPay + claim.amount);
     });
 
-    test('yêu cầu hủy đang chờ tới T−24h thì hết hạn, kèo vẫn diễn ra', () async {
-      await repo.requestCancel(seedId(9));
-      // Kèo 9 bắt đầu 18:00 sau 4 ngày => T−24h là 18:00 sau 3 ngày.
-      clock = DateTime(2026, 10, 17, 19);
-      final match = await repo.getMatch(seedId(9));
-      expect(match.cancelRequest, isNull);
-      expect(match.status(clock), LfgStatus.confirmed);
-      expect(() => repo.requestCancel(seedId(9)), lfgError(LfgStrings.tooLateToCancel));
+    test('yêu cầu hủy chỉ gửi được từ T−24h; tới T−1h chưa đủ đồng ý thì hết hạn, kèo vẫn diễn ra', () async {
+      // Kèo 9 bắt đầu 18:00 sau 4 ngày (18/10): còn hơn 24h → chưa gửi yêu cầu được.
+      await expectLater(() => repo.requestCancel(seedId(9)), lfgError(LfgStrings.cancelRequestTooEarly));
+      final far = await repo.getMatch(seedId(9));
+      expect(far.cancelRequestOpensAt, DateTime(2026, 10, 17, 18));
+      expect(far.cancelRequestDeadline, DateTime(2026, 10, 18, 17));
+      expect(far.canHostCancel(clock), isTrue);
+
+      // Kèo 10 bắt đầu 07:00 ngày 15/10: đang trong khoảng gửi yêu cầu, hạn trả lời 06:00.
+      final near = await repo.getMatch(seedId(10));
+      expect(near.canHostCancel(clock), isFalse);
+      expect(near.inCancelRequestWindow(clock), isTrue);
+      expect(near.activeCancelRequest(clock), isNotNull);
+      final afterDeadline = DateTime(2026, 10, 15, 6, 30);
+      expect(near.activeCancelRequest(afterDeadline), isNull);
+      expect(near.inCancelRequestWindow(afterDeadline), isFalse);
+      expect(near.status(afterDeadline), LfgStatus.confirmed);
     });
   });
 
@@ -204,18 +213,22 @@ void main() {
     });
 
     test('một người từ chối là bác yêu cầu; gửi lại và tất cả đồng ý thì hủy, hoàn 100%', () async {
-      var match = await repo.requestCancel(seedId(9));
-      expect(match.cancelRequest!.approvals, ['u-player-001']);
-      expect(() => repo.respondCancel(seedId(9), approve: true), lfgError(LfgStrings.alreadyResponded));
-      expect(() => repo.requestCancel(seedId(9)), lfgError(LfgStrings.cancelRequestExists));
+      // Kèo 10 (sáng mai, trong 24h tới) đang có yêu cầu của host: mình từ chối thì bác, rồi tự gửi lại.
+      var match = await repo.respondCancel(seedId(10), approve: false);
+      expect(match.cancelRequest, isNull);
 
-      match = await repo.simulateOthersRespond(seedId(9), approve: false);
+      match = await repo.requestCancel(seedId(10));
+      expect(match.cancelRequest!.approvals, ['u-player-001']);
+      await expectLater(() => repo.respondCancel(seedId(10), approve: true), lfgError(LfgStrings.alreadyResponded));
+      await expectLater(() => repo.requestCancel(seedId(10)), lfgError(LfgStrings.cancelRequestExists));
+
+      match = await repo.simulateOthersRespond(seedId(10), approve: false);
       expect(match.cancelRequest, isNull);
       expect(match.status(clock), LfgStatus.confirmed);
 
       final balance = await wallet.getBalance();
-      await repo.requestCancel(seedId(9));
-      match = await repo.simulateOthersRespond(seedId(9), approve: true);
+      await repo.requestCancel(seedId(10));
+      match = await repo.simulateOthersRespond(seedId(10), approve: true);
       expect(match.cancelReason, LfgCancelReason.mutualAgreement);
       expect(await wallet.getBalance(), balance + match.depositPerSlot);
     });

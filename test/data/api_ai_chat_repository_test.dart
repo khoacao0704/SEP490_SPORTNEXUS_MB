@@ -106,6 +106,55 @@ void main() {
     expect(slot.start, DateTime.utc(2026, 10, 30, 11).toLocal());
   });
 
+  test('ý định mở kèo: đọc slotsNeeded; ý định tìm giải: đọc thẻ giải', () async {
+    server.routes['POST ${ApiAiChatRepository.chatPath}'] = (
+      200,
+      _ok({
+        'sessionId': 's-1',
+        'reply': {
+          'message': 'Mình tìm được ca để mở kèo.',
+          'intent': {'intent': 'CREATE_LFG', 'sport': 'Cầu lông', 'slotsNeeded': 3},
+          'facilities': [_facility()],
+        },
+      }),
+    );
+    var m = (await repo.send('mở kèo cầu lông ghép 4')).message;
+    expect(m.intent, AiIntent.createLfg);
+    expect(m.wantsCreateLfg, isTrue);
+    expect(m.slotsNeeded, 3);
+
+    server.routes['POST ${ApiAiChatRepository.chatPath}'] = (
+      200,
+      _ok({
+        'sessionId': 's-1',
+        'reply': {
+          'message': 'Có 1 giải phù hợp.',
+          'intent': {'intent': 'SEARCH_TOURNAMENT'},
+          'tournaments': [
+            {
+              'tournamentId': 't-1',
+              'name': 'Giải Cầu Lông Mùa Đông',
+              'sportName': 'Cầu lông',
+              'facilityName': 'Thiên Triều',
+              'startDate': '2026-12-20T01:00:00Z',
+              'registrationDeadline': '2026-12-10T16:59:00Z',
+              'tier': 'AMATEUR',
+              'minEntryFee': 150000.0,
+            },
+          ],
+        },
+      }),
+    );
+    m = (await repo.send('có giải cầu lông nào không')).message;
+    expect(m.intent, AiIntent.searchTournament);
+    expect(m.hasCards, isTrue);
+    final t = m.tournaments.single;
+    expect(t.tournamentId, 't-1');
+    expect(t.sport, Sport.badminton);
+    expect(t.minEntryFee, 150000);
+    expect(t.startDate, DateTime.utc(2026, 12, 20, 1).toLocal());
+  });
+
   test('gửi tin mới: không gửi sessionId / vị trí; câu trả lời chỉ có chữ thì giữ nguyên', () async {
     server.routes['POST ${ApiAiChatRepository.chatPath}'] = (
       200,

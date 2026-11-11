@@ -6,7 +6,9 @@ import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/team_repository.dart';
 import '../../models/team.dart';
+import '../../models/sport_rating.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/rating/rank_badge.dart';
 import 'team_form_screen.dart';
 
 /// Logo đội, không có thì chữ cái đầu tên đội.
@@ -51,6 +53,9 @@ class TeamDetailScreen extends StatefulWidget {
 
 class _TeamDetailScreenState extends State<TeamDetailScreen> {
   Team? _team;
+
+  /// Elo của đội (lấy từ Elo của mình: BE chỉ trả đội mình đang ở; TeamResponse không có Elo).
+  SportRating? _teamRating;
   List<TeamInvitation> _pending = [];
   String? _myId;
   String? _error;
@@ -77,9 +82,18 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
           // Chỉ ảnh hưởng mục lời mời đang chờ.
         }
       }
+      SportRating? teamRating;
+      try {
+        teamRating = (await AppRepositories.rating.getMyRatings())
+            .where((r) => r.type == RatingType.team && r.ownerId == team.id)
+            .firstOrNull;
+      } catch (_) {
+        // Chỉ ảnh hưởng dòng Elo đội.
+      }
       if (!mounted) return;
       setState(() {
         _team = team;
+        _teamRating = teamRating;
         _myId = me?.id;
         _pending = pending;
       });
@@ -316,6 +330,36 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                       '${TeamStrings.captain}: ${team.captainName}',
                       style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
                     ),
+                  if (team.sportLabel.isNotEmpty)
+                    Text(
+                      [
+                        team.sportLabel,
+                        if (team.skillLevel.isNotEmpty) '${TeamStrings.skillLevel}: ${team.skillLevel}',
+                      ].join(' • '),
+                      style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                    ),
+                  if (_teamRating != null) ...[
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          TeamStrings.teamElo(_teamRating!.rating),
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        RankBadge(rank: _teamRating!.rankLabel),
+                      ],
+                    ),
+                  ],
+                  if (team.needsSport) ...[
+                    const SizedBox(height: 6),
+                    const Text(
+                      TeamStrings.needsSport,
+                      style: TextStyle(fontSize: 12, color: AppColors.tagOrangeText, fontWeight: FontWeight.w600),
+                    ),
+                  ],
                   if (team.description.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(team.description, style: const TextStyle(fontSize: 13, height: 1.4)),

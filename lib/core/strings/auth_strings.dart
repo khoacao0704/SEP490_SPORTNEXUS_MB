@@ -10,7 +10,7 @@ class AuthStrings {
   static const String rememberMe = 'Ghi nhớ đăng nhập';
   static const String forgotPasswordLink = 'Quên mật khẩu?';
   static const String loginButton = 'ĐĂNG NHẬP';
-  static const String orLoginWith = 'HOẶC ĐĂNG NHẬP BẰNG';
+  static const String orLoginWith = 'Hoặc tiếp tục với';
   static const String noAccount = 'Chưa có tài khoản? ';
   static const String registerNow = 'Đăng ký ngay';
   static const String googleLoginFailed = 'Không đăng nhập được bằng Google. Vui lòng thử lại.';
@@ -99,7 +99,15 @@ class AuthStrings {
   static const String invalidPhone = 'Số điện thoại không hợp lệ';
   static const String invalidIdentifier = 'Email hoặc số điện thoại không hợp lệ';
   static const String invalidPassword = 'Mật khẩu tối thiểu 8 ký tự, gồm cả chữ và số';
-  static const String passwordMismatch = 'Mật khẩu xác nhận không khớp';
+  static const String passwordMismatch = 'Mật khẩu không khớp';
+
+  // Checklist điều kiện mật khẩu (hiện dưới ô mật khẩu, chuyển xanh khi đạt)
+  static const String pwRuleLength = 'Ít nhất 8 ký tự';
+  static const String pwRuleLetter = 'Có chữ cái';
+  static const String pwRuleDigit = 'Có ít nhất 1 chữ số';
+  static const String pwRuleSpecial = 'Có ít nhất 1 ký tự đặc biệt';
+  static const String pwRuleMaxLength = 'Không quá 64 ký tự';
+  static const String passwordNotMet = 'Mật khẩu chưa đạt đủ điều kiện bên dưới';
 
   // Lỗi từ máy chủ
   static const String wrongCredentials = 'Sai tài khoản hoặc mật khẩu';
@@ -108,7 +116,7 @@ class AuthStrings {
   static const String phoneTaken = 'Số điện thoại đã được sử dụng';
   static const String usernameTaken = 'Tên đăng nhập đã tồn tại.';
   static const String featureInDevelopment = 'Chức năng đang được phát triển. Vui lòng thử lại sau.';
-  static const String phoneNotFound = 'Không tìm thấy tài khoản với số điện thoại này';
+  static const String phoneNotFound = 'Số điện thoại này chưa có tài khoản';
   static const String resetFailed =
       'Không đặt lại được mật khẩu. Hãy kiểm tra số điện thoại đã đăng ký, hoặc quay lại xác thực lại.';
   static const String wrongOtp = 'Mã OTP không đúng';

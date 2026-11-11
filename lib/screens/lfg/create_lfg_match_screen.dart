@@ -10,6 +10,7 @@ import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/facility_search.dart';
 import '../../models/lfg_match.dart';
+import '../../models/player_survey.dart' show SkillLevel;
 import '../../models/sport.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
@@ -21,9 +22,31 @@ import '../../widgets/review/fair_play_guard.dart';
 import 'lfg_match_detail_screen.dart';
 import 'lfg_payment_screen.dart';
 
+/// Ca chọn sẵn khi mở màn tạo kèo từ chỗ khác (vd. trợ lý AI gợi ý ca để mở kèo).
+class LfgCreatePreset {
+  final Sport sport;
+  final String facilityId;
+  final String courtSlotId;
+  final DateTime start;
+
+  /// Số người cần tìm thêm (chọn hình thức có đúng số chỗ này nếu có).
+  final int? slotsNeeded;
+
+  const LfgCreatePreset({
+    required this.sport,
+    required this.facilityId,
+    required this.courtSlotId,
+    required this.start,
+    this.slotsNeeded,
+  });
+}
+
 /// Tạo kèo: chọn môn → hình thức → sân → khung giờ (48 giờ – 5 ngày tới) → thanh toán cọc host.
+/// [preset]: chọn sẵn môn / sân / ca (người dùng vẫn xem lại, chọn trình độ, ghi chú rồi tự thanh toán).
 class CreateLfgMatchScreen extends StatefulWidget {
-  const CreateLfgMatchScreen({super.key});
+  final LfgCreatePreset? preset;
+
+  const CreateLfgMatchScreen({super.key, this.preset});
 
   @override
   State<CreateLfgMatchScreen> createState() => _CreateLfgMatchScreenState();
@@ -59,11 +82,77 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
   final _noteController = TextEditingController();
   bool _isSubmitting = false;
 
+  /// Trình độ kèo; `null` = mọi trình độ.
+  SkillLevel? _skill;
+
+  /// Số ca liên tiếp muốn gộp (từ ca đã chọn, cùng sân con).
+  int _slotCount = 1;
+
+  /// Các ca liên tiếp còn trống trên cùng sân con, bắt đầu từ ca đã chọn (tối đa [LfgRepository.maxSlotsPerMatch]).
+  List<TimeSlot> get _chainAvailable {
+    final first = _slot;
+    if (first == null) return const [];
+    final court = _slots.where((s) => s.courtName == first.courtName).toList()..sort((a, b) => a.start.compareTo(b.start));
+    final chain = <TimeSlot>[first];
+    for (final s in court) {
+      if (chain.length >= AppRepositories.lfg.maxSlotsPerMatch) break;
+      if (s.start.isAtSameMomentAs(chain.last.end) && s.isAvailable) chain.add(s);
+    }
+    return chain;
+  }
+
+  /// Các ca sẽ giữ chỗ + tạo kèo.
+  List<TimeSlot> get _chain {
+    final available = _chainAvailable;
+    return available.take(_slotCount.clamp(1, available.isEmpty ? 1 : available.length)).toList();
+  }
+
+  int get _chainPrice => _chain.fold(0, (sum, s) => sum + s.price);
+
   @override
   void initState() {
     super.initState();
+    final preset = widget.preset;
+    if (preset != null) {
+      _sport = preset.sport;
+      final formats = LfgFormat.forSport(preset.sport);
+      _format = formats.where((f) => f.totalSlots - 1 == preset.slotsNeeded).firstOrNull ?? formats.last;
+      _courtType = _courtTypesFor(preset.sport).first;
+      final day = DateTime(preset.start.year, preset.start.month, preset.start.day);
+      if (_dates.contains(day)) _date = day;
+    }
     _loadDistricts();
-    _loadFacilities();
+    _loadFacilities().then((_) => _applyPreset());
+  }
+
+  /// Chọn sẵn sân + ca của [CreateLfgMatchScreen.preset]; ca không còn hợp lệ (ngoài 48 giờ – 5 ngày, đã có người đặt)
+  /// thì báo để người dùng tự chọn ca khác.
+  Future<void> _applyPreset() async {
+    final preset = widget.preset;
+    if (preset == null || !mounted) return;
+    var facility = _facilities.where((f) => f.id == preset.facilityId).firstOrNull;
+    if (facility == null) {
+      try {
+        facility = await AppRepositories.facility.getFacility(preset.facilityId);
+      } catch (_) {
+        facility = null;
+      }
+      if (facility == null || !mounted) return;
+      setState(() => _facilities = [facility!, ..._facilities]);
+    }
+    setState(() => _facility = facility);
+    await _loadSlots();
+    if (!mounted) return;
+    final slot = _slots.where((s) => s.id == preset.courtSlotId && s.isAvailable).firstOrNull;
+    if (slot == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(LfgStrings.presetSlotUnavailable)));
+      return;
+    }
+    setState(() {
+      _court = slot.courtName;
+      _slot = slot;
+      _slotCount = 1;
+    });
   }
 
   @override
@@ -184,13 +273,15 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     final facility = _facility;
     final slot = _slot;
     if (facility == null || slot == null) return;
+    final chain = _chain;
+    final price = _chainPrice;
     // Chặn sớm lần nữa: điểm có thể đã đổi trong lúc đang ở màn này.
     if (!await ensureCanJoinLfg(context) || !mounted) return;
 
     setState(() => _isSubmitting = true);
     final SlotHold hold;
     try {
-      hold = await AppRepositories.lfgFacility.holdSlots([slot]);
+      hold = await AppRepositories.lfgFacility.holdSlots(chain);
     } on FacilityException catch (e) {
       if (mounted) {
         setState(() => _isSubmitting = false);
@@ -214,9 +305,9 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             facilityName: '${facility.name} • ${slot.courtName}',
             district: _area(facility),
             start: slot.start,
-            end: slot.end,
+            end: chain.last.end,
           ),
-          amount: AppRepositories.lfg.createCost(slot.price, _format),
+          amount: AppRepositories.lfg.createCost(price, _format),
           amountLabel: AppRepositories.lfg.hostPaysCourt ? LfgStrings.amountToPayCourt : LfgStrings.amountToPay,
           expiresAt: hold.expiresAt,
           onConfirm: () => AppRepositories.lfg.createMatch(
@@ -224,6 +315,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             facility: facility,
             format: _format,
             note: _noteController.text,
+            skillLevel: _skill,
           ),
           onRelease: () => AppRepositories.lfgFacility.releaseHold(hold.holdId),
         ),
@@ -382,11 +474,30 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
               const SizedBox(height: 12),
               TimeSlotGrid(
                 slots: _slots.where((s) => s.courtName == _court).toList(),
-                selectedSlotIds: {if (slot != null) slot.id},
+                selectedSlotIds: {for (final s in _chain) s.id},
                 now: DateTime.now(),
-                onSelected: (s) => setState(() => _slot = s),
+                onSelected: (s) => setState(() {
+                  _slot = s;
+                  _slotCount = 1;
+                }),
               ),
+              if (slot != null && AppRepositories.lfg.maxSlotsPerMatch > 1) ...[
+                const SizedBox(height: 14),
+                _title(LfgStrings.stepSlotCount),
+                _buildSlotCount(),
+              ],
             ],
+            const SizedBox(height: 18),
+            _title(LfgStrings.stepSkill),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _chip(label: LfgStrings.anySkill, selected: _skill == null, onTap: () => setState(() => _skill = null)),
+                for (final l in SkillLevel.values)
+                  _chip(label: l.label, selected: _skill == l, onTap: () => setState(() => _skill = l)),
+              ],
+            ),
             const SizedBox(height: 18),
             _title(LfgStrings.stepNote),
             TextField(
@@ -468,8 +579,47 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     );
   }
 
+  Widget _buildSlotCount() {
+    final available = _chainAvailable.length;
+    final max = AppRepositories.lfg.maxSlotsPerMatch;
+    final chain = _chain;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton.outlined(
+              onPressed: _slotCount > 1 ? () => setState(() => _slotCount--) : null,
+              icon: const Icon(Icons.remove),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('$_slotCount', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            IconButton.outlined(
+              onPressed: _slotCount < available ? () => setState(() => _slotCount++) : null,
+              icon: const Icon(Icons.add),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                Formatters.slotLabel(chain.first.start, chain.last.end),
+                style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.primaryGreen),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          available < max ? LfgStrings.slotCountLimited(available) : LfgStrings.slotCountNote(max),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBottomBar(TimeSlot slot) {
-    final deposit = AppRepositories.lfg.createCost(slot.price, _format);
+    final deposit = AppRepositories.lfg.createCost(_chainPrice, _format);
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -482,7 +632,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${LfgStrings.courtPrice} ${Formatters.vnd(slot.price)}',
+                    '${LfgStrings.courtPrice} ${Formatters.vnd(_chainPrice)}',
                     style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                   ),
                   FittedBox(

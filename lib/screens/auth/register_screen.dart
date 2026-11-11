@@ -31,6 +31,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
   UserRole _role = UserRole.player;
   bool _isLoading = false;
 
+  List<TextEditingController> get _controllers => [
+        _usernameController,
+        _fullNameController,
+        _emailController,
+        _phoneController,
+        _passwordController,
+        _confirmPasswordController,
+      ];
+
+  /// Nút Đăng ký chỉ bấm được khi mọi ô hợp lệ và đã đồng ý điều khoản (kiểm tra ngầm, không hiện lỗi).
+  bool get _canSubmit =>
+      _agreedToTerms &&
+      Validators.username(_usernameController.text) == null &&
+      Validators.required(_fullNameController.text) == null &&
+      Validators.email(_emailController.text) == null &&
+      Validators.phone(_phoneController.text) == null &&
+      Validators.password(_passwordController.text) == null &&
+      Validators.confirmPassword(() => _passwordController.text)(_confirmPasswordController.text) == null;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final c in _controllers) {
+      c.addListener(_refresh);
+    }
+  }
+
+  void _refresh() => setState(() {});
+
   @override
   void dispose() {
     _usernameController.dispose();
@@ -139,7 +168,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: _passwordController,
                 validator: Validators.password,
                 isPassword: true,
-                helperText: AuthStrings.passwordRule,
+                showPasswordChecklist: true,
                 autofillHints: const [AutofillHints.newPassword],
               ),
               const SizedBox(height: 16),
@@ -148,6 +177,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 hint: AuthStrings.confirmPasswordHint,
                 controller: _confirmPasswordController,
                 validator: Validators.confirmPassword(() => _passwordController.text),
+                revalidateOn: _passwordController,
                 isPassword: true,
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) => _handleRegister(),
@@ -158,7 +188,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               AuthPrimaryButton(
                 label: AuthStrings.registerButton,
                 isLoading: _isLoading,
-                onPressed: _handleRegister,
+                onPressed: _canSubmit ? _handleRegister : null,
               ),
               const SizedBox(height: 20),
               AuthFooterLink(

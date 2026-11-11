@@ -13,6 +13,14 @@ class TeamStrings {
   static const String invitePhonesLabel = 'Mời thành viên bằng SĐT (không bắt buộc)';
   static const String invitePhonesHint = 'Mỗi số một dòng hoặc cách nhau bởi dấu phẩy';
   static const String inviteNote = 'Chỉ mời được người đã có tài khoản SportNexus. Lời mời hết hạn sau 7 ngày.';
+  static const String sport = 'Môn của đội';
+  static const String sportRequired = 'Vui lòng chọn môn của đội';
+  static const String sportFixedNote = 'Môn của đội không đổi được sau khi tạo.';
+  static const String sportUnavailable = 'Môn này chưa có trên hệ thống. Vui lòng chọn môn khác.';
+  static const String needsSport = 'Đội chưa khai môn: đội trưởng cần chọn môn để đăng ký giải.';
+  static const String chooseSport = 'Chọn môn';
+  static const String skillLevel = 'Trình độ';
+  static String teamElo(int rating) => 'Elo đội: $rating';
   static const String save = 'LƯU';
   static const String create = 'TẠO ĐỘI';
   static String memberCount(int n) => '$n thành viên';

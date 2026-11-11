@@ -21,6 +21,7 @@ class MockPlayerTournamentRepository implements PlayerTournamentRepository {
   static const String msgNoTeam = 'Nội dung này đăng ký cá nhân, không chọn đội.';
   static const String msgTeamSize = 'Số thành viên của đội không phù hợp với nội dung này.';
   static const String msgNotRegistered = 'Bạn chưa đăng ký nội dung này.';
+  static const String msgInvitationGone = 'Lời mời không còn hiệu lực.';
   static const String msgCannotWithdraw = 'Chỉ rút được khi giải còn mở đăng ký.';
 
   final MockTeamRepository? _teams;
@@ -210,6 +211,53 @@ class MockPlayerTournamentRepository implements PlayerTournamentRepository {
     } else {
       _participants.remove(mine);
     }
+  }
+
+  @override
+  /// Bản giả lập: đối thủ của mọi trận là một người chơi mẫu.
+  @override
+  Future<List<MatchPlayer>> getMatchPlayers(String matchId) async {
+    await _me();
+    return const [MatchPlayer(userId: 'u-minhtuan', name: 'Minh Tuấn', sideName: 'Minh Tuấn')];
+  }
+
+  /// Bản giả lập không có vòng bảng.
+  @override
+  Future<List<StandingGroup>> getStandings(String divisionId) async {
+    await _me();
+    return const [];
+  }
+
+  /// Lời mời giải nội bộ giả lập (trong bộ nhớ); [invitations] để test thêm lời mời.
+  final List<TournamentInvitation> invitations = [];
+
+  @override
+  Future<List<TournamentInvitation>> getMyInvitations({bool pendingOnly = true}) async {
+    await _me();
+    return invitations.where((i) => !pendingOnly || i.isPending).toList();
+  }
+
+  /// Nhận lời = đăng ký bảng con như [join]; lỗi (hết hạn, thiếu tiền) thì lời mời vẫn chờ.
+  @override
+  Future<void> respondInvitation(String invitationId, {required bool accept}) async {
+    await _me();
+    final index = invitations.indexWhere((i) => i.id == invitationId && i.isPending);
+    if (index < 0) throw const TournamentException(msgInvitationGone);
+    final inv = invitations[index];
+    if (accept) await join(inv.divisionId, teamId: inv.teamId);
+    invitations[index] = TournamentInvitation(
+      id: inv.id,
+      divisionId: inv.divisionId,
+      divisionName: inv.divisionName,
+      tournamentId: inv.tournamentId,
+      tournamentName: inv.tournamentName,
+      type: inv.type,
+      entryFee: inv.entryFee,
+      teamId: inv.teamId,
+      teamName: inv.teamName,
+      invitedByName: inv.invitedByName,
+      status: accept ? TournamentInvitationStatus.accepted : TournamentInvitationStatus.declined,
+    );
   }
 
   @override

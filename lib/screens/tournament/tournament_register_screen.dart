@@ -7,6 +7,8 @@ import '../../data/repositories/player_tournament_repository.dart';
 import '../../models/team.dart';
 import '../../models/tournament_listing.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/common/onboarding_required.dart';
+import '../../widgets/common/rating_required.dart';
 import '../profile/top_up_wallet_screen.dart';
 import '../team/team_form_screen.dart';
 
@@ -85,6 +87,8 @@ class _TournamentRegisterScreenState extends State<TournamentRegisterScreen> {
     } on TournamentException catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
+      if (await handleOnboardingRequired(context, e) || !mounted) return;
+      if (await handleRatingRequired(context, e) || !mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));

@@ -299,27 +299,41 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textMain),
           ),
           const SizedBox(height: 6),
-          Row(
+          // Wrap: máy hẹp / chữ to thì khoảng cách xuống dòng thay vì tràn.
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              const Icon(Icons.star, size: 16, color: Colors.amber),
-              const SizedBox(width: 4),
-              Text(
-                '${_facility.rating}',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.star, size: 16, color: Colors.amber),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_facility.rating}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
+                  ),
+                  Flexible(
+                    child: Text(
+                      ' (${_facility.reviewCount} ${FacilityStrings.reviews})',
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                    ),
+                  ),
+                ],
               ),
-              Text(
-                ' (${_facility.reviewCount} ${FacilityStrings.reviews})',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-              ),
-              if (widget.distanceKm != null) ...[
-                const SizedBox(width: 12),
-                const Icon(Icons.near_me, size: 15, color: AppColors.primaryGreen),
-                const SizedBox(width: 2),
-                Text(
-                  GeoUtils.formatDistance(widget.distanceKm!),
-                  style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.primaryGreen),
+              if (widget.distanceKm != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.near_me, size: 15, color: AppColors.primaryGreen),
+                    const SizedBox(width: 2),
+                    Text(
+                      GeoUtils.formatDistance(widget.distanceKm!),
+                      style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.primaryGreen),
+                    ),
+                  ],
                 ),
-              ],
             ],
           ),
           const SizedBox(height: 8),
@@ -341,9 +355,11 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
             children: [
               const Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
               const SizedBox(width: 4),
-              Text(
-                '${FacilityStrings.openingHours}: ${_facility.openTime} - ${_facility.closeTime}',
-                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              Expanded(
+                child: Text(
+                  '${FacilityStrings.openingHours}: ${_facility.openTime} - ${_facility.closeTime}',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                ),
               ),
             ],
           ),
@@ -544,7 +560,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                           children: [
                             Icon(amenityIcon(_facility.amenityIcons[a]), size: 14, color: AppColors.primaryGreen),
                             const SizedBox(width: 4),
-                            Text(a, style: const TextStyle(fontSize: 12, color: AppColors.textMain)),
+                            Flexible(child: Text(a, style: const TextStyle(fontSize: 12, color: AppColors.textMain))),
                           ],
                         ),
                       ))

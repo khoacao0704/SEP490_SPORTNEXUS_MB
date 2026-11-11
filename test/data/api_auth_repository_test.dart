@@ -468,18 +468,34 @@ void main() {
   });
 
   group('quên mật khẩu', () {
-    test('gửi SMS qua Firebase (không gọi BE); đặt mật khẩu mới kèm firebaseIdToken', () async {
+    setUp(() {
+      server.routes['GET /api/auth/check-phone'] = (200, {'statusCode': 200, 'message': 'OK', 'data': {'exists': true}});
+    });
+
+    test('SĐT không có tài khoản: báo ngay, không gửi SMS', () async {
+      server.routes['GET /api/auth/check-phone'] = (200, {'statusCode': 200, 'message': 'OK', 'data': {'exists': false}});
+      await expectLater(
+        repo.requestPasswordReset('0999000111'),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', AuthStrings.phoneNotFound)),
+      );
+      expect(server.requests.single.queryParameters, {'phone': '0999000111'});
+      expect(phone.sent, isEmpty);
+    });
+
+    test('kiểm tra SĐT rồi gửi SMS qua Firebase; đặt mật khẩu mới kèm firebaseIdToken', () async {
       server.routes['POST /api/auth/reset-password'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
 
       expect(await repo.requestPasswordReset(' 0912345678 '), isNull);
+      expect(server.requests.single.path, '/api/auth/check-phone');
+      expect(server.requests.single.queryParameters, {'phone': '0912345678'});
       expect(phone.sent, ['0912345678']);
 
       final token = await repo.verifyResetOtp('0912345678', _FakePhoneVerifier.code);
-      expect(server.requests, isEmpty); // chưa gọi BE ở bước nhập OTP
+      expect(server.requests, hasLength(1)); // chưa gọi BE ở bước nhập OTP
 
       await repo.resetPassword('0912345678', token, 'MatKhauMoi1');
-      expect(server.requests.single.path, '/api/auth/reset-password');
-      expect(server.requests.single.data, {
+      expect(server.requests.last.path, '/api/auth/reset-password');
+      expect(server.requests.last.data, {
         'phone': '0912345678',
         'firebaseIdToken': 'firebase-0912345678',
         'newPassword': 'MatKhauMoi1',
@@ -707,6 +723,33 @@ void main() {
       expect(server.requests.single.data, {'fullName': 'Tên Mới'});
       expect(user.fullName, 'Tên Mới');
       expect((await SessionStore.readUser())!.fullName, 'Tên Mới');
+    });
+
+    test('sửa hồ sơ: chỉ gửi phần đổi (username / bio); đọc bio và số trận đã chơi', () async {
+      meReturns({...account(userId, 'User1', 'Player'), 'bio': 'Cũ', 'matchesPlayed': 12});
+      final before = await repo.getProfile();
+      expect(before.bio, 'Cũ');
+      expect(before.matchesPlayed, 12);
+
+      server.routes['PUT /api/auth/me'] = (
+        200,
+        ok({...account(userId, 'user.moi', 'Player'), 'bio': 'Thích đánh đôi', 'matchesPlayed': 12}),
+      );
+      final user = await repo.updateProfile(fullName: 'Test User', username: ' user.moi ', bio: ' Thích đánh đôi ');
+      expect(server.requests.last.data, {'username': 'user.moi', 'bio': 'Thích đánh đôi'});
+      expect(user.username, 'user.moi');
+      expect((await SessionStore.readUser())!.bio, 'Thích đánh đôi');
+
+      // Không đổi gì: không gọi BE.
+      final count = server.requests.length;
+      await repo.updateProfile(fullName: 'Test User', username: 'user.moi', bio: 'Thích đánh đôi');
+      expect(server.requests.length, count);
+
+      server.routes['PUT /api/auth/me'] = (409, {'statusCode': 409, 'message': 'Tên đăng nhập đã tồn tại.', 'data': null});
+      await expectLater(
+        repo.updateProfile(fullName: 'Test User', username: 'trung', bio: ''),
+        throwsA(isA<AuthException>().having((e) => e.message, 'message', 'Tên đăng nhập đã tồn tại.')),
+      );
     });
 
     test('xóa ảnh: gửi avatarUrl rỗng; BE trả chuỗi rỗng thì coi là chưa có ảnh', () async {

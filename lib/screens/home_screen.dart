@@ -6,6 +6,7 @@ import '../core/constants/vietnam_cities.dart';
 import '../core/strings/lfg_strings.dart';
 import '../data/app_repositories.dart';
 import '../models/lfg_match.dart';
+import '../widgets/common/section_header.dart';
 import '../widgets/lfg/lfg_actions.dart';
 import '../widgets/lfg/lfg_match_card.dart';
 import '../widgets/main_drawer.dart';
@@ -146,43 +147,62 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }
       ),
-      title: const Text(
-        'SportNexus',
-        style: TextStyle(
-          color: AppColors.primaryGreen,
-          fontWeight: FontWeight.bold,
-          fontSize: 20,
+      // Logo tia sét như màn đăng nhập; chữ "SportNexus" chỉ hiện khi đủ chỗ (không bị cắt "...").
+      title: LayoutBuilder(
+        // FittedBox: máy rất hẹp + chữ to (nút bên phải chiếm gần hết thanh) thì logo thu nhỏ thay vì tràn.
+        builder: (context, constraints) => FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: AppColors.authPrimary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.flash_on, color: Colors.white, size: 18),
+            ),
+            // Logo 30 + khoảng 8 + chữ ~125 px ở cỡ chữ gốc; chữ phóng to thì cần rộng hơn tương ứng.
+            if (constraints.maxWidth >= 38 + 125 * MediaQuery.textScalerOf(context).scale(1)) ...[
+              const SizedBox(width: 8),
+              const Text(
+                'SportNexus',
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  color: AppColors.primaryGreen,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
+              ),
+            ],
+          ],
+        ),
         ),
       ),
       actions: [
         if (_isLoggedIn) const NotificationBell(),
         Padding(
           padding: const EdgeInsets.only(right: 16.0),
+          // Chỉ hiện avatar (chữ cái đầu), không hiện tên: tên dài không làm vỡ header.
           child: _isLoggedIn
-              ? Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 14,
-                      backgroundColor: AppColors.primaryGreen,
-                      child: Text(
-                        (_userName != null && _userName!.isNotEmpty) ? _userName![0].toUpperCase() : 'U',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _userName ?? 'Khoa Cao',
+              ? Tooltip(
+                  message: _userName ?? '',
+                  child: CircleAvatar(
+                    radius: 16,
+                    backgroundColor: AppColors.primaryGreen,
+                    child: Text(
+                      (_userName != null && _userName!.trim().isNotEmpty) ? _userName!.trim()[0].toUpperCase() : 'U',
                       style: const TextStyle(
-                        color: AppColors.textMain,
+                        color: Colors.white,
+                        fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
                       ),
                     ),
-                  ],
+                  ),
                 )
               : OutlinedButton.icon(
                   onPressed: () {
@@ -298,27 +318,16 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.stars_rounded, color: AppColors.primaryGreen, size: 20),
-                  SizedBox(width: 6),
-                  Text('Trận Đấu Sắp Diễn Ra', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
-                ],
-              ),
-              GestureDetector(
-                onTap: () {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 3)),
-                    (route) => false,
-                  );
-                },
-                child: const Text('Xem tất cả >', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold, fontSize: 13)),
-              ),
-            ],
+          SectionHeader(
+            icon: Icons.stars_rounded,
+            title: 'Trận sắp diễn ra',
+            onSeeAll: () {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 3)),
+                (route) => false,
+              );
+            },
           ),
           const SizedBox(height: 10),
 
@@ -339,8 +348,12 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                // Wrap: máy hẹp / chữ to thì tên sân xuống dòng thay vì tràn.
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -349,10 +362,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(Icons.timer, size: 12, color: Colors.black87),
                           const SizedBox(width: 4),
-                          Text('Bắt đầu sau 45 phút', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                          Flexible(child: Text('Bắt đầu sau 45 phút', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber.shade900))),
                         ],
                       ),
                     ),
@@ -366,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Icon(Icons.location_on_outlined, color: Colors.white70, size: 14),
                     SizedBox(width: 4),
-                    Text('Sân 1 • Quận 7, P. Tân Thuận Đông', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    Flexible(child: Text('Sân 1 • Quận 7, P. Tân Thuận Đông', style: TextStyle(color: Colors.white70, fontSize: 12))),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -374,7 +388,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Icon(Icons.access_time, color: Colors.amber, size: 14),
                     SizedBox(width: 4),
-                    Text('Hôm nay • 19:30 - 20:30', style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
+                    Flexible(child: Text('Hôm nay • 19:30 - 20:30', style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold))),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -414,27 +428,17 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.local_fire_department, color: Colors.deepOrange, size: 20),
-                  SizedBox(width: 6),
-                  Text('Kèo LFG Gần Bạn (Đang Thiếu)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
-                ],
-              ),
-              GestureDetector(
-                onTap: () {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 1)),
-                    (route) => false,
-                  );
-                },
-                child: const Text('Xem thêm >', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold, fontSize: 13)),
-              ),
-            ],
+          SectionHeader(
+            icon: Icons.local_fire_department,
+            iconColor: Colors.deepOrange,
+            title: 'Kèo đang thiếu người',
+            onSeeAll: () {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 1)),
+                (route) => false,
+              );
+            },
           ),
           const SizedBox(height: 12),
 

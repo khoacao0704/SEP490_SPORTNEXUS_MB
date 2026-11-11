@@ -1,5 +1,6 @@
 import '../../models/tournament_listing.dart';
 import '../repositories/player_tournament_repository.dart';
+import '../session_store.dart';
 import 'api_client.dart';
 import 'api_facility_repository.dart';
 
@@ -17,6 +18,10 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
   static String joinPath(String id) => '/api/v1/tournaments/$id/join';
   static String withdrawPath(String id) => '/api/v1/tournaments/$id/cancel';
   static String ticketPath(String id) => '/api/v1/tournaments/$id/qr-ticket';
+  static String standingsPath(String id) => '/api/v1/tournaments/$id/standings';
+  static const String myInvitationsPath = '/api/v1/tournaments/my-invitations';
+  static String matchDetailPath(String id) => '/api/v1/matches/$id';
+  static String respondPath(String id) => '/api/v1/tournaments/invitations/$id/respond';
 
   final ApiClient _api;
   final ApiFacilityRepository _facility;
@@ -121,7 +126,99 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
     );
   }
 
+  /// GET /tournaments/{id}/standings → [{group: "A", rows: [{rank, name, played, won, drawn, lost, points, scored, diff}]}]
+  /// (rows đã sắp xếp; giải không có vòng bảng thì []). `diff` là hiệu số bàn / điểm hoặc hiệu số set tuỳ môn.
+  @override
+  Future<List<StandingGroup>> getStandings(String divisionId) async {
+    final data = await _call(() => _api.get(standingsPath(divisionId), auth: false));
+    return [
+      for (final g in _maps(data))
+        StandingGroup(
+          name: _str(g['group']),
+          rows: [
+            for (final (i, r) in _maps(g['rows']).indexed)
+              StandingRow(
+                position: r['rank'] is num ? (r['rank'] as num).toInt() : i + 1,
+                name: _str(r['name']),
+                played: _int(r['played']),
+                won: _int(r['won']),
+                drawn: _int(r['drawn']),
+                lost: _int(r['lost']),
+                scored: _int(r['scored']),
+                difference: _int(r['diff']),
+                points: _int(r['points']),
+              ),
+          ],
+        ),
+    ];
+  }
+
+  /// GET /matches/{id} chỉ có id đăng ký (participant1Id / participant2Id) → nối với
+  /// GET /tournaments/{bảng con}/participants theo participantId để lấy id tài khoản:
+  /// đấu cá nhân = userId, đấu đội = teamMembers[].accountId (userId của dòng đội chỉ là người bấm đăng ký).
+  @override
+  Future<List<MatchPlayer>> getMatchPlayers(String matchId) async {
+    final match = await _call(() => _api.get(matchDetailPath(matchId)));
+    final m = match is Map ? Map<String, dynamic>.from(match) : const <String, dynamic>{};
+    final divisionId = _str(m['tournamentId']);
+    if (divisionId.isEmpty) return const [];
+    final rows = _maps(await _call(() => _api.get(participantsPath(divisionId)))).toList();
+    final myId = (await SessionStore.readUser())?.id;
+
+    List<({String id, String name})> membersOf(String participantId) {
+      final row = rows.where((r) => _str(r['participantId']) == participantId).firstOrNull;
+      if (row == null) return const [];
+      final team = _maps(row['teamMembers']).toList();
+      if (team.isNotEmpty) {
+        return [for (final t in team) (id: _str(t['accountId'] ?? t['userId']), name: _str(t['fullName']))];
+      }
+      final name = _str(row['fullName']).isNotEmpty ? _str(row['fullName']) : _str(row['username']);
+      return [(id: _str(row['userId']), name: name)];
+    }
+
+    final sides = [
+      (name: _str(m['participant1Name']), members: membersOf(_str(m['participant1Id']))),
+      (name: _str(m['participant2Name']), members: membersOf(_str(m['participant2Id']))),
+    ];
+    final mySide = sides.indexWhere((s) => s.members.any((p) => p.id == myId));
+    return [
+      for (final (i, side) in sides.indexed)
+        for (final p in side.members)
+          if (p.id.isNotEmpty && p.id != myId)
+            MatchPlayer(userId: p.id, name: p.name, sideName: side.name, isTeammate: i == mySide),
+    ];
+  }
+
+  @override
+  Future<List<TournamentInvitation>> getMyInvitations({bool pendingOnly = true}) async {
+    final data = await _call(() => _api.get(myInvitationsPath, query: {if (pendingOnly) 'status': 'PENDING'}));
+    return _maps(data is Map ? data['items'] : data).map(invitationFromApi).toList();
+  }
+
+  @override
+  Future<void> respondInvitation(String invitationId, {required bool accept}) async {
+    await _call(() => _api.post(respondPath(invitationId), body: {'accept': accept}));
+  }
+
   // ---------------- Chuyển đổi ----------------
+
+  static TournamentInvitation invitationFromApi(Map<String, dynamic> m) => TournamentInvitation(
+    id: _str(m['id']),
+    divisionId: _str(m['tournamentId']),
+    divisionName: _str(m['tournamentName']),
+    tournamentId: _opt(m['parentTournamentId']),
+    tournamentName: _opt(m['parentTournamentName']),
+    type: DivisionType.fromApi(_opt(m['categoryType'])),
+    entryFee: _int(m['entryFee']),
+    startDate: _date(m['startDate']),
+    registrationDeadline: _date(m['registrationDeadline']),
+    teamId: _opt(m['teamId']),
+    teamName: _opt(m['teamName']),
+    invitedByName: _str(m['invitedByName']),
+    message: _str(m['message']),
+    status: TournamentInvitationStatus.fromApi(m['status']),
+    createdAt: _date(m['createdAt']),
+  );
 
   static TournamentListItem listItemFromApi(Map<String, dynamic> m) {
     final sportName = _str(m['categoryName'] ?? m['sportName']);
@@ -130,6 +227,8 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
       name: _str(m['name']),
       imageUrl: _opt(m['imageUrl']),
       phase: TournamentPhase.fromApi(_opt(m['status'])),
+      tier: TournamentTier.fromApi(m['tier']),
+      purpose: TournamentPurpose.fromApi(m['purpose']),
       isPromoted: m['isPromoted'] == true,
       facilityId: _str(m['facilityId']),
       facilityName: _str(m['facilityName']),
@@ -196,6 +295,9 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
     start: _date(m['startTime']),
     end: _date(m['endTime']),
     courtName: _str(m['courtName']),
+    stage: MatchStage.fromApi(m['stage']),
+    groupName: _str(m['groupName']),
+    resultType: MatchResultType.fromApi(m['resultType']),
     sideA: _str(m['p1']).isEmpty ? BracketMatch.unknownSide : _str(m['p1']),
     sideB: _str(m['p2']).isEmpty ? BracketMatch.unknownSide : _str(m['p2']),
     winner: _opt(m['winner']),
@@ -262,7 +364,7 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
     return s == null || s.isEmpty ? null : s;
   }
 
-  static int _int(Object? v) => (v as num?)?.round() ?? 0;
+  static int _int(Object? v) => v is num ? v.round() : num.tryParse('$v')?.round() ?? 0;
 
   static DateTime? _date(Object? v) => v == null ? null : DateTime.tryParse(v.toString())?.toLocal();
 
@@ -270,7 +372,7 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
     try {
       return await request();
     } on ApiException catch (e) {
-      throw TournamentException(e.message);
+      throw TournamentException.fromApi(e);
     }
   }
 }

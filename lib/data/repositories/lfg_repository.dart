@@ -2,13 +2,26 @@ import '../../core/constants/lfg_rules.dart';
 import '../../models/booking.dart' show CancelReason;
 import '../../models/facility.dart';
 import '../../models/lfg_match.dart';
+import '../../models/player_survey.dart' show SkillLevel;
 import '../../models/time_slot.dart';
+import '../api/api_error_codes.dart';
 
 /// Lỗi nghiệp vụ LFG; [message] sẵn sàng để hiển thị.
-class LfgException implements Exception {
+class LfgException implements Exception, CodedError {
+  @override
   final String message;
 
-  const LfgException(this.message);
+  /// Mã lỗi của BE (xem [ApiErrorCodes]); lỗi của mock không có.
+  @override
+  final String? code;
+
+  @override
+  final Map<String, dynamic>? detail;
+
+  const LfgException(this.message, {this.code, this.detail});
+
+  /// Giữ nguyên câu và mã lỗi của BE.
+  LfgException.fromApi(CodedError e) : this(e.message, code: e.code, detail: e.detail);
 
   @override
   String toString() => 'LfgException: $message';
@@ -33,13 +46,19 @@ abstract class LfgRepository {
   Future<void> releaseClaim(String claimId);
 
   /// Tạo kèo từ khung giờ đã giữ chỗ: trừ cọc của host từ ví, đăng kèo lên bảng tin.
-  /// Khung giờ phải bắt đầu sau 48 giờ và trong vòng 5 ngày.
+  /// Khung giờ phải bắt đầu sau 48 giờ và trong vòng 5 ngày. [hold] có thể gồm nhiều ca liên tiếp cùng sân con
+  /// (tối đa [maxSlotsPerMatch]). [skillLevel]: trình độ kèo, `null` = mọi trình độ.
   Future<LfgMatch> createMatch({
     required SlotHold hold,
     required Facility facility,
     required LfgFormat format,
     String note = '',
+    SkillLevel? skillLevel,
   });
+
+  /// Kèo gợi ý theo hồ sơ thể thao (môn, trình độ, lịch rảnh, khu vực), điểm cao trước.
+  /// Chưa làm khảo sát người chơi thì rỗng.
+  Future<List<LfgRecommendation>> getRecommended({int limit = 20});
 
   /// Rời kèo trước T−48h: hoàn 100% cọc, chỗ mở lại, kèo vẫn ở lại để ghép tiếp.
   /// Host rời thì quyền host chuyển cho người vào sớm nhất; host là người cuối cùng thì kèo bị hủy.
@@ -50,7 +69,7 @@ abstract class LfgRepository {
   /// Lý do rời / xin hủy kèo chọn sẵn (có thể rỗng: UI không hỏi lý do).
   Future<List<CancelReason>> getLeaveReasons();
 
-  /// Gửi yêu cầu hủy kèo đã chốt (trước T−24h; ai gửi được xem [onlyHostRequestsCancel]).
+  /// Gửi yêu cầu hủy kèo đã chốt (trong khoảng T−24h tới T−1h; ai gửi được xem [onlyHostRequestsCancel]).
   /// Người gửi tính là đã đồng ý.
   Future<LfgMatch> requestCancel(String matchId, {String? reason});
 
@@ -62,6 +81,12 @@ abstract class LfgRepository {
 
   /// false: không lọc bảng tin theo tỉnh/quận (UI ẩn chọn khu vực).
   bool get supportsAreaFilter;
+
+  /// Số ca liên tiếp tối đa của một kèo (1 = chỉ một ca).
+  int get maxSlotsPerMatch;
+
+  /// true: lọc bảng tin theo trình độ / giá mỗi người được.
+  bool get supportsExtraFilters;
 
   /// true: host rời kèo thì chuyển quyền host ([leaveMatch]); false: host chỉ hủy kèo ([cancelMatch]).
   bool get hostCanLeave;

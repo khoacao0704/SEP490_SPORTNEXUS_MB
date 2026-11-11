@@ -51,6 +51,9 @@ class _PendingReviewBannerState extends State<PendingReviewBanner> {
               Expanded(
                 child: Text(
                   ReviewStrings.bannerMessage(_count),
+                  // Tối đa 2 dòng: máy thấp + chữ to thì banner không chiếm hết chỗ của danh sách bên dưới.
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.tagOrangeText),
                 ),
               ),

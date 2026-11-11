@@ -5,6 +5,7 @@ import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../models/review.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/common/system_bottom_inset.dart';
 
 class FairPlayScreen extends StatefulWidget {
   const FairPlayScreen({super.key});
@@ -90,7 +91,7 @@ class _FairPlayScreenState extends State<FairPlayScreen> {
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16 + kScrollEndGap),
                     children: [
                       FairPlayScoreCard(summary: summary),
                       const SizedBox(height: 16),

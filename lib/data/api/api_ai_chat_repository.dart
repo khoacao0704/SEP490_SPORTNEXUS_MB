@@ -72,6 +72,7 @@ class ApiAiChatRepository implements AiChatRepository {
   static AiMessage messageFromApi(Map<String, dynamic> m) {
     final rawIntent = m['intent'];
     final intent = rawIntent is Map ? _opt(rawIntent['intent']) : _opt(rawIntent);
+    final slotsNeeded = rawIntent is Map ? rawIntent['slotsNeeded'] : m['slotsNeeded'];
     return AiMessage(
       id: _str(m['id']),
       sender: _str(m['sender']).toUpperCase() == 'USER' ? AiSender.user : AiSender.bot,
@@ -80,6 +81,23 @@ class ApiAiChatRepository implements AiChatRepository {
       intent: AiIntent.fromApi(intent),
       facilities: _maps(m['facilities']).map(facilityFromApi).toList(),
       lfgCards: _maps(m['lfgCards']).map(lfgFromApi).toList(),
+      tournaments: _maps(m['tournaments']).map(tournamentFromApi).toList(),
+      slotsNeeded: slotsNeeded is num ? slotsNeeded.toInt() : null,
+    );
+  }
+
+  static AiTournamentSuggestion tournamentFromApi(Map<String, dynamic> m) {
+    final sportName = _str(m['sportName']);
+    return AiTournamentSuggestion(
+      tournamentId: _str(m['tournamentId']),
+      name: _str(m['name']),
+      sport: ApiFacilityRepository.sportFromName(sportName),
+      sportName: sportName,
+      facilityName: _str(m['facilityName']),
+      startDate: _date(m['startDate']),
+      registrationDeadline: _date(m['registrationDeadline']),
+      tier: _str(m['tier']),
+      minEntryFee: _int(m['minEntryFee']),
     );
   }
 
@@ -134,7 +152,7 @@ class ApiAiChatRepository implements AiChatRepository {
     return s == null || s.isEmpty ? null : s;
   }
 
-  static int _int(Object? v) => (v as num?)?.round() ?? 0;
+  static int _int(Object? v) => v is num ? v.round() : num.tryParse('$v')?.round() ?? 0;
 
   static DateTime? _date(Object? v) => v == null ? null : DateTime.tryParse(v.toString())?.toLocal();
 

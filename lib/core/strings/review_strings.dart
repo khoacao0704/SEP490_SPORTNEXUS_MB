@@ -25,6 +25,7 @@ class ReviewStrings {
   static const String commentHint = 'Nhận xét thêm (không bắt buộc)';
   static const String host = 'Chủ kèo';
   static const String skipped = 'Chưa chấm (sẽ bỏ qua)';
+  static const String skillVerdictTitle = 'Trình độ thực tế so với khai báo (không bắt buộc)';
   static const String submit = 'GỬI ĐÁNH GIÁ';
   static const String confirmTitle = 'Gửi đánh giá?';
   static const String confirmMessage = 'Đánh giá đã gửi sẽ không thể sửa.';

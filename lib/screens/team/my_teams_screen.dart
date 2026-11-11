@@ -7,6 +7,7 @@ import '../../data/repositories/team_repository.dart';
 import '../../models/app_user.dart';
 import '../../models/team.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/common/rating_required.dart';
 import 'team_detail_screen.dart';
 import 'team_form_screen.dart';
 
@@ -64,7 +65,7 @@ class _MyTeamsScreenState extends State<MyTeamsScreen> {
         ..showSnackBar(SnackBar(content: Text(accept ? TeamStrings.accepted : TeamStrings.declined)));
       await _load();
     } on TeamException catch (e) {
-      if (mounted) {
+      if (mounted && !await handleRatingRequired(context, e) && mounted) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
@@ -185,15 +186,16 @@ class _MyTeamsScreenState extends State<MyTeamsScreen> {
             Text('“${i.message}”', style: const TextStyle(fontStyle: FontStyle.italic)),
           ],
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 4,
             children: [
               TextButton(
                 onPressed: busy ? null : () => _respond(i, false),
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 child: const Text(TeamStrings.decline),
               ),
-              const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: busy ? null : () => _respond(i, true),
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white),
@@ -223,6 +225,7 @@ class _MyTeamsScreenState extends State<MyTeamsScreen> {
           title: Text(t.name, style: const TextStyle(fontWeight: FontWeight.bold)),
           subtitle: Text(
             [
+              if (t.sportLabel.isNotEmpty) t.sportLabel,
               TeamStrings.memberCount(t.memberCount),
               if (captain) TeamStrings.captain,
               if (t.isLocked) TeamStrings.locked,

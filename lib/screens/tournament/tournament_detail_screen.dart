@@ -156,7 +156,12 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textMain),
                 ),
                 const SizedBox(height: 8),
-                _infoRow(t.sport == null ? Icons.sports : sportIcon(t.sport!), t.sportLabel),
+                _infoRow(
+                  t.sport == null ? Icons.sports : sportIcon(t.sport!),
+                  [t.sportLabel, ?t.tier?.label, ?t.purpose?.label].where((s) => s.isNotEmpty).join(' • '),
+                ),
+                if (t.isInviteOnly)
+                  _infoRow(Icons.mail_lock_outlined, PlayerTournamentStrings.inviteOnlyNote),
                 _infoRow(
                   Icons.place_outlined,
                   [t.facilityName, t.facilityAddress].where((s) => s.isNotEmpty).join(' • '),
@@ -220,6 +225,12 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
     final Widget action;
     if (mine != null) {
       action = TournamentRegistrationCard(registration: mine, showTournament: false, onWithdrawn: _load);
+    } else if (d.info.isInviteOnly) {
+      // Giải nội bộ: BE từ chối đăng ký trực tiếp (403), chỉ nhận lời mời.
+      action = const Text(
+        PlayerTournamentStrings.inviteOnlyNote,
+        style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+      );
     } else if (division.isRegistrationOpen && !full) {
       action = SizedBox(
         width: double.infinity,
@@ -292,19 +303,18 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
               ],
               const SizedBox(height: 10),
               action,
-              Row(
-                children: [
-                  TextButton.icon(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TournamentBracketScreen(divisionId: division.id, title: division.name),
-                      ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TournamentBracketScreen(divisionId: division.id, title: division.name),
                     ),
-                    icon: const Icon(Icons.account_tree_outlined, size: 18),
-                    label: const Text(PlayerTournamentStrings.bracket),
                   ),
-                ],
+                  icon: const Icon(Icons.account_tree_outlined, size: 18),
+                  label: const Text(PlayerTournamentStrings.bracket, maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
               ),
               _ParticipantsTile(groups: groups),
             ],

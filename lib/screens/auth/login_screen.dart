@@ -29,6 +29,20 @@ class _LoginScreenState extends State<LoginScreen> {
   /// Nút mạng xã hội đang đăng nhập ('google' / 'facebook'), `null` khi không có.
   String? _socialLoading;
 
+  /// Lỗi đăng nhập hiện ngay dưới form (sai tài khoản / mật khẩu...); gõ lại thì ẩn.
+  String? _loginError;
+
+  bool get _canSubmit => _usernameController.text.trim().isNotEmpty && _passwordController.text.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController.addListener(_onInputChanged);
+    _passwordController.addListener(_onInputChanged);
+  }
+
+  void _onInputChanged() => setState(() => _loginError = null);
+
   @override
   void dispose() {
     _usernameController.dispose();
@@ -38,8 +52,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleLogin() async {
     if (_socialLoading != null || !_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loginError = null;
+    });
     await _signIn(() => AppRepositories.auth.login(
           _usernameController.text.trim(),
           _passwordController.text,
@@ -64,13 +82,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user == null) return;
       if (!isRoleAllowedOnMobile(user.role)) {
         await AppRepositories.auth.logout(revoke: false); // không thu hồi phiên Web của Admin
-        if (mounted) showAuthError(context, AuthStrings.roleNotAllowed);
+        if (mounted) setState(() => _loginError = AuthStrings.roleNotAllowed);
         return;
       }
       if (!mounted) return;
       goToHome(context, user);
     } on AuthException catch (e) {
-      if (mounted) showAuthError(context, e.message);
+      if (mounted) setState(() => _loginError = e.message);
     }
   }
 
@@ -155,33 +173,41 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Remember Me & Forgot Password
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                runSpacing: 8,
+              // Ghi nhớ (trái) & Quên mật khẩu (phải) cùng hàng, cách nhau tối thiểu 12dp.
+              // Không đủ chỗ (màn hẹp / chữ to) thì "Quên mật khẩu?" xuống dòng, vẫn căn phải.
+              OverflowBar(
+                alignment: MainAxisAlignment.spaceBetween,
+                overflowAlignment: OverflowBarAlignment.end,
+                spacing: 12,
+                overflowSpacing: 8,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Checkbox(
-                          value: _rememberMe,
-                          activeColor: AppColors.authPrimary,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                          onChanged: (value) => setState(() => _rememberMe = value ?? false),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _rememberMe = !_rememberMe),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: Checkbox(
+                            value: _rememberMe,
+                            activeColor: AppColors.authPrimary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            onChanged: (value) => setState(() => _rememberMe = value ?? false),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Flexible(
-                        child: Text(
-                          AuthStrings.rememberMe,
-                          style: TextStyle(fontSize: 13, color: AppColors.authBody),
+                        const SizedBox(width: 8),
+                        const Flexible(
+                          child: Text(
+                            AuthStrings.rememberMe,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 13, color: AppColors.authBody),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   TextButton(
                     onPressed: () => _openAuthFlow(const ForgotPasswordScreen(), AuthStrings.resetSuccess),
@@ -197,33 +223,37 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
+              if (_loginError != null) ...[
+                const SizedBox(height: 16),
+                AuthInlineError(message: _loginError!),
+              ],
               const SizedBox(height: 20),
 
               AuthPrimaryButton(
                 label: AuthStrings.loginButton,
                 isLoading: _isLoading,
-                onPressed: _handleLogin,
+                onPressed: _canSubmit ? _handleLogin : null,
               ),
               const SizedBox(height: 24),
 
-              // Divider: HOẶC ĐĂNG NHẬP BẰNG
-              // Chữ tối đa 60% chiều ngang: màn hẹp / chữ to thì xuống dòng thay vì tràn.
+              // Divider "Hoặc tiếp tục với": chữ luôn 1 dòng, 2 đường kẻ tự co giãn bằng nhau hai bên.
               LayoutBuilder(
                 builder: (context, constraints) => Row(
                   children: [
                     const Expanded(child: Divider(color: AppColors.authDivider)),
                     ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.6),
+                      constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.7),
                       child: const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
                           AuthStrings.orLoginWith,
-                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
                             color: AppColors.authHint,
-                            letterSpacing: 0.5,
                           ),
                         ),
                       ),
