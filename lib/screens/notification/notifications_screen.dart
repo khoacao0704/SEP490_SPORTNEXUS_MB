@@ -6,19 +6,9 @@ import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/notification_repository.dart';
 import '../../models/app_notification.dart';
-import '../../models/booking.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/notification/notification_tile.dart';
-import '../booking/split_booking_screen.dart';
-import '../fair_play/fair_play_screen.dart';
-import '../lfg/lfg_match_detail_screen.dart';
-import '../lfg/lfg_screen.dart';
-import '../main/main_navigation_screen.dart';
-import '../review/pending_reviews_screen.dart';
-import '../team/my_teams_screen.dart';
-import '../team/team_detail_screen.dart';
-import '../tournament/tournament_detail_screen.dart';
-import '../wallet/transaction_history_screen.dart';
+import 'notification_opener.dart';
 import 'notification_settings_screen.dart';
 
 /// Bộ lọc: `null` là tất cả, [_unreadFilter] là chưa đọc, còn lại là [NotificationGroup]
@@ -271,86 +261,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await custom(context, n);
       return;
     }
-    await _openForPlayer(n);
-  }
-
-  Future<void> _openForPlayer(AppNotification n) async {
-    final id = n.referenceId;
-    Widget? page;
-    switch (n.referenceType) {
-      case NotificationReference.booking:
-        await _openBooking(id!);
-        return;
-      case NotificationReference.lfgCard:
-        page = LfgMatchDetailScreen(matchId: id!);
-      case NotificationReference.wallet:
-        page = const TransactionHistoryScreen();
-      case NotificationReference.team:
-        page = TeamDetailScreen(teamId: id!);
-      case NotificationReference.teamInvitation:
-        page = const MyTeamsScreen();
-      case NotificationReference.tournament:
-        page = TournamentDetailScreen(tournamentId: id!);
-      case NotificationReference.facilityReview:
-      case NotificationReference.facility:
-      case NotificationReference.communityPost:
-      case NotificationReference.report:
-        // Chưa có màn tương ứng phía người chơi.
-        return;
-      case null:
-        page = _legacyPage(n.type.target);
-        if (page == null) return;
-    }
     if (!mounted) return;
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => page!));
-  }
-
-  /// Đơn chia tiền mở màn góp tiền; đơn thường mở tab Lịch Đặt.
-  Future<void> _openBooking(String bookingId) async {
-    try {
-      final booking = await AppRepositories.booking.getBooking(bookingId);
-      if (!mounted) return;
-      if (booking.paymentType == BookingPaymentType.split) {
-        await Navigator.push(context, MaterialPageRoute(builder: (_) => SplitBookingScreen(bookingId: bookingId)));
-        return;
-      }
-    } catch (_) {
-      // Không tải được đơn: vẫn mở Lịch Đặt.
-    }
-    if (!mounted) return;
-    _openMyBookings();
-  }
-
-  void _openMyBookings() {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 3)),
-      (route) => false,
-    );
-  }
-
-  /// Thông báo không có đối tượng liên quan (Fair Play sau trận, dữ liệu giả lập).
-  Widget? _legacyPage(NotificationTarget target) {
-    switch (target) {
-      case NotificationTarget.none:
-      case NotificationTarget.ownerSchedule:
-      case NotificationTarget.ownerFinance:
-      case NotificationTarget.ownerListingFee:
-      case NotificationTarget.ownerFacilities:
-      case NotificationTarget.ownerReviews:
-        return null;
-      case NotificationTarget.myBookings:
-        _openMyBookings();
-        return null;
-      case NotificationTarget.myLfgMatches:
-        return const MyLfgMatchesScreen();
-      case NotificationTarget.transactions:
-        return const TransactionHistoryScreen();
-      case NotificationTarget.pendingReviews:
-        return const PendingReviewsScreen();
-      case NotificationTarget.fairPlay:
-        return const FairPlayScreen();
-    }
+    await openPlayerNotification(Navigator.of(context), n);
   }
 
   static String _dayHeader(DateTime date, DateTime now) {

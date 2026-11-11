@@ -16,6 +16,7 @@ import '../session_store.dart';
 import 'api_client.dart';
 import 'firebase_phone_verifier.dart';
 import 'token_store.dart';
+import '../push/push_service.dart';
 
 /// [AuthRepository] gọi Backend thật.
 ///
@@ -40,6 +41,9 @@ class ApiAuthRepository implements AuthRepository {
   final TokenStore _tokens;
   final PhoneVerifier _phone;
 
+  /// Thông báo đẩy: gửi token kèm khi đăng xuất rồi huỷ token trên máy.
+  final PushService? _push;
+
   /// Thông tin đăng ký đang chờ nhập OTP.
   RegisterRequest? _pendingRegistration;
 
@@ -49,7 +53,7 @@ class ApiAuthRepository implements AuthRepository {
   /// Đã đăng nhập Facebook trong lần chạy này (đăng xuất thì đăng xuất luôn khỏi Facebook).
   bool _usedFacebook = false;
 
-  ApiAuthRepository({required this._api, required this._tokens, PhoneVerifier? phoneVerifier})
+  ApiAuthRepository({required this._api, required this._tokens, PhoneVerifier? phoneVerifier, this._push})
     : _phone = phoneVerifier ?? FirebasePhoneVerifier();
 
   @override
@@ -433,9 +437,17 @@ class ApiAuthRepository implements AuthRepository {
   /// Thu hồi phiên trên BE là phụ: lỗi mạng / token đã hết hạn vẫn đăng xuất trên máy.
   @override
   Future<void> logout({bool revoke = true}) async {
+    // Gửi deviceToken để BE ngừng đẩy thông báo của tài khoản này tới máy (không gửi thì máy vẫn nhận).
+    final deviceToken = _push?.registeredToken;
     if (revoke && await _tokens.read() != null) {
       try {
-        await _api.post('/api/auth/logout', refreshOnUnauthorized: false).timeout(logoutTimeout);
+        await _api
+            .post(
+              '/api/auth/logout',
+              body: deviceToken == null ? null : {'deviceToken': deviceToken},
+              refreshOnUnauthorized: false,
+            )
+            .timeout(logoutTimeout);
       } catch (_) {
         // bỏ qua: phiên trên máy vẫn bị xóa
       }
@@ -455,6 +467,7 @@ class ApiAuthRepository implements AuthRepository {
         // bỏ qua: không ảnh hưởng phiên của app
       }
     }
+    await _push?.unregister();
     await _tokens.clear();
     await SessionStore.clear();
   }

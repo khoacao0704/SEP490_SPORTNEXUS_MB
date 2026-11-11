@@ -50,6 +50,8 @@ dependencies:
   flutter_facebook_auth: ^7.3.2
   firebase_auth: ^7.0.1
   signalr_netcore: ^1.4.4
+  firebase_messaging: ^17.0.1
+  flutter_local_notifications: 22.3.3
 
 dev_dependencies:
   flutter_test:

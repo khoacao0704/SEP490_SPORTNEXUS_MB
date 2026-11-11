@@ -16,6 +16,8 @@ import 'api/token_store.dart';
 import 'api/api_owner_repository.dart';
 import 'api/api_player_profile_repository.dart';
 import 'api/api_rating_repository.dart';
+import 'push/push_platform.dart';
+import 'push/push_service.dart';
 import 'mock/mock_ai_chat_repository.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_booking_repository.dart';
@@ -62,9 +64,13 @@ class AppRepositories {
   /// Gọi Backend; tự gắn token. main.dart gán [ApiClient.onUnauthorized] để xử lý phiên hết hạn.
   static final ApiClient api = ApiClient(tokens: tokenStore);
 
+  /// Thông báo đẩy FCM (chỉ người chơi). main.dart gọi [PushService.start]; chưa start thì không làm gì.
+  static PushService push =
+      ApiConfig.useMockAuth ? PushService.disabled() : PushService(api: api, platform: FcmPushPlatform());
+
   static AuthRepository auth = ApiConfig.useMockAuth
       ? MockAuthRepository()
-      : ApiAuthRepository(api: api, tokens: tokenStore);
+      : ApiAuthRepository(api: api, tokens: tokenStore, push: push);
   /// Tìm sân, chi tiết cơ sở, khung giờ: dữ liệu thật (giữ chỗ 10 phút đếm trên máy, BE chưa có API giữ chỗ).
   static FacilityRepository facility = ApiConfig.useMockAuth ? _mockFacility : _apiFacility;
   static final ApiFacilityRepository _apiFacility = ApiFacilityRepository(api: api);
@@ -121,7 +127,7 @@ class AppRepositories {
       : ApiAiChatRepository(api: api);
 
   static ReviewRepository review = ApiConfig.useMockAuth ? MockReviewRepository() : ApiReviewRepository(api: api);
-  /// Thông báo: dữ liệu thật + realtime SignalR (chưa có push FCM).
+  /// Thông báo: dữ liệu thật + realtime SignalR (push FCM ở [push]).
   static NotificationRepository notification = ApiConfig.useMockAuth
       ? MockNotificationRepository()
       : ApiNotificationRepository(api: api, realtime: SignalRNotificationRealtime(tokens: tokenStore, api: api));

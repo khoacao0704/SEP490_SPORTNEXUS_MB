@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/strings/api_strings.dart';
@@ -14,6 +16,9 @@ Future<void> main() async {
   // Android đọc cấu hình từ android/app/google-services.json.
   await Firebase.initializeApp();
   AppRepositories.api.onUnauthorized = _onSessionExpired;
+  // Thông báo đẩy: chỉ chuẩn bị kênh / bắt sự kiện bấm; đăng ký token khi người chơi vào màn chính.
+  // Không chờ: lỗi Firebase không được làm chậm hay chặn việc mở app.
+  unawaited(AppRepositories.push.start());
   runApp(const SportNexusApp());
 }
 
