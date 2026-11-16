@@ -10,6 +10,7 @@ import 'api/api_notification_repository.dart';
 import 'api/api_player_tournament_repository.dart';
 import 'api/api_review_repository.dart';
 import 'api/api_team_repository.dart';
+import 'api/api_voucher_repository.dart';
 import 'api/api_wallet_repository.dart';
 import 'api/notification_hub.dart';
 import 'api/token_store.dart';
@@ -32,6 +33,7 @@ import 'mock/mock_review_repository.dart';
 import 'mock/mock_split_payment_repository.dart';
 import 'mock/mock_team_repository.dart';
 import 'mock/mock_tournament_repository.dart';
+import 'mock/mock_voucher_repository.dart';
 import 'mock/mock_wallet_repository.dart';
 import 'repositories/ai_chat_repository.dart';
 import 'repositories/auth_repository.dart';
@@ -48,6 +50,7 @@ import 'repositories/review_repository.dart';
 import 'repositories/split_payment_repository.dart';
 import 'repositories/team_repository.dart';
 import 'repositories/tournament_repository.dart';
+import 'repositories/voucher_repository.dart';
 import 'repositories/wallet_repository.dart';
 
 /// Nơi duy nhất quyết định UI dùng bản cài đặt nào của từng repository.
@@ -81,6 +84,9 @@ class AppRepositories {
   /// Ví người chơi: số dư, lịch sử, nạp tiền PayOS. KHÔNG rút tiền (BE từ 07/11/2026 chỉ cho Chủ sân rút, Player 403).
   static WalletRepository wallet =
       ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api, supportsWithdrawal: false);
+
+  /// Mã giảm giá của người chơi (chỉ xem, dữ liệu thật).
+  static VoucherRepository voucher = ApiConfig.useMockAuth ? MockVoucherRepository() : ApiVoucherRepository(api: api);
 
   /// Ví mà các luồng chưa nối API (chia tiền, LFG, giải đấu) kiểm tra số dư / trừ tiền / nạp thêm.
   /// Tạm là ví giả lập nên có thể lệch với số dư thật; chuyển sang [wallet] khi nối từng luồng.

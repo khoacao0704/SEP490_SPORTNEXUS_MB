@@ -8,6 +8,7 @@ import '../../core/strings/team_strings.dart';
 import '../../core/strings/rating_strings.dart';
 import '../../core/strings/survey_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
+import '../../core/strings/voucher_strings.dart';
 import '../../core/strings/wallet_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
@@ -22,6 +23,7 @@ import '../rating/my_elo_screen.dart';
 import '../review/my_reviews_screen.dart';
 import '../review/pending_reviews_screen.dart';
 import '../team/my_teams_screen.dart';
+import '../wallet/my_vouchers_screen.dart';
 import '../wallet/transaction_history_screen.dart';
 import '../wallet/withdraw_screen.dart';
 import 'change_password_screen.dart';
@@ -133,6 +135,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.receipt_long_outlined,
               title: WalletStrings.historyLink,
               screen: const TransactionHistoryScreen(),
+            ),
+            _menuTile(
+              icon: Icons.confirmation_number_outlined,
+              title: VoucherStrings.title,
+              screen: const MyVouchersScreen(),
             ),
             _menuTile(
               icon: Icons.call_split,
