@@ -17,6 +17,8 @@ import 'package:test1/screens/review/write_facility_review_screen.dart';
 import 'package:test1/widgets/review/facility_reviews_section.dart';
 import 'package:test1/widgets/review/fair_play_guard.dart';
 
+import '../helpers/layout_check.dart';
+
 void main() {
   late MockReviewRepository review;
   late MockRatingRepository rating;
@@ -85,6 +87,59 @@ void main() {
     expect(find.text(ReviewStrings.facilityAlreadyReviewed), findsOneWidget);
     expect(find.text('Minh Tuấn'), findsNothing);
     expect(find.text('Hoàng Nam'), findsOneWidget);
+  });
+
+  testWidgets('Chấm 1–2 sao: bắt buộc chọn 1 lý do, "Khác" phải nhập mô tả; chấm cao chỉ có thẻ tốt', (tester) async {
+    await pump(tester, const PendingReviewsScreen());
+    await tester.tap(find.text('Sân Cầu Lông Thiên Triều'));
+    await tester.pumpAndSettle();
+    final submit = find.widgetWithText(ElevatedButton, ReviewStrings.submit);
+
+    // Minh Tuấn 4 sao: chỉ có thẻ tốt, không có lý do.
+    await tester.tap(find.bySemanticsLabel('4 sao').at(1));
+    await tester.pumpAndSettle();
+    expect(find.text(ReviewTag.onTime.label), findsOneWidget);
+    expect(find.text(ReviewTag.late.label), findsNothing);
+    expect(find.text(ReviewStrings.lowRatingReasonTitle), findsNothing);
+
+    // Hạ xuống 2 sao: hiện lý do, chưa chọn thì không gửi được.
+    await tester.tap(find.bySemanticsLabel('2 sao').at(1));
+    await tester.pumpAndSettle();
+    expect(find.text(ReviewStrings.lowRatingReasonTitle), findsOneWidget);
+    expect(find.text(ReviewTag.onTime.label), findsNothing);
+    expect(find.text(ReviewStrings.lowRatingReasonRequired), findsOneWidget);
+    expect(tester.widget<ElevatedButton>(submit).onPressed, isNull);
+
+    // Chọn "Khác": vẫn khóa tới khi nhập mô tả.
+    await tester.tap(find.widgetWithText(RadioListTile<int>, 'Khác'));
+    await tester.pumpAndSettle();
+    expect(find.text(ReviewStrings.otherReasonRequired), findsOneWidget);
+    expect(tester.widget<ElevatedButton>(submit).onPressed, isNull);
+    await tester.enterText(find.widgetWithText(TextField, ReviewStrings.otherReasonHint), 'Đến muộn 30 phút');
+    await tester.pumpAndSettle();
+    expect(tester.widget<ElevatedButton>(submit).onPressed, isNotNull);
+
+    // Đổi sang lý do có sẵn cũng gửi được.
+    await tester.tap(find.widgetWithText(RadioListTile<int>, 'Bỏ về giữa chừng'));
+    await tester.pumpAndSettle();
+    expect(find.text(ReviewStrings.lowRatingReasonRequired), findsNothing);
+    expect(tester.widget<ElevatedButton>(submit).onPressed, isNotNull);
+  });
+
+  testWidgets('Phần lý do chấm thấp không tràn chữ trên nhiều cỡ máy + chữ phóng to', (tester) async {
+    final session = (await review.getPendingReviews()).firstWhere((s) => s.players.isNotEmpty);
+    final problems = await collectLayoutProblems(
+      tester,
+      'Chấm 1 sao',
+      () => SubmitReviewScreen(session: session),
+      interact: (tester) async {
+        await tester.tap(find.bySemanticsLabel('1 sao').last);
+        await settleFrames(tester, frames: 20);
+        await tester.tap(find.widgetWithText(RadioListTile<int>, 'Khác'));
+        await settleFrames(tester, frames: 6);
+      },
+    );
+    expect(problems, isEmpty, reason: problems.join('\n'));
   });
 
   testWidgets('Fair Play: hiện điểm, trạng thái và lịch sử', (tester) async {

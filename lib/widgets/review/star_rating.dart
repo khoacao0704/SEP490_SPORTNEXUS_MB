@@ -12,8 +12,9 @@ class StarRating extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    // Wrap: màn hẹp / chữ phóng to thì nhãn ("Rất tệ"…) xuống dòng thay vì tràn ngang.
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         ...List.generate(5, (i) {
           final star = i + 1;

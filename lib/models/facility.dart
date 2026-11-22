@@ -67,6 +67,9 @@ class Facility {
   /// sân chủ sân chưa khai báo thì không có trong map. Tách theo môn vì hai môn có thể cùng tên "Sân 1".
   final Map<Sport, Map<String, String>> courtDetails;
 
+  /// % giảm khi đặt gói cố định hằng tuần (chủ sân đặt, 0–50); 0 = đặt gói vẫn được nhưng không giảm.
+  final int recurringDiscountPercent;
+
   const Facility({
     required this.id,
     required this.name,
@@ -87,6 +90,7 @@ class Facility {
     this.isPromoted = false,
     this.amenityIcons = const {},
     this.courtDetails = const {},
+    this.recurringDiscountPercent = 0,
   });
 
   /// Tọa độ của cơ sở chưa được chủ sân ghim vị trí.
@@ -135,5 +139,6 @@ class Facility {
         closeTime: json['closeTime'] as String,
         phone: json['phone'] as String,
         description: json['description'] as String? ?? '',
+        recurringDiscountPercent: (json['recurringDiscountPercent'] as num?)?.toInt() ?? 0,
       );
 }

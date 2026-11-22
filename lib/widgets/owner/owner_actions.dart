@@ -28,7 +28,7 @@ Future<CourtSession?> checkInPlayer(BuildContext context, CourtSession session, 
   return result;
 }
 
-/// Check-out cả lượt sân sau khi chủ sân xác nhận đã nhận đủ tiền.
+/// Check-out cả lượt sân sau khi chủ sân xác nhận đã nhận đủ Điểm.
 Future<CourtSession?> checkOutSession(BuildContext context, CourtSession session) async {
   final ok = await showDialog<bool>(
     context: context,

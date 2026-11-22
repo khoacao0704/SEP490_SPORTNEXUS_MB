@@ -184,4 +184,77 @@ void main() {
     expect(created.fold(0, (sum, b) => sum + b.amountPaid), s.totalAmount);
     expect(created.every((b) => b.amountPaid == b.totalPrice), isTrue);
   });
+
+  group('gói cố định hằng tuần', () {
+    /// Cùng giờ, cùng sân ở [weeks] tuần liên tiếp kể từ [daysAhead] ngày tới (chọn giờ mà mọi tuần còn trống).
+    Future<SlotHold> holdWeekly({int weeks = 4, int daysAhead = 3, int stepDays = 7}) async {
+      final days = [
+        for (var i = 0; i < weeks; i++)
+          await facility.getTimeSlots('f-test', Sport.badminton, clock.add(Duration(days: daysAhead + stepDays * i))),
+      ];
+      for (final first in days.first.where((s) => !s.isFull)) {
+        final picked = [
+          for (final d in days)
+            d.where((s) => s.start.hour == first.start.hour && s.start.minute == first.start.minute).firstOrNull,
+        ];
+        if (picked.every((s) => s != null && !s.isFull)) return facility.holdSlots(picked.cast<TimeSlot>());
+      }
+      throw StateError('không tìm được giờ trống đủ các tuần');
+    }
+
+    Future<List<Booking>> bookPackage(SlotHold h, {bool recurring = true}) => repo.createBooking(
+          hold: h,
+          paymentType: BookingPaymentType.full,
+          facilityName: 'Sân Test',
+          sportLabel: 'Cầu Lông',
+          location: 'Quận 1',
+          schedule: 'Lịch test',
+          recurring: recurring,
+          discountPercent: 10,
+        );
+
+    test('đặt gói 4 tuần: chung mã gói, giảm 10%, trừ ví giá đã giảm', () async {
+      final before = await wallet.getBalance();
+      final h = await holdWeekly();
+      final bookings = await bookPackage(h);
+      expect(bookings, hasLength(4));
+      expect(bookings.map((b) => b.recurringGroupId).toSet(), hasLength(1));
+      expect(bookings.first.recurringGroupId, isNotNull);
+      final original = h.slots.fold(0, (sum, s) => sum + s.price);
+      final paid = bookings.fold(0, (sum, b) => sum + b.amountPaid);
+      expect(paid, lessThan(original));
+      expect(bookings.first.originalPrice, h.slots.first.price);
+      expect(await wallet.getBalance(), before - paid);
+      // Lưu lại vẫn còn mã gói.
+      final mine = (await repo.getMyBookings()).where((b) => b.isRecurring).toList();
+      expect(mine, hasLength(4));
+    });
+
+    test('không thành gói (ít hơn 4 tuần / bỏ tuần) mà bật gói: báo lỗi như BE', () async {
+      await expectLater(
+        bookPackage(await holdWeekly(weeks: 3)),
+        error(BookingStrings.notAPackage(BookingStrings.packageTooFew)),
+      );
+      await expectLater(
+        bookPackage(await holdWeekly(stepDays: 14)),
+        error(BookingStrings.notAPackage(BookingStrings.packageWeekly)),
+      );
+    });
+
+    test('hủy một buổi = hủy cả gói, hoàn 100%', () async {
+      final bookings = await bookPackage(await holdWeekly(daysAhead: 5));
+      final before = await wallet.getBalance();
+      await repo.cancelBooking(bookings[2].id);
+      final mine = (await repo.getMyBookings()).where((b) => b.recurringGroupId == bookings.first.recurringGroupId);
+      expect(mine.every((b) => b.cancelledAt != null), isTrue);
+      final paid = bookings.fold(0, (sum, b) => sum + b.amountPaid);
+      expect(await wallet.getBalance(), before + paid);
+    });
+
+    test('còn dưới 48 giờ trước buổi đầu: không hủy được gói', () async {
+      final bookings = await bookPackage(await holdWeekly(daysAhead: 1));
+      clock = bookings.first.start.subtract(const Duration(hours: 47));
+      await expectLater(repo.cancelBooking(bookings.last.id), error(BookingStrings.packageCancelTooLate));
+    });
+  });
 }

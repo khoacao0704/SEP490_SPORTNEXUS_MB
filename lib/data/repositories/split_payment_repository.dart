@@ -1,7 +1,7 @@
 import '../../models/split_payment.dart';
 import '../../models/time_slot.dart';
 
-/// Lỗi nghiệp vụ chia tiền; [message] sẵn sàng để hiển thị.
+/// Lỗi nghiệp vụ chia Điểm; [message] sẵn sàng để hiển thị.
 class SplitPaymentException implements Exception {
   final String message;
 
@@ -11,7 +11,7 @@ class SplitPaymentException implements Exception {
   String toString() => 'SplitPaymentException: $message';
 }
 
-/// Chia tiền khi đặt sân thường (không áp dụng cho LFG).
+/// Chia Điểm khi đặt sân thường (không áp dụng cho LFG).
 abstract class SplitPaymentRepository {
   /// Người đặt chọn chia [parts] phần (2 hoặc 4) và trả phần của mình từ ví ngay.
   /// Khung giờ đang giữ ([hold]) được giữ tiếp 30 phút để nhóm trả nốt.

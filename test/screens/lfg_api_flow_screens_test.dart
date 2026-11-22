@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/lfg_strings.dart';
+import 'package:test1/core/utils/formatters.dart';
 import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_lfg_repository.dart';
@@ -48,8 +49,16 @@ class _BeLikeLfg extends MockLfgRepository {
     return current = build(hostIsMe: true, myStatus: null, cancelled: true);
   }
 
-  static LfgMatch build({required bool hostIsMe, LfgMyStatus? myStatus, bool meJoined = false, bool cancelled = false}) {
-    final start = DateTime.now().add(const Duration(days: 4));
+  static LfgMatch build({
+    required bool hostIsMe,
+    LfgMyStatus? myStatus,
+    bool meJoined = false,
+    bool cancelled = false,
+    Duration startsIn = const Duration(days: 4),
+    int courtPrice = 200000,
+    int otherJoiners = 0,
+  }) {
+    final start = DateTime.now().add(startsIn);
     return LfgMatch(
       id: 'c1',
       facilityId: 'f1',
@@ -61,10 +70,12 @@ class _BeLikeLfg extends MockLfgRepository {
       format: LfgFormat.doubles,
       start: start,
       end: start.add(const Duration(hours: 1)),
-      courtPrice: 200000,
+      courtPrice: courtPrice,
       members: [
         LfgMember(userId: hostIsMe ? _me : 'u-host', name: 'Chủ Kèo', fairPlayScore: 90, joinedAt: DateTime.now(), isHost: true),
         if (meJoined) LfgMember(userId: _me, name: 'Khoa Cao', fairPlayScore: 93, joinedAt: DateTime.now()),
+        for (var i = 0; i < otherJoiners; i++)
+          LfgMember(userId: 'u-j$i', name: 'Người chơi $i', fairPlayScore: 90, joinedAt: DateTime.now()),
       ],
       createdAt: DateTime.now(),
       totalSlotsOverride: 4,
@@ -102,7 +113,7 @@ void main() {
 
     expect(find.text(LfgStrings.statusInvited), findsOneWidget);
     expect(find.text('36 Trần Duy Hưng, Hà Nội'), findsOneWidget);
-    expect(find.textContaining('Host đã trả trước toàn bộ tiền sân'), findsOneWidget);
+    expect(find.textContaining('Host đã trả trước toàn bộ giá sân'), findsOneWidget);
 
     await tester.tap(find.text(LfgStrings.acceptInvite(50000)));
     await tester.pumpAndSettle();
@@ -136,5 +147,60 @@ void main() {
     expect(lfg.calls, ['cancel']);
     expect(find.text(LfgStrings.hostCancelledMessage), findsOneWidget);
     expect(find.text(LfgStrings.statusCancelled), findsOneWidget);
+  });
+
+  testWidgets('host hủy dưới 48h: cảnh báo gắt số tiền bị trừ, bồi thường mỗi người, −20 Fair Play', (tester) async {
+    // Ví dụ BE: tiền sân 150.000đ, 2 người đã vào → host mất 75.000đ, mỗi người nhận 37.500đ.
+    lfg.current = _BeLikeLfg.build(hostIsMe: true, startsIn: const Duration(hours: 20), courtPrice: 150000, otherJoiners: 2);
+    await pump(tester);
+
+    await tester.tap(find.text(LfgStrings.cancelMatch));
+    await tester.pumpAndSettle();
+    expect(find.text(LfgStrings.lateCancelTitle), findsOneWidget);
+    expect(find.text(LfgStrings.lateCancelWarning), findsOneWidget);
+    expect(find.text('−${Formatters.vnd(75000)}'), findsOneWidget);
+    expect(find.text(Formatters.vnd(37500)), findsOneWidget);
+    expect(find.text(LfgStrings.lateCancelFairPlay), findsOneWidget);
+
+    // Quay lại: không hủy.
+    await tester.tap(find.text(LfgStrings.lateCancelBack));
+    await tester.pumpAndSettle();
+    expect(lfg.calls, isEmpty);
+
+    await tester.tap(find.text(LfgStrings.cancelMatch));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(LfgStrings.lateCancelConfirm));
+    await tester.pumpAndSettle();
+    expect(lfg.calls, ['cancel']);
+    expect(find.text(LfgStrings.lateCancelledMessage(75000)), findsOneWidget);
+  });
+
+  testWidgets('host hủy dưới 48h khi chưa ai vào: hoàn đủ tiền sân nhưng vẫn −20 Fair Play', (tester) async {
+    lfg.current = _BeLikeLfg.build(hostIsMe: true, startsIn: const Duration(hours: 20));
+    await pump(tester);
+
+    await tester.tap(find.text(LfgStrings.cancelMatch));
+    await tester.pumpAndSettle();
+    expect(find.text(LfgStrings.lateCancelWarningNoJoiner), findsOneWidget);
+    expect(find.text(LfgStrings.lateCancelLossLabel), findsNothing);
+    expect(find.text(LfgStrings.lateCancelFairPlay), findsOneWidget);
+  });
+
+  testWidgets('cảnh báo hủy đơn phương không tràn trên máy nhỏ, chữ phóng to', (tester) async {
+    lfg.current = _BeLikeLfg.build(hostIsMe: true, startsIn: const Duration(hours: 20), courtPrice: 1500000, otherJoiners: 3);
+    tester.view.physicalSize = const Size(320 * 2, 568 * 2);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(size: Size(320, 568), textScaler: TextScaler.linear(1.6)),
+        child: LfgMatchDetailScreen(matchId: 'c1'),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(LfgStrings.cancelMatch));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(LfgStrings.lateCancelConfirm), findsOneWidget);
   });
 }

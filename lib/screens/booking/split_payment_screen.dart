@@ -35,7 +35,7 @@ String splitStatusLabel(SplitStatus status) {
 
 enum _Method { wallet, vietQr }
 
-/// Chi tiết một lượt chia tiền. Người đặt thấy link/mã để gửi nhóm; người nhận link trả phần của mình.
+/// Chi tiết một lượt chia Điểm. Người đặt thấy link/mã để gửi nhóm; người nhận link trả phần của mình.
 class SplitPaymentScreen extends StatefulWidget {
   final String splitId;
   final SplitPayment? initial;
@@ -124,7 +124,7 @@ class _SplitPaymentScreenState extends State<SplitPaymentScreen> {
     setState(() => _isBusy = true);
     try {
       if (_method == _Method.vietQr) {
-        // Chuyển khoản đúng số tiền vào ví rồi trừ ví (BE xác nhận chuyển khoản).
+        // Chuyển khoản đúng số tiền vào Ví điểm rồi trừ ví (BE xác nhận chuyển khoản).
         final order = await AppRepositories.paymentWallet.createTopUp(amount);
         if (!mounted) return;
         final paid = await Navigator.push<bool>(

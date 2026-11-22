@@ -1,4 +1,5 @@
 import '../core/constants/fair_play_rules.dart';
+import '../core/utils/text_utils.dart';
 import 'sport.dart';
 
 enum ReviewTag {
@@ -14,6 +15,17 @@ enum ReviewTag {
   final String apiValue;
   final String label;
   final bool isPositive;
+}
+
+/// Lý do bắt buộc khi chấm người chơi thấp (≤ [FairPlayRules.reasonRequiredMaxStars] sao); danh sách do BE quản lý.
+class LowRatingReason {
+  final int id;
+  final String name;
+
+  const LowRatingReason({required this.id, required this.name});
+
+  /// "Khác": phải nhập nhận xét. BE không có cờ riêng nên nhận theo tên.
+  bool get isOther => TextUtils.normalize(name) == 'khac';
 }
 
 enum SessionType {
@@ -82,7 +94,16 @@ class PlayerReviewInput {
   final Set<ReviewTag> tags;
   final String comment;
 
-  const PlayerReviewInput({required this.playerId, required this.stars, this.tags = const {}, this.comment = ''});
+  /// Lý do chấm thấp ([LowRatingReason.id]); bắt buộc khi [stars] ≤ [FairPlayRules.reasonRequiredMaxStars].
+  final int? reasonId;
+
+  const PlayerReviewInput({
+    required this.playerId,
+    required this.stars,
+    this.tags = const {},
+    this.comment = '',
+    this.reasonId,
+  });
 
   /// BE không có trường thẻ: ghép thẻ vào đầu nhận xét, vd. "Đúng giờ, Chơi đẹp. Đánh hay".
   String get commentWithTags {

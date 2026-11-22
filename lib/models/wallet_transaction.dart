@@ -1,22 +1,22 @@
 enum TransactionType {
-  topUp('TopUp', 'Nạp tiền', isCredit: true),
-  withdrawal('Withdrawal', 'Rút tiền', isCredit: false),
+  topUp('TopUp', 'Nạp Điểm', isCredit: true),
+  withdrawal('Withdrawal', 'Đổi Điểm ra tiền', isCredit: false),
   bookingPayment('BookingPayment', 'Thanh toán đặt sân', isCredit: false),
   lfgDeposit('LfgDeposit', 'Cọc tạo kèo LFG', isCredit: false),
   flashClaim('FlashClaim', 'Cọc tham gia kèo LFG', isCredit: false),
   tournamentFee('TournamentFee', 'Lệ phí giải đấu', isCredit: false),
-  refund('Refund', 'Hoàn tiền', isCredit: true),
+  refund('Refund', 'Hoàn Điểm', isCredit: true),
 
   // Loại giao dịch của BE (ví thật), xem ApiWalletRepository.typeFromApi
-  deposit('Deposit', 'Tiền vào ví', isCredit: true),
-  hold('Hold', 'Tạm giữ tiền', isCredit: false),
-  holdRelease('HoldRelease', 'Giải ngân tiền tạm giữ', isCredit: false),
+  deposit('Deposit', 'Điểm vào Ví điểm', isCredit: true),
+  hold('Hold', 'Tạm giữ Điểm', isCredit: false),
+  holdRelease('HoldRelease', 'Giải ngân Điểm tạm giữ', isCredit: false),
   walletPayment('WalletPayment', 'Thanh toán', isCredit: false),
   prize('Prize', 'Thưởng giải đấu', isCredit: true),
 
   // Phía Chủ sân
-  escrowRelease('EscrowRelease', 'Giải ngân tiền sân', isCredit: true),
-  penaltyIncome('PenaltyIncome', 'Tiền phạt hủy / vắng mặt', isCredit: true),
+  escrowRelease('EscrowRelease', 'Giải ngân Điểm đặt sân', isCredit: true),
+  penaltyIncome('PenaltyIncome', 'Điểm phạt hủy / vắng mặt', isCredit: true),
   listingFee('ListingFee', 'Phí duy trì hàng tháng', isCredit: false);
 
   const TransactionType(this.apiValue, this.label, {required this.isCredit});
@@ -24,7 +24,7 @@ enum TransactionType {
   final String apiValue;
   final String label;
 
-  /// true: cộng vào ví; false: trừ khỏi ví.
+  /// true: cộng vào Ví điểm; false: trừ khỏi ví.
   final bool isCredit;
 
   static TransactionType fromApi(String value) =>
@@ -32,16 +32,16 @@ enum TransactionType {
 }
 
 enum TransactionStatus {
-  /// Nạp tiền: chờ người dùng chuyển khoản. Rút tiền: chờ xử lý.
+  /// Nạp Điểm: chờ người dùng chuyển khoản. Đổi Điểm ra tiền: chờ xử lý.
   pending('Pending'),
   success('Success'),
   failed('Failed'),
 
-  /// Nạp tiền quá hạn mà chưa nhận được tiền.
+  /// Nạp Điểm quá hạn mà chưa nhận được tiền.
   expired('Expired'),
   cancelled('Cancelled'),
 
-  /// Hủy muộn nên không được hoàn tiền (BE ghi giao dịch hoàn 0đ).
+  /// Hủy muộn nên không được hoàn Điểm (BE ghi giao dịch hoàn 0đ).
   notRefunded('NotRefunded');
 
   const TransactionStatus(this.apiValue);
@@ -79,7 +79,7 @@ class WalletTransaction {
     this.note,
   });
 
-  /// Lệnh rút đang chờ Admin xử lý: người dùng còn hủy được (tiền trả lại ví).
+  /// Lệnh rút đang chờ Admin xử lý: người dùng còn hủy được (tiền trả lại Ví điểm).
   bool get isPendingWithdrawal => type == TransactionType.withdrawal && status == TransactionStatus.pending;
 
   /// Số tiền có dấu theo chiều ảnh hưởng tới số dư (+ nạp/hoàn, - chi/rút).

@@ -9,9 +9,9 @@ import '../../theme/app_colors.dart';
 import 'split_booking_screen.dart';
 import 'split_payment_screen.dart';
 
-/// "Chia Tiền Sân": nhập mã từ link bạn bè gửi, và xem các lượt chia của mình.
-/// BE thật ([BookingRepository.supportsSplitInvite]): chia tiền bằng cách mời theo SĐT, không có mã →
-/// chỉ liệt kê các đơn chia tiền (mình đặt hoặc được mời góp), mở màn chia tiền của đơn đó.
+/// "Chia Điểm Sân": nhập mã từ link bạn bè gửi, và xem các lượt chia của mình.
+/// BE thật ([BookingRepository.supportsSplitInvite]): chia Điểm bằng cách mời theo SĐT, không có mã →
+/// chỉ liệt kê các đơn chia Điểm (mình đặt hoặc được mời góp), mở màn chia Điểm của đơn đó.
 class SplitPaymentsScreen extends StatefulWidget {
   const SplitPaymentsScreen({super.key});
 

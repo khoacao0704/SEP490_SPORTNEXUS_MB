@@ -12,10 +12,10 @@ class WalletException implements Exception {
 }
 
 abstract class WalletRepository {
-  /// false: nạp tiền chưa dùng được (UI báo "đang phát triển").
+  /// false: nạp Điểm chưa dùng được (UI báo "đang phát triển").
   bool get supportsTopUp;
 
-  /// false: rút tiền / tài khoản ngân hàng chưa dùng được (UI báo "đang phát triển").
+  /// false: đổi Điểm ra tiền / tài khoản ngân hàng chưa dùng được (UI báo "đang phát triển").
   bool get supportsWithdrawal;
 
   /// true: chỉ lưu MỘT tài khoản ngân hàng nhận tiền (thêm mới = thay thế, không xóa được).
@@ -42,7 +42,7 @@ abstract class WalletRepository {
     String? reference,
   });
 
-  // ---------- Nạp tiền VietQR ----------
+  // ---------- Nạp Điểm VietQR ----------
 
   /// Tạo lệnh nạp ở trạng thái chờ; ví chỉ được cộng khi BE xác nhận đã nhận tiền.
   Future<TopUpOrder> createTopUp(int amount);
@@ -56,7 +56,7 @@ abstract class WalletRepository {
   /// Hủy lệnh nạp đang chờ; lệnh đã xong (đã nhận tiền / đã hủy) thì bỏ qua.
   Future<void> cancelTopUp(String transactionId);
 
-  // ---------- Rút tiền ----------
+  // ---------- Đổi Điểm ra tiền ----------
 
   Future<List<BankAccount>> getBankAccounts();
 
@@ -72,7 +72,7 @@ abstract class WalletRepository {
   /// Gửi lệnh rút: trừ số dư ngay, trạng thái chờ xử lý. Nếu bị từ chối, BE hoàn lại tiền.
   Future<WalletTransaction> requestWithdrawal({required int amount, required BankAccount account});
 
-  /// Hủy lệnh rút đang chờ xử lý ([WalletTransaction.isPendingWithdrawal]); tiền trả lại ví.
+  /// Hủy lệnh rút đang chờ xử lý ([WalletTransaction.isPendingWithdrawal]); tiền trả lại Ví điểm.
   Future<void> cancelWithdrawal(WalletTransaction withdrawal);
 }
 

@@ -4,15 +4,24 @@ import '../../data/app_repositories.dart';
 import '../../data/repositories/lfg_repository.dart';
 import '../../models/booking.dart' show CancelReason;
 import '../../models/lfg_match.dart';
+import '../../models/team.dart';
 import '../../screens/lfg/lfg_payment_screen.dart';
 import '../../theme/app_colors.dart';
 import '../common/onboarding_required.dart';
 import '../review/fair_play_guard.dart';
+import 'team_picker.dart';
 
 /// Flash Claim một kèo: kiểm tra Fair Play → giữ chỗ 10 phút → thanh toán cọc.
 /// Trả về kèo sau khi vào thành công, `null` nếu bị chặn / hủy / lỗi (đã báo cho người dùng).
 Future<LfgMatch?> flashClaimMatch(BuildContext context, LfgMatch match) async {
   if (!await ensureCanJoinLfg(context) || !context.mounted) return null;
+
+  // Kèo Đội vs Đội: đội trưởng chọn đội của mình để nhận kèo thay cả đội.
+  Team? team;
+  if (match.isTeamMatch) {
+    team = await pickTeamForClaim(context, sport: match.sport, sideSize: match.sideSize ?? match.totalSlots ~/ 2);
+    if (team == null || !context.mounted) return null;
+  }
 
   final LfgClaim claim;
   try {
@@ -48,7 +57,7 @@ Future<LfgMatch?> flashClaimMatch(BuildContext context, LfgMatch match) async {
         ),
         amount: claim.amount,
         expiresAt: claim.expiresAt,
-        onConfirm: () => AppRepositories.lfg.confirmClaim(claim.claimId),
+        onConfirm: () => AppRepositories.lfg.confirmClaim(claim.claimId, teamId: team?.id),
         onRelease: () => AppRepositories.lfg.releaseClaim(claim.claimId),
       ),
     ),

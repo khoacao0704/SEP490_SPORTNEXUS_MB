@@ -223,14 +223,14 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
           n('nt-003', NotificationType.reviewReminder, 'Đánh giá buổi chơi',
               'Trận Cầu Lông tại Sân Cầu Lông Thiên Triều đã kết thúc. Bạn còn 24 giờ để đánh giá sân và người chơi.',
               170),
-          n('nt-004', NotificationType.topUpSucceeded, 'Nạp tiền thành công',
-              'Ví của bạn đã được cộng 200.000 đ qua VietQR.', day + 120, read: true),
+          n('nt-004', NotificationType.topUpSucceeded, 'Nạp Điểm thành công',
+              'Ví điểm của bạn đã được cộng 200.000 Điểm qua VietQR.', day + 120, read: true),
           n('nt-005', NotificationType.bookingConfirmed, 'Đặt sân thành công',
               'Bạn đã đặt Pickleball Thảo Điền. Mã QR check-in có trong mục Lịch Đặt & QR.', day + 300, read: true),
-          n('nt-006', NotificationType.withdrawalApproved, 'Rút tiền thành công',
-              'Lệnh rút 300.000 đ về Vietcombank ****6789 đã được chuyển.', 2 * day, read: true),
+          n('nt-006', NotificationType.withdrawalApproved, 'Đổi Điểm ra tiền thành công',
+              'Lệnh đổi 300.000 Điểm về Vietcombank ****6789 đã được chuyển.', 2 * day, read: true),
           n('nt-007', NotificationType.lfgCancelled, 'Kèo đã bị hủy do không đủ người',
-              'Kèo Bóng Đá tại Sân Bóng Hoa Lư chưa đủ người trước 48 giờ. Đã hoàn 100% tiền cọc 75.000 đ về ví.',
+              'Kèo Bóng Đá tại Sân Bóng Hoa Lư chưa đủ người trước 48 giờ. Đã hoàn 100% Điểm cọc 75.000 Điểm về Ví điểm.',
               3 * day, read: true),
           n('nt-008', NotificationType.fairPlayChanged, 'Fair Play +3',
               'Bạn được đánh giá trung bình 4.3 sao sau trận Pickleball tại Thảo Điền. Điểm hiện tại: 93.', 5 * day, read: true),
@@ -245,16 +245,16 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
               'Điểm Fair Play của bạn dưới 30 nên tạm thời không thể tạo kèo hoặc Flash Claim. '
                   'Bạn vẫn đặt sân bình thường.',
               8 * day),
-          n('nt-103', NotificationType.refunded, 'Đã hoàn tiền',
-              'Hoàn 150.000 đ do bạn hủy đặt sân trước 24 giờ.', 10 * day, read: true),
+          n('nt-103', NotificationType.refunded, 'Đã hoàn Điểm',
+              'Hoàn 150.000 Điểm do bạn hủy đặt sân trước 24 giờ.', 10 * day, read: true),
         ];
       case MockAuthRepository.ownerId:
         return [
           n('nt-201', NotificationType.newBooking, 'Có lượt đặt sân mới',
-              'Nguyễn Minh Anh đặt Cầu Lông tại Sân Cầu Lông Thiên Triều hôm nay (cọc 1/4: 40.000 đ).', 15),
+              'Nguyễn Minh Anh đặt Cầu Lông tại Sân Cầu Lông Thiên Triều hôm nay (cọc 1/4: 40.000 Điểm).', 15),
           n('nt-202', NotificationType.playerNoShow, 'Khách vắng mặt',
               'Lượt Bóng Đá • Sân 5 người tại Sân Bóng Hoa Lư quá 15 phút chưa check-in. '
-                  'Tiền cọc 125.000 đ đã chuyển về ví của bạn.',
+                  'Điểm cọc 125.000 Điểm đã chuyển về Ví điểm của bạn.',
               40),
           n('nt-203', NotificationType.newFacilityReview, 'Đánh giá mới 2 sao',
               'Sân Cầu Lông Thiên Triều: "Đèn sân 3 bị chớp, mong sân sửa sớm."', 3 * 60),
@@ -262,13 +262,13 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
               'Phí tháng trước chưa được thanh toán. Các cơ sở của bạn đang bị ẩn khỏi tìm kiếm cho tới khi trả phí.',
               6 * 60),
           n('nt-205', NotificationType.escrowReleased, 'Đã giải ngân',
-              'Lượt Pickleball tại Sân Cầu Lông Thiên Triều đã check-out. 150.000 đ đã vào ví.', 4 * 60, read: true),
+              'Lượt Pickleball tại Sân Cầu Lông Thiên Triều đã check-out. 150.000 Điểm đã vào Ví điểm.', 4 * 60, read: true),
           n('nt-206', NotificationType.facilityRejected, 'Hồ sơ cơ sở bị từ chối',
               'Sân Cầu Lông Tân Bình: Ảnh giấy phép bị mờ và số giấy phép không khớp với ảnh.', 5 * day, read: true),
           n('nt-207', NotificationType.listingFeeIssued, 'Đã chốt phí duy trì',
               'Phí duy trì tháng trước đã được chốt (10% doanh thu). Hạn trả hết ngày 07.', 8 * day, read: true),
-          n('nt-208', NotificationType.ownerWithdrawalApproved, 'Rút tiền thành công',
-              'Lệnh rút 5.000.000 đ về Techcombank ****1234 đã được chuyển.', 10 * day, read: true),
+          n('nt-208', NotificationType.ownerWithdrawalApproved, 'Đổi Điểm ra tiền thành công',
+              'Lệnh đổi 5.000.000 Điểm về Techcombank ****1234 đã được chuyển.', 10 * day, read: true),
           n('nt-209', NotificationType.lfgMatchConfirmed, 'Kèo LFG đã đủ người',
               'Kèo Cầu Lông đôi tại Sân Cầu Lông Thiên Triều đã đủ 4/4 người.', 12 * day, read: true),
         ];
@@ -286,7 +286,7 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
     (
       type: NotificationType.bookingCancelledByPlayer,
       title: 'Khách hủy đặt sân',
-      body: 'Một lượt Cầu Lông tại Sân Cầu Lông Thiên Triều bị hủy trong 24 giờ. Bạn nhận 40.000 đ tiền phạt.',
+      body: 'Một lượt Cầu Lông tại Sân Cầu Lông Thiên Triều bị hủy trong 24 giờ. Bạn nhận 40.000 Điểm Điểm phạt.',
     ),
     (
       type: NotificationType.facilityApproved,
@@ -308,8 +308,8 @@ class MockNotificationRepository implements NotificationRepository, SandboxNotif
     ),
     (
       type: NotificationType.withdrawalRejected,
-      title: 'Lệnh rút tiền bị từ chối',
-      body: 'Thông tin tài khoản nhận không khớp. 300.000 đ đã được hoàn về ví.',
+      title: 'Lệnh đổi Điểm ra tiền bị từ chối',
+      body: 'Thông tin tài khoản nhận không khớp. 300.000 Điểm đã được hoàn về Ví điểm.',
     ),
     (
       type: NotificationType.reviewReminder,

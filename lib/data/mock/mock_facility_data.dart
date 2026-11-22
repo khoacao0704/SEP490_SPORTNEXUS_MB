@@ -17,7 +17,7 @@ class MockFacilityData {
   static const List<String> _commonRules = [
     'Có mặt trước giờ chơi 10 phút để check-in bằng mã QR.',
     'Mang giày chuyên dụng, không mang giày đế đen vào sân.',
-    'Hủy trước 24 giờ được hoàn 100%. Hủy trong vòng 24 giờ không được hoàn tiền.',
+    'Hủy trước 24 giờ được hoàn 100%. Hủy trong vòng 24 giờ không được hoàn Điểm.',
     'Không mang đồ ăn, nước có ga vào khu vực sân.',
   ];
 
@@ -43,6 +43,7 @@ class MockFacilityData {
       closeTime: '22:00',
       phone: '0901 111 222',
       description: 'Cụm sân cầu lông trong nhà với thảm PVC tiêu chuẩn BWF, đèn chống chói, phù hợp cả tập luyện và thi đấu phong trào.',
+      recurringDiscountPercent: 10,
     ),
     Facility(
       id: 'f-hcm-eco-q7',

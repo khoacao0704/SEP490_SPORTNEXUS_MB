@@ -76,7 +76,13 @@ class _LfgTicketQrState extends State<LfgTicketQr> {
     }
     return Column(
       children: [
-        Center(child: QrImageView(data: code, size: 180, backgroundColor: Colors.white)),
+        // Khung cố định để đặt được trong hộp thoại (QrImageView dùng LayoutBuilder, không đo intrinsic được).
+        Center(
+          child: SizedBox.square(
+            dimension: 180,
+            child: QrImageView(data: code, size: 180, backgroundColor: Colors.white),
+          ),
+        ),
         const SizedBox(height: 6),
         SelectableText(code, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryGreen)),
       ],

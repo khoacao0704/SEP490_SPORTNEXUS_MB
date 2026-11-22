@@ -18,7 +18,7 @@ import 'mock_wallet_repository.dart';
 ///
 /// - Lượt chia lưu trong máy; ví giả lập dùng chung nên đăng nhập tài khoản khác trên cùng máy
 ///   để thử vai người nhận link.
-/// - Việc BE làm khi hết 30 phút (hủy đặt sân, hoàn tiền, nhả khung giờ) được làm lúc đọc dữ liệu.
+/// - Việc BE làm khi hết 30 phút (hủy đặt sân, hoàn Điểm, nhả khung giờ) được làm lúc đọc dữ liệu.
 /// - Đủ tiền thì giữ hẳn khung giờ tới khi kết thúc và tạo lần đặt sân qua [MockBookingRepository].
 class MockSplitPaymentRepository implements SplitPaymentRepository, SandboxSplitSimulator {
   static const String keySplits = 'split_payments_v3';
@@ -60,7 +60,7 @@ class MockSplitPaymentRepository implements SplitPaymentRepository, SandboxSplit
     final id = 'split-${now.millisecondsSinceEpoch}-${++_counter}';
 
     final bookerAmount = SplitPaymentRules.bookerAmount(total, parts);
-    await _pay(bookerAmount, 'Đặt sân $facilityName • phần 1/$parts (chia tiền)', id);
+    await _pay(bookerAmount, 'Đặt sân $facilityName • phần 1/$parts (chia Điểm)', id);
 
     final expiresAt = now.add(SplitPaymentRules.window);
     final SlotHold newHold;
@@ -68,7 +68,7 @@ class MockSplitPaymentRepository implements SplitPaymentRepository, SandboxSplit
       newHold = await _facility.transferHold(hold.holdId, until: expiresAt);
     } on FacilityException catch (e) {
       // Chỗ giữ vừa hết hạn: hoàn lại phần vừa trả.
-      await _wallet.creditRefund(amount: bookerAmount, description: 'Hoàn tiền đặt sân $facilityName', reference: id);
+      await _wallet.creditRefund(amount: bookerAmount, description: 'Hoàn Điểm đặt sân $facilityName', reference: id);
       throw SplitPaymentException(e.message);
     }
     _holds[id] = newHold.holdId;
@@ -154,7 +154,7 @@ class MockSplitPaymentRepository implements SplitPaymentRepository, SandboxSplit
     if (status == SplitStatus.completed || share == null) throw const SplitPaymentException(SplitPaymentStrings.fullyPaid);
 
     if (chargeWallet) {
-      await _pay(share.amount, 'Chia tiền sân ${split.facilityName} • phần ${share.index + 1}/${split.parts}', split.id);
+      await _pay(share.amount, 'Chia Điểm sân ${split.facilityName} • phần ${share.index + 1}/${split.parts}', split.id);
     }
     final updated = split.copyWith(shares: [
       for (final s in split.shares) s.index == share.index ? s.paidBy(userId, name, now) : s,
@@ -188,7 +188,7 @@ class MockSplitPaymentRepository implements SplitPaymentRepository, SandboxSplit
     for (final s in split.shares.where((s) => s.isPaid && !simulated.contains(s.payerId))) {
       await _wallet.creditRefund(
         amount: s.amount,
-        description: 'Hoàn tiền chia sân ${split.facilityName} • nhóm chưa trả đủ trong 30 phút',
+        description: 'Hoàn Điểm chia sân ${split.facilityName} • nhóm chưa trả đủ trong 30 phút',
         reference: split.id,
       );
     }

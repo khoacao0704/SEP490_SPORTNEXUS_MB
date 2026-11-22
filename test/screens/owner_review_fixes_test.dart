@@ -95,6 +95,6 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Vô địch'), findsOneWidget);
-    expect(find.text('2.000.000 đ'), findsOneWidget);
+    expect(find.text('2.000.000 Điểm'), findsOneWidget);
   });
 }

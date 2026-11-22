@@ -11,7 +11,7 @@ class AiChatException implements Exception {
   String toString() => 'AiChatException: $message';
 }
 
-/// Trợ lý AI: chỉ tìm sân / kèo / hướng dẫn dùng app, không tự đặt sân hay trừ tiền.
+/// Trợ lý AI: chỉ tìm sân / kèo / hướng dẫn dùng app, không tự đặt sân hay trừ Điểm.
 abstract class AiChatRepository {
   static const int maxMessageLength = 1000;
 

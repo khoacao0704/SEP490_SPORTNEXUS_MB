@@ -74,7 +74,7 @@ class ProfileStrings {
   static const String deleteWarningTitle = 'Xóa tài khoản?';
   static const String deleteWarning =
       'Tài khoản sẽ bị xóa và không đăng nhập được nữa. Lịch sử đặt sân, kèo LFG và điểm Fair Play của bạn sẽ không còn dùng được.\n\n'
-      'Chỉ xóa được khi bạn không còn lịch đặt sân sắp diễn ra và ví không còn tiền.';
+      'Chỉ xóa được khi bạn không còn lịch đặt sân sắp diễn ra và Ví điểm không còn Điểm.';
   static const String deleteContinue = 'Tiếp tục';
   static const String deleteConfirmTitle = 'Xác nhận xóa tài khoản';
   static const String deletePasswordLabel = 'Nhập mật khẩu để xác nhận';

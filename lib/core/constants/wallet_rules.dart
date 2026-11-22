@@ -1,6 +1,6 @@
 /// Quy định ví.
 ///
-/// TẠM THỜI — nhóm chưa chốt hạn mức/phí rút tiền. Khi chốt chỉ cần sửa ở đây
+/// TẠM THỜI — nhóm chưa chốt hạn mức/phí đổi Điểm ra tiền. Khi chốt chỉ cần sửa ở đây
 /// (về lâu dài nên lấy từ BE để đổi không cần phát hành lại app).
 class WalletRules {
   WalletRules._();

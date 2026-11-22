@@ -17,8 +17,10 @@ import 'api_client.dart';
 /// - Môn thể thao của BE là danh mục (categoryId) do Admin tạo; app ghép với 5 môn cố định theo TÊN.
 ///   Sân con thuộc môn app không có thì bỏ qua.
 /// - Lọc thêm: khoảng giá (theo giá mặc định của sân con), số sao, tiện ích (phải có đủ). Cơ sở đẩy tin luôn đứng đầu.
-/// - Tỉnh/quận: BE lọc theo TÊN (province / district) khớp đúng chuỗi trong GET /facilities/locations
-///   (chỉ gồm tỉnh có cơ sở hoạt động, vd. "TP. Hồ Chí Minh") → tên thành phố của app được ghép sang tên của BE.
+/// - Tỉnh / phường: GET /facilities/locations chỉ gồm tỉnh có cơ sở hoạt động. BE đã chuyển sang địa giới mới
+///   (tỉnh → phường): trả provinceCode/provinceName + wards (wardCode/wardName) và tìm kiếm lọc theo MÃ
+///   (provinceCode / wardCode). Vẫn đọc được dạng cũ (province + districts, lọc theo TÊN province / district).
+///   Tên thành phố của app ghép với tên tỉnh của BE ("Hà Nội" ↔ "Thành phố Hà Nội").
 /// - Loại sân: suy từ teamSize (số người mỗi đội) của sân con — bóng đá 5/7/11, bóng rổ 3 (3x3) / 5 (5x5).
 ///   Chưa khai báo teamSize thì là [CourtType.standard]. BE không lọc theo loại sân nên khung giờ lọc trên máy.
 ///   Các chữ tự do (courtType / trong nhà / mặt sân / số người) chỉ để hiển thị ([Facility.courtDetails]).
@@ -45,8 +47,8 @@ class ApiFacilityRepository implements FacilityRepository {
 
   List<Amenity>? _amenities;
 
-  /// Tỉnh (tên của BE) → các quận đang có cơ sở.
-  Map<String, List<String>>? _locations;
+  /// Tỉnh (tên của BE) → mã tỉnh + các phường/quận đang có cơ sở.
+  Map<String, _Province>? _locations;
 
   /// Loại sân của từng sân con (id sân con → loại), theo cơ sở; có sau khi tải chi tiết cơ sở.
   final Map<String, Map<String, CourtType>> _courtTypes = {};
@@ -78,11 +80,24 @@ class ApiFacilityRepository implements FacilityRepository {
       if (location != null) 'lng': location.longitude,
     };
     if (query.city.isNotEmpty) {
-      final province = await _provinceOf(query.city);
+      final name = await _provinceOf(query.city);
       // Tỉnh chưa có cơ sở nào đang hoạt động (không có trong /locations).
-      if (province == null) return const FacilitySearchPage(items: [], hasMore: false, total: 0);
-      params['province'] = province;
-      if (query.district != null) params['district'] = query.district;
+      if (name == null) return const FacilitySearchPage(items: [], hasMore: false, total: 0);
+      final province = _locations![name]!;
+      if (province.code != null) {
+        params['provinceCode'] = province.code;
+      } else {
+        params['province'] = name;
+      }
+      final district = query.district;
+      if (district != null) {
+        final wardCode = province.areas[district];
+        if (wardCode != null) {
+          params['wardCode'] = wardCode;
+        } else {
+          params['district'] = district;
+        }
+      }
     }
     // "Gần nhất" mà không có vị trí thì để BE dùng mặc định (mới nhất), gửi distance sẽ bị 400.
     final sortBy = switch (query.sort) {
@@ -125,7 +140,7 @@ class ApiFacilityRepository implements FacilityRepository {
   Future<List<String>> getDistricts(String city) async {
     final province = await _provinceOf(city);
     if (province == null) return const [];
-    return [..._locations![province]!]..sort();
+    return [..._locations![province]!.areas.keys]..sort();
   }
 
   /// Tên tỉnh của BE ứng với [city] của app ("Hồ Chí Minh" ↔ "TP. Hồ Chí Minh"); `null` khi tỉnh đó
@@ -136,16 +151,24 @@ class ApiFacilityRepository implements FacilityRepository {
     return locations.keys.where((p) => _provinceKey(p) == key).firstOrNull;
   }
 
-  Future<Map<String, List<String>>> _loadLocations() async {
+  /// Dạng mới: {provinceCode, provinceName, wards: [{wardCode, wardName}]}; dạng cũ: {province, districts: [tên]}.
+  Future<Map<String, _Province>> _loadLocations() async {
     final data = await _call(() => _api.get(locationsPath)) as List? ?? const [];
-    return {
-      for (final item in data.cast<Map<String, dynamic>>())
-        if ((item['province'] as String? ?? '').isNotEmpty)
-          item['province'] as String: [
-            for (final d in item['districts'] as List? ?? const [])
-              if (d.toString().isNotEmpty) d.toString(),
-          ],
-    };
+    final result = <String, _Province>{};
+    for (final item in data.cast<Map<String, dynamic>>()) {
+      final name = (item['provinceName'] ?? item['province'])?.toString() ?? '';
+      if (name.isEmpty) continue;
+      final areas = <String, String?>{};
+      for (final w in item['wards'] as List? ?? const []) {
+        final wardName = w is Map ? w['wardName']?.toString() ?? '' : w.toString();
+        if (wardName.isNotEmpty) areas[wardName] = w is Map ? w['wardCode']?.toString() : null;
+      }
+      for (final d in item['districts'] as List? ?? const []) {
+        if (d.toString().isNotEmpty) areas[d.toString()] = null;
+      }
+      result[name] = _Province(code: item['provinceCode']?.toString(), areas: areas);
+    }
+    return result;
   }
 
   /// Bỏ dấu, hoa thường và tiền tố "TP." / "Thành phố" / "Tỉnh" để so tên tỉnh.
@@ -316,6 +339,7 @@ class ApiFacilityRepository implements FacilityRepository {
       closeTime: _time(json['closeTime']),
       phone: json['phone'] as String? ?? '',
       isPromoted: json['isPromoted'] == true,
+      recurringDiscountPercent: _percent(json['recurringDiscountPercent']),
     );
   }
 
@@ -368,6 +392,7 @@ class ApiFacilityRepository implements FacilityRepository {
       phone: json['phone'] as String? ?? '',
       description: json['description'] as String? ?? '',
       courtDetails: details,
+      recurringDiscountPercent: _percent(json['recurringDiscountPercent']),
     );
   }
 
@@ -453,6 +478,9 @@ class ApiFacilityRepository implements FacilityRepository {
   /// Làm tròn 1 chữ số thập phân (BE trả trung bình, vd. 4.3333).
   static double _rating(Object? value) => (((value as num?)?.toDouble() ?? 0) * 10).round() / 10;
 
+  /// % giảm đặt gói cố định (BE: 0–50).
+  static int _percent(Object? value) => ((value as num?) ?? 0).round().clamp(0, 100);
+
   /// Tiền BE là decimal nhưng luôn là VNĐ nguyên.
   static int _money(Object? value) => value is num ? value.round() : num.tryParse('$value')?.round() ?? 0;
 
@@ -468,4 +496,13 @@ class ApiFacilityRepository implements FacilityRepository {
       throw FacilityException(e.message);
     }
   }
+}
+
+/// Một tỉnh trong /facilities/locations: [code] = provinceCode (null với dữ liệu dạng cũ, lọc theo tên);
+/// [areas]: tên phường/quận → wardCode (null = lọc theo tên).
+class _Province {
+  final String? code;
+  final Map<String, String?> areas;
+
+  const _Province({required this.code, required this.areas});
 }

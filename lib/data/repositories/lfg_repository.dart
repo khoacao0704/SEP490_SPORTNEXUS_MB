@@ -41,7 +41,9 @@ abstract class LfgRepository {
   Future<LfgClaim> claimSlot(String matchId);
 
   /// Trừ cọc từ ví và đưa người dùng vào kèo (cùng một giao dịch phía BE).
-  Future<LfgMatch> confirmClaim(String claimId);
+  /// Kèo Đội vs Đội: [teamId] là đội của người nhận (phải là đội trưởng); BE giữ tiền của từng thành viên
+  /// cả 2 đội cùng lúc (một người thiếu Điểm / bị chặn thì không ai bị giữ).
+  Future<LfgMatch> confirmClaim(String claimId, {String? teamId});
 
   Future<void> releaseClaim(String claimId);
 
@@ -54,7 +56,13 @@ abstract class LfgRepository {
     required LfgFormat format,
     String note = '',
     SkillLevel? skillLevel,
+    String? hostTeamId,
+    int? sideSize,
   });
+
+  /// true: tạo / nhận kèo Đội vs Đội được ([createMatch] với [hostTeamId] + [sideSize], [confirmClaim] với teamId).
+  /// Đội phải có đúng [sideSize] thành viên, đúng môn, không bị khóa, người gọi là đội trưởng (BE kiểm tra).
+  bool get supportsTeamMatch;
 
   /// Kèo gợi ý theo hồ sơ thể thao (môn, trình độ, lịch rảnh, khu vực), điểm cao trước.
   /// Chưa làm khảo sát người chơi thì rỗng.
@@ -66,16 +74,8 @@ abstract class LfgRepository {
   /// Trả về số tiền được hoàn.
   Future<int> leaveMatch(String matchId, {String? reason});
 
-  /// Lý do rời / xin hủy kèo chọn sẵn (có thể rỗng: UI không hỏi lý do).
+  /// Lý do rời kèo chọn sẵn (có thể rỗng: UI không hỏi lý do).
   Future<List<CancelReason>> getLeaveReasons();
-
-  /// Gửi yêu cầu hủy kèo đã chốt (trong khoảng T−24h tới T−1h; ai gửi được xem [onlyHostRequestsCancel]).
-  /// Người gửi tính là đã đồng ý.
-  Future<LfgMatch> requestCancel(String matchId, {String? reason});
-
-  /// Trả lời yêu cầu hủy. Một người từ chối là bác yêu cầu; tất cả đồng ý thì hủy kèo,
-  /// hoàn 100% cho mọi người và không trừ Fair Play.
-  Future<LfgMatch> respondCancel(String matchId, {required bool approve});
 
   // ---------- Khác biệt giữa bản giả lập và BE thật ----------
 
@@ -93,13 +93,10 @@ abstract class LfgRepository {
 
   /// true: người tham gia (không phải host) vẫn tự rời được sau T−48h tới giờ chơi nhưng không được hoàn
   /// (tiền chuyển cho host, chỗ không mở lại; trong 24h cuối còn bị trừ Fair Play) — cách BE làm.
-  /// false: sau T−48h không tự rời được, chỉ gửi yêu cầu hủy.
+  /// false: sau T−48h không tự rời được.
   bool get lateLeaveAllowed;
 
-  /// true: chỉ host gửi được yêu cầu hủy kèo đã chốt (BE); false: thành viên nào cũng gửi được.
-  bool get onlyHostRequestsCancel;
-
-  /// true: host trả trước cả tiền sân khi tạo kèo, người vào trả phần của mình cho host (BE);
+  /// true: host trả trước cả giá sân khi tạo kèo, người vào trả phần của mình cho host (BE);
   /// false: host chỉ cọc phần của mình như mọi người.
   bool get hostPaysCourt;
 
@@ -107,7 +104,10 @@ abstract class LfgRepository {
   int createCost(int courtPrice, LfgFormat format) =>
       hostPaysCourt ? courtPrice : LfgRules.depositPerSlot(courtPrice, format.totalSlots);
 
-  /// Host hủy kèo: mọi người được hoàn 100%, tiền sân của host hoàn theo chính sách đặt sân.
+  /// Host hủy kèo (được tới giờ chơi, chưa check-in). Người vào kèo luôn được hoàn 100%.
+  /// Trước [LfgMatch.hostCancelDeadline]: host hoàn đủ giá sân, −10 Fair Play.
+  /// Từ mốc đó (hủy đơn phương): host mất [LfgMatch.hostLateCancelLoss] chia đều bồi thường cho người đã vào,
+  /// −20 Fair Play (chưa ai vào thì hoàn đủ nhưng vẫn −20).
   Future<LfgMatch> cancelMatch(String matchId);
 
   /// Chấp nhận lời mời vào kèo: trả phần của mình từ ví, nhận vé.
@@ -123,7 +123,4 @@ abstract class LfgRepository {
 /// Chỉ bản giả lập cài đặt: các nút giả lập hành động của người chơi khác khi demo.
 abstract class SandboxLfgSimulator {
   Future<LfgMatch> simulatePlayerJoined(String matchId);
-
-  /// Các thành viên khác (chưa trả lời) cùng đồng ý, hoặc một người từ chối yêu cầu hủy.
-  Future<LfgMatch> simulateOthersRespond(String matchId, {required bool approve});
 }

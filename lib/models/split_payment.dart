@@ -9,7 +9,7 @@ enum SplitStatus {
   expired,
 }
 
-/// Một phần tiền trong lượt chia. Phần số 0 luôn là của người đặt.
+/// Một phần Điểm trong lượt chia. Phần số 0 luôn là của người đặt.
 class SplitShare {
   final int index;
   final int amount;
@@ -41,7 +41,7 @@ class SplitShare {
       };
 }
 
-/// Một khung giờ trong lượt chia tiền.
+/// Một khung giờ trong lượt chia Điểm.
 class SplitSlot {
   final String id;
 
@@ -70,7 +70,7 @@ class SplitSlot {
       };
 }
 
-/// Lượt chia tiền một lần đặt sân: người đặt trả phần của mình trước, chia link/mã cho nhóm
+/// Lượt chia Điểm một lần đặt sân: người đặt trả phần của mình trước, chia link/mã cho nhóm
 /// cùng trả trong 30 phút. Khung giờ được giữ suốt thời gian chờ.
 class SplitPayment {
   final String id;
@@ -86,7 +86,7 @@ class SplitPayment {
   /// Mô tả lịch đã đặt, vd. "Thứ 5, 16/10 • 18:00 - 19:00".
   final String schedule;
 
-  /// Các khung giờ đã giữ; đủ tiền thì mỗi khung thành một lượt đặt riêng.
+  /// Các khung giờ đã giữ; đủ Điểm thì mỗi khung thành một lượt đặt riêng.
   final List<SplitSlot> slots;
   final int totalAmount;
   final int parts;
@@ -94,7 +94,7 @@ class SplitPayment {
   final DateTime createdAt;
   final DateTime expiresAt;
 
-  /// BE đã hủy đặt sân và hoàn tiền vì hết giờ.
+  /// BE đã hủy đặt sân và hoàn Điểm vì hết giờ.
   final bool refunded;
 
   const SplitPayment({
@@ -139,7 +139,7 @@ class SplitPayment {
 
   String get shareLink => 'https://sportnexus.vn/chia-tien/$code';
 
-  /// Mã lượt đặt được tạo khi đủ tiền (nhiều khung giờ thì thêm hậu tố -1, -2...).
+  /// Mã lượt đặt được tạo khi đủ Điểm (nhiều khung giờ thì thêm hậu tố -1, -2...).
   String get bookingId => id.replaceFirst('split-', '').toUpperCase();
 
   SplitPayment copyWith({List<SplitShare>? shares, bool? refunded}) => SplitPayment(

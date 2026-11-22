@@ -304,7 +304,7 @@ class MockTournamentRepository
     }
     var updated = t.copyWith(matches: matches);
 
-    // Xong chung kết: giải kết thúc, lệ phí (kể cả đơn rút sau hạn, không được hoàn) về ví Chủ sân.
+    // Xong chung kết: giải kết thúc, lệ phí (kể cả đơn rút sau hạn, không được hoàn) về Ví điểm Chủ sân.
     if (m.round == t.roundCount) {
       final amount = t.entryFee * t.entries.length;
       await _owner.recordTournamentPayout(

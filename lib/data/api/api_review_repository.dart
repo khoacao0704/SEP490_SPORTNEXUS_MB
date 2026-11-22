@@ -8,6 +8,7 @@ import 'api_facility_repository.dart';
 class ApiReviewRepository implements ReviewRepository {
   static const String pendingPath = '/api/v1/fair-play/pending-ratings';
   static const String ratePath = '/api/v1/reviews/fair-play';
+  static const String reasonsPath = '/api/v1/reviews/fair-play/reasons';
   static const String createReviewPath = '/api/v1/facility-reviews';
   static const String myReviewsPath = '/api/v1/facility-reviews/my-reviews';
   static const String fairPlayPath = '/api/v1/fair-play/me';
@@ -43,7 +44,13 @@ class ApiReviewRepository implements ReviewRepository {
       try {
         await _api.post(
           ratePath,
-          body: {'revieweeId': p.playerId, 'contextId': sessionId, 'score': p.stars, if (comment.isNotEmpty) 'comment': comment},
+          body: {
+            'revieweeId': p.playerId,
+            'contextId': sessionId,
+            'score': p.stars,
+            if (comment.isNotEmpty) 'comment': comment,
+            'reasonId': ?p.reasonId,
+          },
         );
       } on ApiException catch (e) {
         // Đã chấm người này rồi (vd. gửi lại sau lỗi mạng giữa chừng): coi như xong.
@@ -51,6 +58,17 @@ class ApiReviewRepository implements ReviewRepository {
         throw ReviewException(e.message);
       }
     }
+  }
+
+  /// GET /api/v1/reviews/fair-play/reasons → [{id, name}].
+  @override
+  Future<List<LowRatingReason>> getLowRatingReasons() async {
+    final data = await _call(() => _api.get(reasonsPath));
+    final list = data is List ? data : const [];
+    return [
+      for (final r in list)
+        if (r is Map && r['id'] is num) LowRatingReason(id: (r['id'] as num).toInt(), name: r['name']?.toString() ?? ''),
+    ];
   }
 
   // ---------------- Đánh giá cơ sở ----------------

@@ -394,7 +394,7 @@ class _TournamentFormScreenState extends State<TournamentFormScreen> {
           enabled: !_locked,
           keyboardType: TextInputType.number,
           inputFormatters: [ThousandsInputFormatter()],
-          decoration: ownerInputDecoration(OwnerTournamentStrings.entryFee, suffix: 'đ'),
+          decoration: ownerInputDecoration(OwnerTournamentStrings.entryFee, suffix: 'Điểm'),
           validator: (v) => (v == null || v.trim().isEmpty) ? OwnerTournamentStrings.required : null,
         ),
         const SizedBox(height: 4),
@@ -561,7 +561,7 @@ class _PrizeDialogState extends State<_PrizeDialog> {
           controller: _amount,
           keyboardType: TextInputType.number,
           inputFormatters: [ThousandsInputFormatter()],
-          decoration: const InputDecoration(labelText: OwnerTournamentStrings.prizeAmount, suffixText: 'đ'),
+          decoration: const InputDecoration(labelText: OwnerTournamentStrings.prizeAmount, suffixText: 'Điểm'),
         ),
         TextField(
           controller: _extra,

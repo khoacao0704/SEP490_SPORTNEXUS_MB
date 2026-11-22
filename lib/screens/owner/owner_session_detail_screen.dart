@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/owner_rules.dart';
 import '../../core/strings/owner_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
+import '../../data/repositories/owner_repository.dart';
 import '../../models/court_session.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/facility/sport_icon.dart';
@@ -25,6 +27,7 @@ class _OwnerSessionDetailScreenState extends State<OwnerSessionDetailScreen> {
   late CourtSession _session = widget.session;
   bool _changed = false;
   bool _checkingOut = false;
+  bool _cancelling = false;
 
   Future<void> _reload() async {
     try {
@@ -76,6 +79,35 @@ class _OwnerSessionDetailScreenState extends State<OwnerSessionDetailScreen> {
         _changed = true;
       }
     });
+  }
+
+  /// Chủ sân hủy đơn: cảnh báo rõ Điểm phạt (tính trước theo luật BE), xác nhận rồi mới gọi BE.
+  Future<void> _cancelBooking() async {
+    final s = _session;
+    final choice = await showDialog<({String reason, bool lockSlot})>(
+      context: context,
+      builder: (_) => _OwnerCancelDialog(session: s, now: DateTime.now()),
+    );
+    if (choice == null || !mounted) return;
+    setState(() => _cancelling = true);
+    try {
+      final result = await AppRepositories.owner.cancelBooking(s.id, reason: choice.reason, lockSlot: choice.lockSlot);
+      if (!mounted) return;
+      _changed = true;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(OwnerStrings.cancelledMessage(result))));
+      await _reload();
+    } on OwnerException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(OwnerStrings.loadError), backgroundColor: Colors.red),
+        );
+      }
+    }
+    if (mounted) setState(() => _cancelling = false);
   }
 
   @override
@@ -153,9 +185,12 @@ class _OwnerSessionDetailScreenState extends State<OwnerSessionDetailScreen> {
                           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain, fontSize: 15),
                         ),
                       ),
-                      Text(
-                        OwnerStrings.checkedInCount(s.checkedInCount, s.players.length),
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                      Flexible(
+                        child: Text(
+                          OwnerStrings.checkedInCount(s.checkedInCount, s.players.length),
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                        ),
                       ),
                     ],
                   ),
@@ -192,6 +227,20 @@ class _OwnerSessionDetailScreenState extends State<OwnerSessionDetailScreen> {
                     ),
                 ],
               ),
+              if (s.canOwnerCancel) ...[
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _cancelling ? null : _cancelBooking,
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text(OwnerStrings.cancelBooking),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -269,9 +318,13 @@ class _OwnerSessionDetailScreenState extends State<OwnerSessionDetailScreen> {
         Expanded(
           child: Text(label, style: const TextStyle(color: AppColors.textSecondary)),
         ),
-        Text(
-          Formatters.vnd(amount),
-          style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.w600, color: AppColors.textMain),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            Formatters.vnd(amount),
+            textAlign: TextAlign.right,
+            style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.w600, color: AppColors.textMain),
+          ),
         ),
       ],
     ),
@@ -329,9 +382,149 @@ class _OwnerSessionDetailScreenState extends State<OwnerSessionDetailScreen> {
               ],
             ),
           ),
-          trailing,
+          const SizedBox(width: 8),
+          Flexible(child: trailing),
         ],
       ),
+    );
+  }
+}
+
+/// Hộp thoại cảnh báo khi Chủ sân hủy đơn: Điểm phạt (và Fair Play nếu dưới 48h) hiện nổi bật,
+/// kèm lý do (không bắt buộc) và tùy chọn khóa ca sân. Trả về lựa chọn khi bấm "Đồng ý Hủy".
+class _OwnerCancelDialog extends StatefulWidget {
+  final CourtSession session;
+  final DateTime now;
+
+  const _OwnerCancelDialog({required this.session, required this.now});
+
+  @override
+  State<_OwnerCancelDialog> createState() => _OwnerCancelDialogState();
+}
+
+class _OwnerCancelDialogState extends State<_OwnerCancelDialog> {
+  final _reason = TextEditingController();
+  bool _lockSlot = false;
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  Widget _row(String label, String value, {String? detail}) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textMain)),
+                  if (detail != null)
+                    Text(detail, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.red),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.session;
+    final late = s.isLateOwnerCancel(widget.now);
+    final percent = late ? OwnerCancelRules.latePenaltyPercent : OwnerCancelRules.earlyPenaltyPercent;
+    return AlertDialog(
+      icon: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 44),
+      title: const Text(
+        OwnerStrings.cancelBookingTitle,
+        textAlign: TextAlign.center,
+        style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              late ? OwnerStrings.cancelLateWarning : OwnerStrings.cancelEarlyWarning,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textMain, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red),
+              ),
+              child: Column(
+                children: [
+                  _row(
+                    OwnerStrings.cancelPenaltyLabel,
+                    '−${Formatters.vnd(s.ownerCancelPenalty(widget.now))}',
+                    detail: OwnerStrings.cancelPenaltyDetail(percent, s.totalPrice),
+                  ),
+                  if (late)
+                    _row(OwnerStrings.cancelFairPlayLabel, OwnerStrings.cancelFairPlay(OwnerCancelRules.lateFairPlayPenalty)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(OwnerStrings.cancelWalletNote, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            const SizedBox(height: 4),
+            Text(
+              OwnerStrings.cancelCustomerNote(OwnerCancelRules.customerVoucherPercent),
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            if (s.kind == SessionKind.lfg) ...[
+              const SizedBox(height: 4),
+              const Text(OwnerStrings.cancelLfgNote, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: _reason,
+              maxLength: 200,
+              minLines: 1,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: OwnerStrings.cancelReasonHint,
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            CheckboxListTile(
+              value: _lockSlot,
+              onChanged: (v) => setState(() => _lockSlot = v ?? false),
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              dense: true,
+              title: const Text(OwnerStrings.cancelLockSlot, style: TextStyle(fontSize: 13)),
+              subtitle: const Text(OwnerStrings.cancelLockSlotHint, style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      ),
+      actionsAlignment: MainAxisAlignment.spaceBetween,
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text(OwnerStrings.cancelBack)),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, (reason: _reason.text.trim(), lockSlot: _lockSlot)),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+          child: const Text(OwnerStrings.cancelConfirm),
+        ),
+      ],
     );
   }
 }

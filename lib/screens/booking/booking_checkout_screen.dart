@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/app_repositories.dart';
+import '../../core/constants/booking_rules.dart';
 import '../../core/constants/split_payment_rules.dart';
 import '../../core/strings/booking_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
@@ -10,6 +11,7 @@ import '../../data/repositories/booking_repository.dart';
 import '../../data/repositories/split_payment_repository.dart';
 import '../../data/repositories/wallet_repository.dart';
 import '../../models/booking.dart';
+import '../../models/recurring_plan.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/booking/booking_ticket_qr.dart';
@@ -27,11 +29,16 @@ class BookingCheckoutScreen extends StatefulWidget {
   final int totalAmount;
   final int initialSecondsRemaining;
 
-  /// Chỗ đang giữ; có thì cho phép chia tiền nhóm (giữ tiếp khung giờ 30 phút).
+  /// Chỗ đang giữ; có thì cho phép chia Điểm nhóm (giữ tiếp khung giờ 30 phút).
   final SlotHold? hold;
+
+  /// Đặt gói cố định hằng tuần: [hold] gồm khung giờ mọi buổi, [totalAmount] là giá gốc (chưa giảm).
+  /// Gói chỉ thanh toán 100%, không chia Điểm nhóm.
+  final RecurringCheckout? recurring;
 
   const BookingCheckoutScreen({
     this.hold,
+    this.recurring,
     super.key,
     required this.sport,
     required this.courtName,
@@ -49,16 +56,16 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
   late int _secondsRemaining;
   Timer? _timer;
 
-  int _paymentTypeIndex = 0; // 0: Thanh toán 100%, 2: Chia tiền nhóm (đặt sân thường không có cọc)
+  int _paymentTypeIndex = 0; // 0: Thanh toán 100%, 2: Chia Điểm nhóm (đặt sân thường không có cọc)
   int _splitParts = SplitPaymentRules.allowedParts.last;
 
-  /// Chia tiền theo cách mời bạn (BE thật) thay cho chia mã/link.
+  /// Chia Điểm theo cách mời bạn (BE thật) thay cho chia mã/link.
   bool get _splitByInvite => AppRepositories.booking.supportsSplitInvite;
 
   /// Những người được mời góp (luồng mời bạn).
   final List<PlayerLookup> _invitees = [];
 
-  /// Số người chia tiền mỗi ca (gồm người đặt).
+  /// Số người chia Điểm mỗi ca (gồm người đặt).
   int get _people => _invitees.length + 1;
 
   /// Phần người đặt trả ngay khi mời bạn: cộng phần của mình ở từng ca (mỗi ca là một đơn).
@@ -73,17 +80,26 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     return prices.fold(0, (sum, p) => sum + SplitPaymentRules.inviteeShare(p, _people));
   }
 
+  /// Tổng sau giảm của gói (tạm tính; giá thật do BE tính khi đặt). Đặt lẻ: bằng [BookingCheckoutScreen.totalAmount].
+  int get _fullAmount {
+    final recurring = widget.recurring;
+    return recurring == null
+        ? widget.totalAmount
+        : RecurringBookingRules.discounted(widget.totalAmount, recurring.discountPercent);
+  }
+
   int get _payAmount {
     switch (_paymentTypeIndex) {
       case 0:
-        return widget.totalAmount;
+        return _fullAmount;
       default:
         return _splitByInvite ? _inviteHostAmount : SplitPaymentRules.bookerAmount(widget.totalAmount, _splitParts);
     }
   }
 
   String get _payLabel => switch (_paymentTypeIndex) {
-    0 => 'Thanh toán 100% tiền sân',
+    0 when widget.recurring != null => BookingStrings.packageTitle(widget.recurring!.sessions),
+    0 => 'Thanh toán 100% giá sân',
     _ => _splitByInvite ? SplitPaymentStrings.invitePay : SplitPaymentStrings.payNow(_splitParts),
   };
   int _selectedPaymentMethod = 0; // 0: SportNexus Wallet, 1: VietQR
@@ -170,7 +186,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     if (_selectedPaymentMethod == 0 && _walletBalance < payAmount) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Số dư ví không đủ! Vui lòng nạp thêm tiền hoặc chọn phương thức VietQR.'),
+          content: Text('Không đủ Điểm! Vui lòng nạp thêm Điểm hoặc chọn phương thức VietQR.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -178,27 +194,38 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     }
 
     setState(() => _isLoading = true);
-    final List<Booking> bookings;
+    final recurring = widget.recurring;
+    // Lặp lại nhiều thứ / nhiều cụm giờ: BE chỉ nhận mỗi gói một thứ → đặt lần lượt từng gói.
+    final packages = recurring == null ? [hold.slots] : recurring.packages;
+    final bookings = <Booking>[];
+    var donePackages = 0;
     try {
       if (_selectedPaymentMethod == 1 && !await _payByVietQr(payAmount)) return;
-      bookings = await AppRepositories.booking.createBooking(
-        hold: hold,
-        paymentType: BookingPaymentType.full,
-        facilityName: widget.courtName,
-        sportLabel: widget.sport,
-        location: widget.location,
-        schedule: widget.dateTime,
-      );
+      for (final slots in packages) {
+        bookings.addAll(await AppRepositories.booking.createBooking(
+          hold: SlotHold(holdId: hold.holdId, slots: slots, expiresAt: hold.expiresAt),
+          paymentType: BookingPaymentType.full,
+          facilityName: widget.courtName,
+          sportLabel: widget.sport,
+          location: widget.location,
+          schedule: widget.dateTime,
+          recurring: recurring != null,
+          discountPercent: recurring?.discountPercent ?? 0,
+        ));
+        donePackages++;
+      }
     } on BookingException catch (e) {
-      _fail(e.message);
+      donePackages == 0 ? _fail(e.message) : _partialFail(donePackages, packages.length, e.message);
       return;
     } on WalletException catch (e) {
-      _fail(e.message);
+      donePackages == 0 ? _fail(e.message) : _partialFail(donePackages, packages.length, e.message);
       return;
     }
     if (!mounted) return;
     _timer?.cancel();
     setState(() => _isLoading = false);
+    // Số tiền thật BE đã trừ (gói: giá đã giảm của từng buổi).
+    final paidTotal = bookings.isEmpty ? payAmount : bookings.fold(0, (sum, b) => sum + b.amountPaid);
 
     // Success Dialog & QR Code Ticket
     showDialog(
@@ -221,7 +248,9 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Đã thanh toán ${_formatCurrency(payAmount)} đ cho ${widget.courtName}. Vé QR Cá nhân đã sẵn sàng.',
+              recurring != null
+                  ? BookingStrings.packagesBooked(bookings.length, packages.length, paidTotal)
+                  : 'Đã thanh toán ${_formatCurrency(paidTotal)} Điểm cho ${widget.courtName}. Vé QR Cá nhân đã sẵn sàng.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
             ),
@@ -275,7 +304,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     super.dispose();
   }
 
-  /// Chia tiền nhóm: trả phần của mình (ví hoặc VietQR), giữ tiếp khung giờ 30 phút rồi sang màn chia tiền.
+  /// Chia Điểm nhóm: trả phần của mình (ví hoặc VietQR), giữ tiếp khung giờ 30 phút rồi sang màn chia Điểm.
   Future<void> _startSplit() async {
     final hold = widget.hold!;
     final amount = _payAmount;
@@ -313,7 +342,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     }
   }
 
-  /// Chia tiền theo cách mời bạn: trả phần của mình (ví hoặc VietQR), mỗi ca một đơn chờ bạn bè góp.
+  /// Chia Điểm theo cách mời bạn: trả phần của mình (ví hoặc VietQR), mỗi ca một đơn chờ bạn bè góp.
   Future<void> _startInviteSplit() async {
     final hold = widget.hold!;
     if (_invitees.isEmpty) {
@@ -351,7 +380,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text(SplitPaymentStrings.invitedMessage), backgroundColor: AppColors.primaryGreen),
     );
-    // Một ca: mở màn chia tiền của đơn đó; nhiều ca: mỗi ca một đơn trong Lịch Đặt.
+    // Một ca: mở màn chia Điểm của đơn đó; nhiều ca: mỗi ca một đơn trong Lịch Đặt.
     if (bookings.length == 1) {
       Navigator.pushReplacement(
         context,
@@ -366,7 +395,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     }
   }
 
-  /// Chuyển khoản đúng số tiền vào ví qua VietQR (BE xác nhận) để trừ ví ở bước sau.
+  /// Chuyển khoản đúng số tiền vào Ví điểm qua VietQR (BE xác nhận) để trừ ví ở bước sau.
   /// Trả về false nếu người dùng thoát / hết hạn (đã tắt trạng thái đang xử lý).
   Future<bool> _payByVietQr(int amount) async {
     final order = await AppRepositories.bookingWallet.createTopUp(amount);
@@ -381,7 +410,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     return false;
   }
 
-  /// Chia tiền BE chưa hỗ trợ thì báo "đang phát triển", giữ lựa chọn hiện tại.
+  /// Chia Điểm BE chưa hỗ trợ thì báo "đang phát triển", giữ lựa chọn hiện tại.
   void _selectPaymentType(int index) {
     final booking = AppRepositories.booking;
     final unavailable = switch (index) {
@@ -395,6 +424,32 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
       return;
     }
     setState(() => _paymentTypeIndex = index);
+  }
+
+  /// Lặp lại nhiều gói: một số gói đã đặt (đã trừ Điểm) rồi gói sau lỗi → báo rõ, đưa người dùng tới Lịch Đặt.
+  void _partialFail(int done, int total, String message) {
+    if (!mounted) return;
+    _timer?.cancel();
+    setState(() => _isLoading = false);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(BookingStrings.recurringPartialTitle),
+        content: Text(BookingStrings.recurringPartialFail(done, total, message)),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pushAndRemoveUntil(
+              dialogContext,
+              MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 3)),
+              (route) => false,
+            ),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white),
+            child: const Text('Xem Lịch Đặt & QR'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _fail(String message) {
@@ -507,17 +562,36 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                   const Divider(height: 24, color: AppColors.divider),
                   _buildSummaryRow(Icons.calendar_today_outlined, 'Ngày & Khung giờ', widget.dateTime),
                   const SizedBox(height: 10),
+                  if (widget.recurring case final r?) ...[
+                    _buildSummaryRow(Icons.event_repeat, BookingStrings.packageLabel, BookingStrings.packageSummary(r.sessions, r.summary)),
+                    const SizedBox(height: 10),
+                  ],
                   _buildSummaryRow(
                     Icons.payments_outlined,
-                    'Tổng tiền sân gốc',
-                    '${_formatCurrency(widget.totalAmount)} đ',
+                    'Tổng giá sân gốc',
+                    '${_formatCurrency(widget.totalAmount)} Điểm',
                   ),
+                  if (widget.recurring case final r? when r.discountPercent > 0) ...[
+                    const SizedBox(height: 10),
+                    _buildSummaryRow(
+                      Icons.local_offer_outlined,
+                      BookingStrings.discountRow(r.discountPercent),
+                      '-${_formatCurrency(widget.totalAmount - _fullAmount)} Điểm',
+                    ),
+                  ],
+                  if (widget.recurring != null) ...[
+                    const SizedBox(height: 10),
+                    const Text(
+                      '${BookingStrings.recurringCancelRule} ${BookingStrings.recurringNoSplit} ${BookingStrings.estimatedNote}',
+                      style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 16),
 
-            // 3. Select Payment Type (100% / chia tiền nhóm)
+            // 3. Select Payment Type (100% / chia Điểm nhóm)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -565,7 +639,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '${_formatCurrency(widget.totalAmount)} đ',
+                                  '${_formatCurrency(_fullAmount)} Điểm',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: AppColors.primaryGreen,
@@ -579,7 +653,10 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                       ),
                     ],
                   ),
-                  if (widget.hold != null) ...[const SizedBox(height: 10), _buildSplitOption()],
+                  if (widget.hold != null && widget.recurring == null) ...[
+                    const SizedBox(height: 10),
+                    _buildSplitOption(),
+                  ],
                 ],
               ),
             ),
@@ -641,7 +718,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
-                                  'Ví Escrow SportNexus',
+                                  'Đổi Điểm',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
@@ -649,7 +726,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                                   ),
                                 ),
                                 Text(
-                                  'Số dư: ${_formatCurrency(_walletBalance)} ₫',
+                                  'Ví điểm • Số dư: ${_formatCurrency(_walletBalance)} Điểm',
                                   style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                                 ),
                               ],
@@ -736,7 +813,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Nhãn dài (vd. chia tiền) xuống dòng thay vì đẩy số tiền ra ngoài màn hình hẹp.
+                  // Nhãn dài (vd. chia Điểm) xuống dòng thay vì đẩy số tiền ra ngoài màn hình hẹp.
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -764,7 +841,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerRight,
                       child: Text(
-                        '${_formatCurrency(payAmount)} đ',
+                        '${_formatCurrency(payAmount)} Điểm',
                         style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
                       ),
                     ),
@@ -781,7 +858,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                   onPressed: _isLoading ? null : _handleConfirmPayment,
                   icon: const Icon(Icons.check_circle_outline, size: 20),
                   label: Text(
-                    'Xác nhận thanh toán & lấy vé QR (${_formatCurrency(payAmount)} đ)',
+                    'Xác nhận thanh toán & lấy vé QR (${_formatCurrency(payAmount)} Điểm)',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
@@ -852,7 +929,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                 ),
                 if (selected)
                   Text(
-                    '${_formatCurrency(_payAmount)} đ',
+                    '${_formatCurrency(_payAmount)} Điểm',
                     style: const TextStyle(fontSize: 11, color: AppColors.primaryGreen, fontWeight: FontWeight.bold),
                   ),
               ],

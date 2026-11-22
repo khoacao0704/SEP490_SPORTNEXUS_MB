@@ -10,6 +10,7 @@ import 'api/api_notification_repository.dart';
 import 'api/api_player_tournament_repository.dart';
 import 'api/api_review_repository.dart';
 import 'api/api_team_repository.dart';
+import 'api/api_voucher_repository.dart';
 import 'api/api_wallet_repository.dart';
 import 'api/notification_hub.dart';
 import 'api/token_store.dart';
@@ -32,6 +33,7 @@ import 'mock/mock_review_repository.dart';
 import 'mock/mock_split_payment_repository.dart';
 import 'mock/mock_team_repository.dart';
 import 'mock/mock_tournament_repository.dart';
+import 'mock/mock_voucher_repository.dart';
 import 'mock/mock_wallet_repository.dart';
 import 'repositories/ai_chat_repository.dart';
 import 'repositories/auth_repository.dart';
@@ -48,10 +50,11 @@ import 'repositories/review_repository.dart';
 import 'repositories/split_payment_repository.dart';
 import 'repositories/team_repository.dart';
 import 'repositories/tournament_repository.dart';
+import 'repositories/voucher_repository.dart';
 import 'repositories/wallet_repository.dart';
 
 /// Nơi duy nhất quyết định UI dùng bản cài đặt nào của từng repository.
-/// Đã nối API: đăng nhập / đăng ký / hồ sơ cá nhân / ví / tìm sân + chi tiết cơ sở / đặt sân thường + chia tiền / LFG / thông báo / đánh giá + Fair Play / giải đấu + đội / AI chat. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
+/// Đã nối API: đăng nhập / đăng ký / hồ sơ cá nhân / ví / tìm sân + chi tiết cơ sở / đặt sân thường + chia Điểm / LFG / thông báo / đánh giá + Fair Play / giải đấu + đội / AI chat. Còn lại vẫn là bản giả lập, nối dần từng phần (UI giữ nguyên).
 class AppRepositories {
   AppRepositories._();
 
@@ -78,15 +81,18 @@ class AppRepositories {
   /// Sân mà luồng tạo kèo LFG tìm, xem khung giờ và giữ chỗ (cùng dữ liệu với [facility]).
   static FacilityRepository lfgFacility = ApiConfig.useMockAuth ? _mockFacility : _apiFacility;
 
-  /// Ví người chơi: số dư, lịch sử, nạp tiền PayOS. KHÔNG rút tiền (BE từ 07/11/2026 chỉ cho Chủ sân rút, Player 403).
+  /// Ví người chơi: số dư, lịch sử, nạp Điểm PayOS. KHÔNG đổi Điểm ra tiền (BE từ 07/11/2026 chỉ cho Chủ sân rút, Player 403).
   static WalletRepository wallet =
       ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api, supportsWithdrawal: false);
 
-  /// Ví mà các luồng chưa nối API (chia tiền, LFG, giải đấu) kiểm tra số dư / trừ tiền / nạp thêm.
+  /// Mã giảm giá của người chơi (chỉ xem, dữ liệu thật).
+  static VoucherRepository voucher = ApiConfig.useMockAuth ? MockVoucherRepository() : ApiVoucherRepository(api: api);
+
+  /// Ví mà các luồng chưa nối API (chia Điểm, LFG, giải đấu) kiểm tra số dư / trừ Điểm / nạp thêm.
   /// Tạm là ví giả lập nên có thể lệch với số dư thật; chuyển sang [wallet] khi nối từng luồng.
   static WalletRepository paymentWallet = _mockWallet;
 
-  /// Ví màn thanh toán đặt sân kiểm tra số dư / nạp thêm: ví thật (BE trừ tiền khi tạo đơn).
+  /// Ví màn thanh toán đặt sân kiểm tra số dư / nạp thêm: ví thật (BE trừ Điểm khi tạo đơn).
   static WalletRepository bookingWallet = ApiConfig.useMockAuth ? _mockWallet : wallet;
   /// Đánh giá cơ sở, chấm người chơi cùng trận, Fair Play: dữ liệu thật.
   /// Giải đấu phía người chơi (dữ liệu thật). [tournament] bên dưới vẫn là bản giả lập dùng chung với phần Chủ sân.
@@ -150,7 +156,7 @@ class AppRepositories {
       ? MockLfgRepository(wallet: _mockWallet)
       : ApiLfgRepository(api: api, facility: _apiFacility);
 
-  /// Ví màn thanh toán LFG kiểm tra số dư / nạp thêm: ví thật (BE trừ tiền khi tạo / vào kèo).
+  /// Ví màn thanh toán LFG kiểm tra số dư / nạp thêm: ví thật (BE trừ Điểm khi tạo / vào kèo).
   static WalletRepository lfgWallet = ApiConfig.useMockAuth ? _mockWallet : wallet;
 
   /// Lệ phí giải đấu trừ/hoàn qua cùng ví giả lập. Cùng một kho cho người chơi và Chủ sân tổ chức giải.
@@ -162,10 +168,10 @@ class AppRepositories {
 
   static final MockBookingRepository _mockBookings = MockBookingRepository(facility: _mockFacility, wallet: _mockWallet);
 
-  /// Đặt sân thường: dữ liệu thật (trừ / hoàn qua ví thật). Chia tiền nhóm vẫn là bản giả lập.
+  /// Đặt sân thường: dữ liệu thật (trừ / hoàn qua ví thật). Chia Điểm nhóm vẫn là bản giả lập.
   static BookingRepository booking = ApiConfig.useMockAuth ? _mockBookings : ApiBookingRepository(api: api);
 
-  /// Chia tiền giữ khung giờ qua cùng bản giả lập sân; đủ tiền thì tạo lần đặt sân.
+  /// Chia Điểm giữ khung giờ qua cùng bản giả lập sân; đủ Điểm thì tạo lần đặt sân.
   static SplitPaymentRepository split =
       MockSplitPaymentRepository(facility: _mockFacility, wallet: _mockWallet, bookings: _mockBookings);
 }

@@ -8,6 +8,7 @@ import '../../models/booking.dart';
 import '../../models/split_payment.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/booking/booking_ticket_qr.dart';
+import '../../widgets/booking/pay_remaining.dart';
 import '../../widgets/main_drawer.dart';
 import '../../widgets/review/pending_review_banner.dart';
 import '../lfg/lfg_screen.dart';
@@ -98,6 +99,7 @@ class _BookingsViewState extends State<_BookingsView> {
   bool _isLoading = true;
   String? _error;
   String? _cancellingId;
+  String? _payingId;
 
   @override
   void initState() {
@@ -118,7 +120,7 @@ class _BookingsViewState extends State<_BookingsView> {
     });
     try {
       final bookings = await AppRepositories.booking.getMyBookings();
-      // BE thật chia tiền theo đơn (thẻ "Chờ góp tiền" bên dưới), không dùng lượt chia theo mã.
+      // BE thật chia Điểm theo đơn (thẻ "Chờ góp Điểm" bên dưới), không dùng lượt chia theo mã.
       final splits = AppRepositories.booking.supportsSplitInvite ? <SplitPayment>[] : await AppRepositories.split.getMine();
       final user = await AppRepositories.auth.getCurrentUser();
       if (!mounted) return;
@@ -138,16 +140,19 @@ class _BookingsViewState extends State<_BookingsView> {
     }
   }
 
-  Future<void> _cancel(Booking b) async {
+  /// Hủy đặt lẻ [b], hoặc cả gói [package] (BE hủy mọi buổi còn lại khi hủy một buổi của gói).
+  Future<void> _cancel(Booking b, {BookingPackage? package}) async {
     final now = DateTime.now();
     final refund = b.refundIfCancelled(now);
     final free = b.refundsInFull(now);
-    final message = (free ? BookingStrings.confirmCancelFree(refund) : BookingStrings.confirmCancelLate(b.cancelFee(now))) +
-        (b.paymentType != BookingPaymentType.split
-            ? ''
-            : free
-                ? BookingStrings.splitCancelFreeNote
-                : BookingStrings.splitCancelLateNote);
+    final message = package != null
+        ? BookingStrings.confirmCancelPackage(package.active.length, package.refundIfCancelled)
+        : (free ? BookingStrings.confirmCancelFree(refund) : BookingStrings.confirmCancelLate(b.cancelFee(now))) +
+            (b.paymentType != BookingPaymentType.split
+                ? ''
+                : free
+                    ? BookingStrings.splitCancelFreeNote
+                    : BookingStrings.splitCancelLateNote);
     // Không tải được danh sách lý do thì vẫn cho hủy (BE dùng lý do mặc định).
     var reasons = const <CancelReason>[];
     try {
@@ -162,7 +167,7 @@ class _BookingsViewState extends State<_BookingsView> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text(BookingStrings.confirmCancelTitle),
+          title: Text(package != null ? BookingStrings.confirmCancelPackageTitle : BookingStrings.confirmCancelTitle),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -202,7 +207,7 @@ class _BookingsViewState extends State<_BookingsView> {
             ElevatedButton(
               onPressed: () => Navigator.pop(dialogContext, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-              child: const Text(BookingStrings.cancel),
+              child: Text(package != null ? BookingStrings.cancelPackage : BookingStrings.cancel),
             ),
           ],
         ),
@@ -222,7 +227,11 @@ class _BookingsViewState extends State<_BookingsView> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(BookingStrings.cancelledMessage(cancelled.refunded))),
+          SnackBar(
+            content: Text(package != null
+                ? BookingStrings.packageCancelled(package.refundIfCancelled)
+                : BookingStrings.cancelledMessage(cancelled.refunded)),
+          ),
         );
       }
     } on BookingException catch (e) {
@@ -259,6 +268,23 @@ class _BookingsViewState extends State<_BookingsView> {
         ],
       ),
     );
+  }
+
+  /// "Trả bù" ngay trên thẻ: danh sách không có người góp nên tải chi tiết đơn để biết đúng khoản còn thiếu.
+  Future<void> _payRemaining(Booking b) async {
+    setState(() => _payingId = b.id);
+    try {
+      final detail = await AppRepositories.booking.getBooking(b.id);
+      if (!mounted) return;
+      final updated = await confirmPayRemaining(context, detail);
+      if (updated != null) await _load();
+    } on BookingException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _payingId = null);
+    }
   }
 
   Future<void> _openSplitBooking(Booking b) async {
@@ -339,7 +365,12 @@ class _BookingsViewState extends State<_BookingsView> {
               ),
             )
           else
-            for (final b in _bookings) _buildCard(b, now),
+            for (final item in BookingPackage.group(_bookings))
+              switch (item) {
+                BookingPackage p => _buildPackageCard(p, now),
+                Booking b => _buildCard(b, now),
+                _ => const SizedBox.shrink(),
+              },
         ],
       ),
     );
@@ -429,7 +460,7 @@ class _BookingsViewState extends State<_BookingsView> {
                 ],
                 Expanded(
                   child: ElevatedButton.icon(
-                    // Đơn chia tiền chưa đủ thì chưa có vé: mở màn chia tiền (góp / theo dõi).
+                    // Đơn chia Điểm chưa đủ thì chưa có vé: mở màn chia Điểm (góp / theo dõi).
                     onPressed: () => awaiting ? _openSplitBooking(b) : _showTicket(b),
                     icon: Icon(awaiting ? Icons.groups_outlined : Icons.qr_code_2, size: 18),
                     label: Text(awaiting ? SplitPaymentStrings.openSplit : BookingStrings.ticket),
@@ -442,7 +473,155 @@ class _BookingsViewState extends State<_BookingsView> {
                 ),
               ],
             ),
+            // Người đặt trả bù phần còn thiếu ngay từ thẻ, không cần mở màn chia Điểm.
+            if (awaiting && isBooker) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _payingId == null ? () => _payRemaining(b) : null,
+                  icon: _payingId == b.id
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.account_balance_wallet_outlined, size: 18),
+                  label: const Text(SplitPaymentStrings.payRemainingShort, style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primaryGreen,
+                    side: const BorderSide(color: AppColors.primaryGreen),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Thẻ gói cố định: các buổi (mỗi buổi vé QR riêng), tổng đã trả, hủy cả gói.
+  Widget _buildPackageCard(BookingPackage p, DateTime now) {
+    final first = p.first;
+    final isBooker = first.bookerId == _myId;
+    final (label, bg, fg) = p.isCancelled
+        ? (BookingStrings.statusCancelled, const Color(0xFFFFEBEE), const Color(0xFFC62828))
+        : p.hasUpcoming(now)
+            ? (BookingStrings.statusUpcoming, AppColors.tagGreenBg, AppColors.tagGreenText)
+            : (BookingStrings.statusCompleted, AppColors.divider, AppColors.textSecondary);
+    final refunded = p.sessions.fold(0, (sum, b) => sum + b.refunded);
+    final deadline = p.cancelDeadline;
+    final cancelling = p.sessions.any((b) => b.id == _cancellingId);
+    final canCancel = p.canCancel(now, _myId ?? '');
+    final showCancelInfo = isBooker && !p.isCancelled && p.hasUpcoming(now);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primaryGreen),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.event_repeat, size: 16, color: AppColors.primaryGreen),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  BookingStrings.packageTitle(p.sessions.length),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+                child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: fg)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(first.facilityName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
+          Text(first.location, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          const SizedBox(height: 4),
+          Text(
+            '${first.sportCourtLabel} • ${Formatters.weekday(first.start)} ${Formatters.timeRange(first.start, first.end)}',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
+          ),
+          const Divider(height: 20, color: AppColors.divider),
+          for (final b in p.sessions) _sessionRow(b, now),
+          const Divider(height: 20, color: AppColors.divider),
+          _row(BookingStrings.paid, Formatters.vnd(p.totalPaid)),
+          if (refunded > 0) _row('', BookingStrings.refunded(refunded), color: AppColors.primaryGreen),
+          if (showCancelInfo && deadline != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              canCancel
+                  ? BookingStrings.packageCancelUntil('${Formatters.time(deadline)} ${Formatters.weekdayDayMonth(deadline)}')
+                  : BookingStrings.packageCancelClosed,
+              style: TextStyle(fontSize: 12, color: canCancel ? AppColors.textSecondary : Colors.red),
+            ),
+          ],
+          if (showCancelInfo && canCancel) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _cancellingId == null ? () => _cancel(p.active.first, package: p) : null,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: cancelling
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text(BookingStrings.cancelPackage),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Một buổi trong gói: ngày giờ + vé QR (sắp diễn ra) hoặc trạng thái (buổi bị chủ sân hủy lẻ hiện "Đã hủy").
+  Widget _sessionRow(Booking b, DateTime now) {
+    final status = b.status(now);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              b.schedule,
+              style: TextStyle(
+                fontSize: 13,
+                color: status == BookingStatus.upcoming ? AppColors.textMain : AppColors.textSecondary,
+                decoration: status == BookingStatus.cancelled ? TextDecoration.lineThrough : null,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          switch (status) {
+            BookingStatus.upcoming => TextButton.icon(
+                onPressed: () => _showTicket(b),
+                icon: const Icon(Icons.qr_code_2, size: 18),
+                label: const Text(BookingStrings.ticket),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primaryGreen,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            BookingStatus.cancelled => const Text(
+                BookingStrings.sessionCancelledByOwner,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFC62828)),
+              ),
+            BookingStatus.completed => const Text(
+                BookingStrings.statusCompleted,
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+          },
         ],
       ),
     );

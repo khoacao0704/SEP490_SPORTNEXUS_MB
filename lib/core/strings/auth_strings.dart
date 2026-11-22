@@ -79,7 +79,7 @@ class AuthStrings {
   // Thêm số điện thoại (tài khoản tạo bằng Google / Facebook)
   static const String addPhoneTitle = 'Thêm Số Điện Thoại';
   static const String addPhoneSubtitle =
-      'Tài khoản cần số điện thoại đã xác thực để đặt sân, chia tiền với bạn bè và lấy lại mật khẩu.';
+      'Tài khoản cần số điện thoại đã xác thực để đặt sân, chia Điểm với bạn bè và lấy lại mật khẩu.';
   static const String logout = 'Đăng xuất';
   static const String otherAccount = 'Dùng tài khoản khác? ';
 

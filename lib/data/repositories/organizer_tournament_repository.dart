@@ -23,6 +23,6 @@ abstract class OrganizerTournamentRepository {
   Future<Tournament> scheduleMatch(String tournamentId, String matchId, {required DateTime at, required String court});
 
   /// Nhập tỉ số và người thắng; người thắng tự vào vòng sau.
-  /// Nhập xong trận chung kết: giải kết thúc, lệ phí giải ngân về ví Chủ sân.
+  /// Nhập xong trận chung kết: giải kết thúc, lệ phí giải ngân về Ví điểm Chủ sân.
   Future<Tournament> recordResult(String tournamentId, String matchId, {required String winnerId, required String score});
 }

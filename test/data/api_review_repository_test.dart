@@ -122,6 +122,23 @@ void main() {
     expect(bodies[2].containsKey('comment'), isFalse);
   });
 
+  test('lý do chấm thấp: đọc {id, name}; "Khác" là mục tự nhập; chấm thấp gửi kèm reasonId', () async {
+    server.routes['GET ${ApiReviewRepository.reasonsPath}'] = (
+      200,
+      _ok([
+        {'id': 1, 'name': 'Bỏ về giữa chừng'},
+        {'id': 4, 'name': 'Khác'},
+      ]),
+    );
+    final reasons = await repo.getLowRatingReasons();
+    expect(reasons.map((r) => r.id), [1, 4]);
+    expect(reasons.map((r) => r.isOther), [false, true]);
+
+    server.routes['POST ${ApiReviewRepository.ratePath}'] = (200, _ok(null));
+    await repo.ratePlayers('lfg-1', const [PlayerReviewInput(playerId: 'u-1', stars: 2, reasonId: 4, comment: 'Đến muộn 30 phút')]);
+    expect(server.requests.last.data, {'revieweeId': 'u-1', 'contextId': 'lfg-1', 'score': 2, 'comment': 'Đến muộn 30 phút', 'reasonId': 4});
+  });
+
   test('chấm người chơi: lỗi khác thì dừng và báo message của BE', () async {
     server.routes['POST ${ApiReviewRepository.ratePath}'] = (400, _err(400, 'Đã hết hạn chấm điểm'));
 

@@ -10,8 +10,9 @@ import '../../data/repositories/booking_repository.dart';
 import '../../models/booking.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/booking/invite_by_phone.dart';
+import '../../widgets/booking/pay_remaining.dart';
 
-/// Chia tiền của MỘT đơn đặt sân (luồng mời bạn theo tài khoản): ai đã góp / chưa góp, hạn góp.
+/// Chia Điểm của MỘT đơn đặt sân (luồng mời bạn theo tài khoản): ai đã góp / chưa góp, hạn góp.
 /// Người được mời: góp phần của mình. Người đặt: mời thêm (khi chưa ai góp), trả nốt phần còn lại.
 class SplitBookingScreen extends StatefulWidget {
   final String bookingId;
@@ -78,25 +79,15 @@ class _SplitBookingScreenState extends State<SplitBookingScreen> {
     }
   }
 
-  Future<void> _payRemaining(int amount) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(SplitPaymentStrings.payRemaining(amount)),
-        content: const Text(SplitPaymentStrings.payRemainingConfirm),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(SplitPaymentStrings.cancel)),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white),
-            child: const Text(SplitPaymentStrings.confirm),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && mounted) {
-      await _run(() => AppRepositories.booking.payRemaining(widget.bookingId), SplitPaymentStrings.payRemainingDone);
-    }
+  Future<void> _payRemaining(Booking b) async {
+    setState(() => _busy = true);
+    final updated = await confirmPayRemaining(context, b);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (updated != null) _booking = updated;
+    });
+    if (updated == null) _load();
   }
 
   void _inviteMore(Booking b) {
@@ -190,8 +181,7 @@ class _SplitBookingScreenState extends State<SplitBookingScreen> {
                 const Divider(height: 20),
                 Row(
                   children: [
-                    const Text(SplitPaymentStrings.total, style: TextStyle(color: AppColors.textSecondary)),
-                    const Spacer(),
+                    const Expanded(child: Text(SplitPaymentStrings.total, style: TextStyle(color: AppColors.textSecondary))),
                     Text(Formatters.vnd(b.totalPrice), style: const TextStyle(fontWeight: FontWeight.bold)),
                   ],
                 ),
@@ -200,6 +190,38 @@ class _SplitBookingScreenState extends State<SplitBookingScreen> {
           ),
           const SizedBox(height: 12),
           _statusBanner(b, cancelled, left),
+          // Người đặt: khoản còn thiếu + nút trả bù đặt ngay dưới đồng hồ hạn góp để cứu đơn trước khi tự hủy.
+          if (b.awaitingPayment && !cancelled && isHost && unpaid.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    SplitPaymentStrings.remainingBanner(b.remainingUnpaid, unpaid.length),
+                    style: const TextStyle(fontSize: 13, color: AppColors.textMain, height: 1.4),
+                  ),
+                  const SizedBox(height: 10),
+                  // Chỉ chữ (không icon) để nhãn dài xuống dòng được khi chữ phóng to.
+                  ElevatedButton(
+                    onPressed: _busy ? null : () => _payRemaining(b),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryGreen,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: Text(
+                      SplitPaymentStrings.payRemaining(b.remainingUnpaid),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           _card(
             Column(
@@ -240,28 +262,12 @@ class _SplitBookingScreenState extends State<SplitBookingScreen> {
                   child: Text(SplitPaymentStrings.payMyShare(b.myShare), style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
-            if (isHost && unpaid.isNotEmpty) ...[
-              SizedBox(
-                height: 48,
-                child: OutlinedButton(
-                  onPressed: _busy ? null : () => _payRemaining(unpaid.fold(0, (sum, p) => sum + p.amount)),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppColors.primaryGreen),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: Text(
-                    SplitPaymentStrings.payRemaining(unpaid.fold(0, (sum, p) => sum + p.amount)),
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
-                  ),
-                ),
+            if (isHost && unpaid.isNotEmpty && !someoneElsePaid)
+              TextButton.icon(
+                onPressed: _busy ? null : () => _inviteMore(b),
+                icon: const Icon(Icons.person_add_alt_1, color: AppColors.primaryGreen),
+                label: const Text(SplitPaymentStrings.inviteMore, style: TextStyle(color: AppColors.primaryGreen)),
               ),
-              if (!someoneElsePaid)
-                TextButton.icon(
-                  onPressed: _busy ? null : () => _inviteMore(b),
-                  icon: const Icon(Icons.person_add_alt_1, color: AppColors.primaryGreen),
-                  label: const Text(SplitPaymentStrings.inviteMore, style: TextStyle(color: AppColors.primaryGreen)),
-                ),
-            ],
           ],
         ],
       ),

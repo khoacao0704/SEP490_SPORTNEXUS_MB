@@ -238,12 +238,12 @@ void main() {
     expect(find.text(FacilityStrings.selectSlotFirst), findsOneWidget);
   });
 
-  testWidgets('Chi tiết: bóng đá chọn loại sân, mỗi loại số sân và giá riêng; đổi loại thì bỏ chọn khung giờ', (tester) async {
+  testWidgets('Chi tiết: bóng đá chọn loại sân, mỗi loại số sân và giá riêng; đổi loại vẫn giữ khung đã chọn', (tester) async {
     final facility = MockFacilityData.facilities.firstWhere((f) => f.id == 'f-hcm-hoalu');
     await pumpScreen(tester, FacilityDetailScreen(facility: facility, initialSport: Sport.football));
     expect(find.text(FacilityStrings.chooseCourtType), findsOneWidget);
     expect(find.text('Sân 5 người (5 vs 5)'), findsOneWidget);
-    expect(find.text('3 sân • Từ 500.000 đ'), findsOneWidget);
+    expect(find.text('3 sân • Từ 500.000 Điểm'), findsOneWidget);
     expect(find.text('Sân 11 người (11 vs 11)'), findsOneWidget);
 
     final now = DateTime.now();
@@ -263,14 +263,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Sân 7 người (7 vs 7)'));
     await tester.pumpAndSettle();
-    expect(find.textContaining(FacilityStrings.selectedSlotCount(1)), findsNothing);
+    // Cùng môn: khung ở loại sân 5 người vẫn được giữ để đặt chung.
+    expect(find.textContaining(FacilityStrings.selectedSlotCount(1)), findsOneWidget);
     // Sân 7 người có 2 sân con.
     expect(find.text(FacilityStrings.chooseCourt), findsOneWidget);
     expect(find.text('Sân 2'), findsOneWidget);
     expect(find.text('Sân 3'), findsNothing);
   });
 
-  testWidgets('Chi tiết: chọn sân con rồi chọn giờ; khung đã chọn ghi rõ sân con', (tester) async {
+  testWidgets('Chi tiết: bật sân con rồi chọn giờ; khung đã chọn ghi rõ sân con', (tester) async {
     final facility = MockFacilityData.facilities.firstWhere((f) => f.id == 'f-hcm-thientrieu');
     await pumpScreen(tester, FacilityDetailScreen(facility: facility, initialSport: Sport.badminton));
     final now = DateTime.now();
@@ -290,7 +291,8 @@ void main() {
     await tester.tap(available.hitTestable().first);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.textContaining(FacilityStrings.selectedSlotCount(1)));
+    // Sân 4 bật thêm cạnh sân mặc định: khung được chọn cho mọi sân đang sáng; danh sách ghi rõ từng sân con.
+    await tester.tap(find.textContaining(FacilityStrings.viewSelected, findRichText: true).last);
     await tester.pumpAndSettle();
     expect(find.textContaining('Sân 4 • '), findsOneWidget);
   });

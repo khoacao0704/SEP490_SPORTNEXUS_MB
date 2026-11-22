@@ -1,3 +1,4 @@
+import '../../core/constants/booking_rules.dart';
 import '../../core/constants/split_payment_rules.dart';
 import '../../core/strings/booking_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
@@ -15,14 +16,17 @@ import 'api_facility_repository.dart';
 ///   không đơn nào), trừ ví ngay (tạm giữ tới khi chơi xong). Hai người cùng đặt một ca: người sau nhận 400.
 /// - Không có cọc (đặt sân thường trả 100%). BE chưa có giữ chỗ 10 phút: app tự đếm trên máy, xem
 ///   [ApiFacilityRepository.holdSlots].
-/// - Chia tiền: người đặt mời bạn theo TÀI KHOẢN (tra bằng SĐT); mỗi ca một đơn PENDING, mọi người (gồm người đặt)
+/// - Chia Điểm: người đặt mời bạn theo TÀI KHOẢN (tra bằng SĐT); mỗi ca một đơn PENDING, mọi người (gồm người đặt)
 ///   chia đều, người đặt chịu phần lẻ; hạn 30 phút (không quá giờ bắt đầu). BE chưa có mã/link chia sẻ nên luồng
 ///   chia mã của SplitPaymentRepository tắt ([supportsSplitPayment] = false, [supportsSplitInvite] = true).
-/// - Trạng thái đơn của BE: PENDING (chia tiền chờ góp), PAID, CHECKED_IN, CANCELLED; "đã chơi xong" suy ra từ giờ kết thúc.
-/// - Hủy: chỉ người đặt. ≥24h trước giờ chơi hoàn 100%, <24h không hoàn; đơn chia tiền còn chờ góp luôn hoàn đủ.
+/// - Trạng thái đơn của BE: PENDING (chia Điểm chờ góp), PAID, CHECKED_IN, CANCELLED; "đã chơi xong" suy ra từ giờ kết thúc.
+/// - Hủy: chỉ người đặt. ≥24h trước giờ chơi hoàn 100%, <24h không hoàn; đơn chia Điểm còn chờ góp luôn hoàn đủ.
 ///   refundAmount BE trả là của CẢ đơn (mọi người đã góp), không phải riêng người đặt. Vé QR đổi mã mỗi 30 giây.
 /// - Người bị người đặt "trả thay" (pay-remaining) bị BE xóa mềm nhưng vẫn còn trong my-bookings và
 ///   participants với trạng thái chưa trả → app bỏ họ đi.
+/// - Gói cố định hằng tuần: gửi đủ id ca của mọi buổi + isRecurring; BE kiểm tra (≥4 buổi, cùng sân con, cách đúng
+///   7 ngày), giảm theo % của cơ sở, gán chung recurringGroupId. Hủy một buổi = BE hủy cả gói (≥48h trước buổi đầu).
+///   my-bookings chỉ có recurringGroupId; chi tiết có thêm originalAmount (giá gốc).
 class ApiBookingRepository implements BookingRepository {
   static const String bookingsPath = '/api/v1/bookings';
   static const String myBookingsPath = '/api/v1/bookings/my-bookings';
@@ -38,7 +42,7 @@ class ApiBookingRepository implements BookingRepository {
   /// Trạng thái thanh toán của một người trong đơn được tính là đã trả (REFUNDED: đã trả rồi được hoàn khi hủy).
   static const Set<String> paidStatuses = {'HELD', 'PAID', 'RELEASED', 'CHECKED_IN', 'REFUNDED'};
 
-  /// Đơn đã đủ tiền: người được mời mà vẫn "chưa trả" là người đã bị người đặt trả thay (bỏ khỏi đơn).
+  /// Đơn đã đủ Điểm: người được mời mà vẫn "chưa trả" là người đã bị người đặt trả thay (bỏ khỏi đơn).
   static const Set<String> confirmedStatuses = {'PAID', 'CHECKED_IN'};
 
   final ApiClient _api;
@@ -62,23 +66,44 @@ class ApiBookingRepository implements BookingRepository {
     required String sportLabel,
     required String location,
     required String schedule,
+    bool recurring = false,
+    int discountPercent = 0,
   }) async {
     if (paymentType == BookingPaymentType.split) throw const BookingException(BookingStrings.useSplitFlow);
     final me = await SessionStore.readUser();
     if (me == null) throw const BookingException(BookingStrings.loginRequired);
 
     final slots = [...hold.slots]..sort((a, b) => a.start.compareTo(b.start));
-    // Ca vừa có người đặt / ví không đủ: BE trả câu tiếng Việt, hiển thị nguyên văn.
-    final data = await _call(() => _api.post(bookingsPath, body: {'courtSlotIds': slots.map((s) => s.id).toList()}))
-        as Map<String, dynamic>;
+    // Ca vừa có người đặt / ví không đủ / không thành gói: BE trả câu tiếng Việt, hiển thị nguyên văn.
+    final data = await _call(() => _api.post(bookingsPath, body: {
+          'courtSlotIds': slots.map((s) => s.id).toList(),
+          if (recurring) 'isRecurring': true,
+        })) as Map<String, dynamic>;
 
+    // Gói định kỳ: BE trả % giảm (discountPercent) và tổng đã trả (totalAmount) của cả lần đặt; mỗi buổi chỉ có
+    // slotPrice. BE coi danh sách tình cờ thành gói cũng là gói, nên đọc theo dữ liệu trả về chứ không theo [recurring].
+    final percent = ((data['discountPercent'] as num?) ?? 0).round();
+    final topGroupId = data['recurringGroupId']?.toString();
     final slotsById = {for (final s in slots) s.id: s};
+    final items = (data['bookings'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final originals = [
+      for (final b in items)
+        b.containsKey('slotPrice') ? _money(b['slotPrice']) : slotsById[b['courtSlotId']?.toString()]?.price ?? 0,
+    ];
+    final prices = paidPerSession(
+      originals,
+      percent: percent,
+      paidTotal: data['totalAmount'] == null ? null : _money(data['totalAmount']),
+    );
     final now = DateTime.now();
-    final bookings = (data['bookings'] as List? ?? const []).cast<Map<String, dynamic>>().map((b) {
+    final bookings = items.indexed.map((entry) {
+      final (i, b) = entry;
       final slot = slotsById[b['courtSlotId']?.toString()];
       final start = _time(b['startTime']) ?? slot!.start;
       final end = _time(b['endTime']) ?? slot!.end;
-      final price = b.containsKey('slotPrice') ? _money(b['slotPrice']) : slot?.price ?? 0;
+      final original = originals[i];
+      final price = prices[i];
+      final groupId = b['recurringGroupId']?.toString() ?? topGroupId;
       return Booking(
         id: b['bookingId'].toString(),
         bookerId: me.id,
@@ -93,13 +118,15 @@ class ApiBookingRepository implements BookingRepository {
         paymentType: BookingPaymentType.full,
         payments: [BookingPayment(userId: me.id, name: me.fullName, amount: price)],
         createdAt: now,
+        recurringGroupId: groupId,
+        originalPrice: price != original ? original : null,
       );
     }).toList()
       ..sort((a, b) => a.start.compareTo(b.start));
     return bookings;
   }
 
-  /// Gồm đơn mình đặt và đơn mình được mời góp tiền: sắp diễn ra trước (gần nhất trước), đã qua sau.
+  /// Gồm đơn mình đặt và đơn mình được mời góp Điểm: sắp diễn ra trước (gần nhất trước), đã qua sau.
   @override
   Future<List<Booking>> getMyBookings() async {
     final myId = (await SessionStore.readUser())?.id ?? '';
@@ -125,7 +152,7 @@ class ApiBookingRepository implements BookingRepository {
           if (note != null && note.isNotEmpty) 'reason': note,
         }));
     // refundAmount là của cả đơn; phần của mình lấy từ chi tiết. Không tải được chi tiết thì chỉ báo đã hủy
-    // (đơn chia tiền không biết phần mình nên không báo số tiền có thể sai).
+    // (đơn chia Điểm không biết phần mình nên không báo số tiền có thể sai).
     try {
       final detail = await _api.get(bookingPath(bookingId)) as Map<String, dynamic>;
       final booking = bookingFromDetail(detail, await _myId());
@@ -162,7 +189,7 @@ class ApiBookingRepository implements BookingRepository {
     throw const BookingException(BookingStrings.ticketLoadError);
   }
 
-  // ---------------- Chia tiền: mời bạn theo tài khoản ----------------
+  // ---------------- Chia Điểm: mời bạn theo tài khoản ----------------
 
   /// BE chỉ trả tài khoản đang hoạt động, không trả chính mình; SĐT bị che còn 4 số cuối.
   @override
@@ -239,7 +266,7 @@ class ApiBookingRepository implements BookingRepository {
     return getBooking(bookingId);
   }
 
-  /// Đã có bạn góp thì BE chặn ("Không thể chia lại tiền vì đã có thành viên góp tiền").
+  /// Đã có bạn góp thì BE chặn ("Không thể chia lại tiền vì đã có thành viên góp Điểm").
   @override
   Future<Booking> inviteMore(String bookingId, List<String> inviteeIds) async {
     await _call(() => _api.post(participantsPath(bookingId), body: {'participantIds': inviteeIds}));
@@ -283,10 +310,11 @@ class ApiBookingRepository implements BookingRepository {
       isCheckedIn: status == 'CHECKED_IN',
       awaitingPayment: status == 'PENDING',
       myShare: ((json['participantCount'] as num?) ?? 1) > 1 ? _money(json['myAmount']) : 0,
+      recurringGroupId: _groupId(json),
     );
   }
 
-  /// Người được mời đã bị người đặt trả thay: đơn đã đủ tiền mà phần của mình vẫn chưa trả.
+  /// Người được mời đã bị người đặt trả thay: đơn đã đủ Điểm mà phần của mình vẫn chưa trả.
   static bool _removedFromSplit(Map<String, dynamic> summary) =>
       (summary['myRole'] as String? ?? '').toLowerCase() != 'host' &&
       confirmedStatuses.contains((summary['bookingStatus'] as String? ?? '').toUpperCase()) &&
@@ -311,12 +339,12 @@ class ApiBookingRepository implements BookingRepository {
               ),
               refunded: (p['paymentStatus'] as String? ?? '').toUpperCase() == 'REFUNDED',
             ))
-        // Đơn đã đủ tiền: người chưa trả là người đã bị trả thay (BE xóa mềm nhưng vẫn trả về).
+        // Đơn đã đủ Điểm: người chưa trả là người đã bị trả thay (BE xóa mềm nhưng vẫn trả về).
         .where((p) => !confirmedStatuses.contains(status) || p.person.isHost || p.person.isPaid)
         .toList();
     final people = participants.map((p) => p.person).toList();
     final me = people.where((p) => p.userId == myId).firstOrNull;
-    // Đơn một người: refundAmount của cả đơn chính là của mình. Đơn chia tiền: phần mình nếu đã được hoàn.
+    // Đơn một người: refundAmount của cả đơn chính là của mình. Đơn chia Điểm: phần mình nếu đã được hoàn.
     final myRefund = isSplit
         ? participants.where((p) => p.person.userId == myId && p.refunded).map((p) => p.person.amount).firstOrNull ?? 0
         : _money(cancellation?['refundAmount']);
@@ -340,6 +368,8 @@ class ApiBookingRepository implements BookingRepository {
       awaitingPayment: status == 'PENDING',
       myShare: isSplit ? me?.amount ?? 0 : 0,
       participants: people,
+      recurringGroupId: _groupId(json),
+      originalPrice: _originalPrice(json),
     );
   }
 
@@ -367,6 +397,32 @@ class ApiBookingRepository implements BookingRepository {
   static String _sportLabel(Object? value) {
     final name = value as String?;
     return ApiFacilityRepository.sportFromName(name)?.label ?? name ?? '';
+  }
+
+  /// Số tiền thực trả của từng buổi khi tạo đơn. [originals]: slotPrice từng buổi; [paidTotal]: tổng BE đã trừ.
+  /// - Tổng slotPrice đã bằng tổng đã trả (không giảm, hoặc slotPrice đã là giá giảm) → giữ slotPrice.
+  /// - Còn lại: giảm [percent]% từng buổi, buổi cuối nhận phần lẻ để tổng khớp đúng số BE đã trừ.
+  static List<int> paidPerSession(List<int> originals, {required int percent, int? paidTotal}) {
+    final sum = originals.fold(0, (a, b) => a + b);
+    if (originals.isEmpty || paidTotal == sum || (paidTotal == null && percent <= 0)) return originals;
+    final prices = [for (final o in originals) RecurringBookingRules.discounted(o, percent)];
+    if (paidTotal != null) {
+      final others = prices.take(prices.length - 1).fold(0, (a, b) => a + b);
+      prices[prices.length - 1] = paidTotal - others;
+    }
+    return prices;
+  }
+
+  static String? _groupId(Map<String, dynamic> json) {
+    final id = json['recurringGroupId']?.toString();
+    return id == null || id.isEmpty ? null : id;
+  }
+
+  /// Giá gốc khi đơn được giảm (originalAmount khác totalAmount).
+  static int? _originalPrice(Map<String, dynamic> json) {
+    if (json['originalAmount'] == null) return null;
+    final original = _money(json['originalAmount']);
+    return original != _money(json['totalAmount']) ? original : null;
   }
 
   static DateTime? _time(Object? value) => value is String ? DateTime.parse(value).toLocal() : null;

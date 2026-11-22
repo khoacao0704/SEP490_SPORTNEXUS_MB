@@ -3,7 +3,7 @@ import '../core/constants/split_payment_rules.dart';
 
 enum BookingPaymentType {
   full('Full', 'Thanh toán 100%'),
-  split('Split', 'Chia tiền nhóm');
+  split('Split', 'Chia Điểm nhóm');
 
   const BookingPaymentType(this.apiValue, this.label);
 
@@ -15,7 +15,7 @@ enum BookingPaymentType {
 
 enum BookingStatus { upcoming, cancelled, completed }
 
-/// Một người trong đơn chia tiền (người đặt + những người được mời góp).
+/// Một người trong đơn chia Điểm (người đặt + những người được mời góp).
 class BookingParticipant {
   final String userId;
   final String name;
@@ -34,7 +34,7 @@ class BookingParticipant {
   });
 }
 
-/// Tài khoản tìm theo số điện thoại để mời góp tiền.
+/// Tài khoản tìm theo số điện thoại để mời góp Điểm.
 class PlayerLookup {
   final String id;
   final String fullName;
@@ -55,7 +55,7 @@ class CancelReason {
   const CancelReason({required this.code, required this.label, this.isCustom = false});
 }
 
-/// Một khoản đã trả cho lần đặt sân (chia tiền thì có nhiều người trả).
+/// Một khoản đã trả cho lần đặt sân (chia Điểm thì có nhiều người trả).
 class BookingPayment {
   final String userId;
   final String name;
@@ -97,20 +97,26 @@ class Booking {
   final DateTime createdAt;
   final DateTime? cancelledAt;
 
-  /// Số tiền người dùng hiện tại được hoàn khi hủy (đơn chia tiền: chỉ phần của mình).
+  /// Số tiền người dùng hiện tại được hoàn khi hủy (đơn chia Điểm: chỉ phần của mình).
   final int refunded;
 
   /// Đã check-in tại sân (không hủy được nữa).
   final bool isCheckedIn;
 
-  /// Đơn chia tiền đang chờ mọi người góp đủ (chưa có vé, hết hạn thì tự hủy và hoàn tiền).
+  /// Đơn chia Điểm đang chờ mọi người góp đủ (chưa có vé, hết hạn thì tự hủy và hoàn Điểm).
   final bool awaitingPayment;
 
-  /// Phần tiền của người dùng hiện tại trong đơn chia tiền (0 = không chia).
+  /// Phần tiền của người dùng hiện tại trong đơn chia Điểm (0 = không chia).
   final int myShare;
 
   /// Người đặt + người được mời góp; chỉ có khi tải chi tiết một đơn.
   final List<BookingParticipant> participants;
+
+  /// Mã gói cố định hằng tuần (các buổi cùng gói có chung mã); `null` = đặt lẻ.
+  final String? recurringGroupId;
+
+  /// Giá gốc trước giảm của buổi này; `null` khi không giảm hoặc BE không trả (danh sách my-bookings).
+  final int? originalPrice;
 
   const Booking({
     required this.id,
@@ -132,9 +138,14 @@ class Booking {
     this.awaitingPayment = false,
     this.myShare = 0,
     this.participants = const [],
+    this.recurringGroupId,
+    this.originalPrice,
   });
 
-  /// Hạn góp tiền của đơn chia tiền: 30 phút sau khi tạo, nhưng không quá giờ bắt đầu.
+  /// Buổi thuộc gói cố định hằng tuần (hủy là hủy cả gói, luật hủy riêng: xem [BookingPackage]).
+  bool get isRecurring => recurringGroupId != null;
+
+  /// Hạn góp Điểm của đơn chia Điểm: 30 phút sau khi tạo, nhưng không quá giờ bắt đầu.
   DateTime get splitDeadline {
     final byWindow = createdAt.add(SplitPaymentRules.window);
     return byWindow.isBefore(start) ? byWindow : start;
@@ -142,6 +153,12 @@ class Booking {
 
   /// Người dùng [userId] còn phải góp phần của mình.
   bool owesShare(String userId) => participants.any((p) => p.userId == userId && !p.isPaid);
+
+  /// Người chưa góp (cần [participants], tức đơn tải chi tiết).
+  List<BookingParticipant> get unpaidParticipants => participants.where((p) => !p.isPaid).toList();
+
+  /// Khoản còn thiếu: tổng phần của những người chưa góp — số người đặt trả bù khi bấm "Thanh toán khoản còn thiếu".
+  int get remainingUnpaid => unpaidParticipants.fold(0, (sum, p) => sum + p.amount);
 
   /// "Cầu Lông • Sân 2" (chưa có sân con thì chỉ có môn).
   String get sportCourtLabel => courtName == null ? sportLabel : '$sportLabel • $courtName';
@@ -153,7 +170,7 @@ class Booking {
 
   bool isFreeCancel(DateTime now) => now.isBefore(freeCancelDeadline);
 
-  /// Hủy lúc [now] được hoàn đủ: trước 24h, hoặc đơn chia tiền còn chờ góp (lúc nào hủy cũng hoàn đủ phần đã góp).
+  /// Hủy lúc [now] được hoàn đủ: trước 24h, hoặc đơn chia Điểm còn chờ góp (lúc nào hủy cũng hoàn đủ phần đã góp).
   bool refundsInFull(DateTime now) => awaitingPayment || isFreeCancel(now);
 
   /// Số tiền bị mất nếu hủy lúc [now]: được hoàn đủ thì không mất, còn lại mất toàn bộ số đã trả.
@@ -194,6 +211,8 @@ class Booking {
         awaitingPayment: cancelledAt == null && awaitingPayment,
         myShare: myShare,
         participants: participants,
+        recurringGroupId: recurringGroupId,
+        originalPrice: originalPrice,
       );
 
   factory Booking.fromJson(Map<String, dynamic> json) => Booking(
@@ -212,6 +231,8 @@ class Booking {
         createdAt: DateTime.parse(json['createdAt'] as String),
         cancelledAt: json['cancelledAt'] == null ? null : DateTime.parse(json['cancelledAt'] as String),
         refunded: (json['refunded'] as num?)?.toInt() ?? 0,
+        recurringGroupId: json['recurringGroupId'] as String?,
+        originalPrice: (json['originalPrice'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -230,5 +251,61 @@ class Booking {
         'createdAt': createdAt.toIso8601String(),
         'cancelledAt': cancelledAt?.toIso8601String(),
         'refunded': refunded,
+        'recurringGroupId': recurringGroupId,
+        'originalPrice': originalPrice,
       };
+}
+
+/// Gói cố định hằng tuần: các buổi cùng [groupId] (mỗi buổi một lượt đặt, vé QR riêng).
+/// Người đặt hủy là hủy cả gói (các buổi chưa hủy), chỉ khi còn ít nhất 48 giờ trước buổi đầu còn lại; hoàn 100%.
+/// Chủ sân có thể hủy lẻ một buổi: buổi đó hiện "Đã hủy", các buổi khác giữ nguyên.
+class BookingPackage {
+  final String groupId;
+
+  /// Các buổi, sắp theo giờ bắt đầu.
+  final List<Booking> sessions;
+
+  BookingPackage(this.groupId, List<Booking> sessions)
+      : sessions = [...sessions]..sort((a, b) => a.start.compareTo(b.start));
+
+  /// Các buổi chưa bị hủy.
+  List<Booking> get active => sessions.where((b) => b.cancelledAt == null).toList();
+
+  Booking get first => sessions.first;
+
+  bool get isCancelled => active.isEmpty;
+
+  /// Mốc cuối được hủy gói: 48 giờ trước buổi đầu chưa bị hủy (`null` khi cả gói đã hủy).
+  DateTime? get cancelDeadline => active.firstOrNull?.start.subtract(RecurringBookingRules.cancelBeforeFirst);
+
+  /// Còn buổi chưa diễn ra.
+  bool hasUpcoming(DateTime now) => sessions.any((b) => b.status(now) == BookingStatus.upcoming);
+
+  bool canCancel(DateTime now, String userId) {
+    final deadline = cancelDeadline;
+    return deadline != null && first.bookerId == userId && now.isBefore(deadline) && active.every((b) => !b.isCheckedIn);
+  }
+
+  /// Hủy gói được hoàn đủ số đã trả của các buổi chưa hủy.
+  int get refundIfCancelled => active.fold(0, (sum, b) => sum + b.amountPaid);
+
+  int get totalPaid => sessions.fold(0, (sum, b) => sum + b.amountPaid);
+
+  /// Gom các lượt đặt cùng gói thành [BookingPackage] tại vị trí buổi xuất hiện đầu tiên; lượt đặt lẻ giữ nguyên.
+  /// Mỗi phần tử là [Booking] hoặc [BookingPackage].
+  static List<Object> group(List<Booking> bookings) {
+    final byGroup = <String, List<Booking>>{};
+    for (final b in bookings) {
+      final id = b.recurringGroupId;
+      if (id != null) (byGroup[id] ??= []).add(b);
+    }
+    final seen = <String>{};
+    return [
+      for (final b in bookings)
+        if (b.recurringGroupId == null)
+          b
+        else if (seen.add(b.recurringGroupId!))
+          BookingPackage(b.recurringGroupId!, byGroup[b.recurringGroupId!]!),
+    ];
+  }
 }

@@ -127,7 +127,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(ElevatedButton, LfgStrings.leave));
     await tester.pumpAndSettle();
-    expect(find.textContaining('đã được hoàn vào ví'), findsOneWidget);
+    expect(find.textContaining('đã được hoàn vào Ví điểm'), findsOneWidget);
     expect(find.text(LfgStrings.yourTicket), findsNothing);
     expect(find.textContaining(LfgStrings.flashClaim), findsOneWidget);
   });
@@ -192,12 +192,11 @@ void main() {
     expect(find.text(LfgStrings.depositExplain(LfgFormat.singles.label, 2, false)), findsOneWidget);
   });
 
-  testWidgets('kèo đã chốt nhưng còn trước T−48h: vẫn rời được, không cần gửi yêu cầu hủy', (tester) async {
+  testWidgets('kèo đã chốt nhưng còn trước T−48h: vẫn rời được (hoàn 100%)', (tester) async {
     final match = await tester.runAsync(() => lfg.getMyMatches());
-    final full = match!.firstWhere((m) => m.facilityName == 'Pickleball Thảo Điền' && m.cancelRequest == null);
+    final full = match!.firstWhere((m) => m.facilityName == 'Pickleball Thảo Điền');
     await pump(tester, LfgMatchDetailScreen(matchId: full.id));
     expect(find.text(LfgStrings.statusConfirmed), findsOneWidget);
-    expect(find.text(LfgStrings.requestCancel), findsNothing);
 
     await tester.tap(find.text(LfgStrings.leave));
     await tester.pumpAndSettle();
@@ -205,17 +204,5 @@ void main() {
     await tester.tap(find.widgetWithText(ElevatedButton, LfgStrings.leave));
     await tester.pumpAndSettle();
     expect(find.text(LfgStrings.leftMessage(full.depositPerSlot)), findsOneWidget);
-  });
-
-  testWidgets('người khác xin hủy: mình đồng ý cuối cùng thì kèo hủy', (tester) async {
-    final mine = await tester.runAsync(() => lfg.getMyMatches());
-    final requested = mine!.firstWhere((m) => m.cancelRequest != null);
-    await pump(tester, LfgMatchDetailScreen(matchId: requested.id));
-    expect(find.text(LfgStrings.cancelRequestBy('Thu Trang')), findsOneWidget);
-
-    await tester.tap(find.text(LfgStrings.approve));
-    await tester.pumpAndSettle();
-    expect(find.text(LfgStrings.mutualCancelledMessage), findsOneWidget);
-    expect(find.text(LfgStrings.statusCancelledMutual), findsOneWidget);
   });
 }

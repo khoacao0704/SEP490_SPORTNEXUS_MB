@@ -361,6 +361,37 @@ void main() {
     expect(Facility.noLocation, const GeoPoint(0, 0));
   });
 
+  test('địa giới mới (tỉnh → phường): lọc theo provinceCode / wardCode; phường lấy từ wards', () async {
+    server.ok(ApiFacilityRepository.locationsPath, [
+      {
+        'provinceCode': '79',
+        'provinceName': 'Thành phố Hồ Chí Minh',
+        'facilityCount': 7,
+        'wards': [
+          {'wardCode': '26740', 'wardName': 'Phường Sài Gòn'},
+        ],
+      },
+      {'provinceCode': '01', 'provinceName': 'Thành phố Hà Nội', 'facilityCount': 1, 'wards': []},
+    ]);
+    server.ok(ApiFacilityRepository.searchPath, {
+      'page': 1, 'pageSize': 20, 'totalItems': 1, 'totalPages': 1,
+      'items': [_searchItem()],
+    });
+
+    expect(await repo.getDistricts('Hồ Chí Minh'), ['Phường Sài Gòn']);
+    final page = await repo.searchFacilitiesPage(const FacilitySearchQuery(city: 'Hồ Chí Minh', district: 'Phường Sài Gòn'));
+    expect(page.items, hasLength(1));
+    var search = server.requests.lastWhere((r) => r.path == ApiFacilityRepository.searchPath);
+    expect(search.queryParameters['provinceCode'], '79');
+    expect(search.queryParameters['wardCode'], '26740');
+    expect(search.queryParameters.containsKey('province'), isFalse);
+
+    await repo.searchFacilitiesPage(const FacilitySearchQuery(city: 'Hà Nội'));
+    search = server.requests.lastWhere((r) => r.path == ApiFacilityRepository.searchPath);
+    expect(search.queryParameters['provinceCode'], '01');
+    expect(search.queryParameters.containsKey('wardCode'), isFalse);
+  });
+
   test('lọc khu vực: tỉnh chưa có cơ sở nào thì trả rỗng, không gọi tìm kiếm', () async {
     locations();
     final page = await repo.searchFacilitiesPage(const FacilitySearchQuery(city: 'Đà Nẵng'));

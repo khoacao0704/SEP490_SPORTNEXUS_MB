@@ -280,7 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: const Text('ƯU ĐÃI THÁNG 10', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                           ),
                           const SizedBox(height: 4),
-                          const Text('Đặt Sân Giảm 20% Qua Ví Escrow', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                          const Text('Đặt Sân Giảm 20% Khi Đổi Điểm', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),

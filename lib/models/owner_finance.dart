@@ -2,10 +2,10 @@ import '../core/constants/owner_rules.dart';
 
 /// Nguồn doanh thu của Chủ sân.
 enum RevenueKind {
-  /// Tiền sân của lượt đã check-out (gồm phần tự thu tại sân).
+  /// Giá sân của lượt đã check-out (gồm phần tự thu tại sân).
   courtFee('CourtFee'),
 
-  /// Tiền phạt người chơi hủy trong 24 giờ hoặc vắng mặt: về chủ sân.
+  /// Điểm phạt người chơi hủy trong 24 giờ hoặc vắng mặt: về chủ sân.
   penalty('Penalty'),
 
   /// Lệ phí giải đấu Chủ sân tổ chức, giải ngân khi giải kết thúc.
@@ -29,7 +29,7 @@ class RevenueItem {
   /// Tính vào doanh thu (và vào phí 10%).
   final int amount;
 
-  /// Phần đi qua app, đã giải ngân vào ví Chủ sân. Phần còn lại chủ sân tự thu tại sân.
+  /// Phần đi qua app, đã giải ngân vào Ví điểm Chủ sân. Phần còn lại chủ sân tự thu tại sân.
   final int viaApp;
 
   /// Số lượt sân gộp trong khoản này.

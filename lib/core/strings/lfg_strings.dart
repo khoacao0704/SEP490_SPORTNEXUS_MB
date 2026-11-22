@@ -27,7 +27,7 @@ class LfgStrings {
   static String skillTag(String level) => 'Trình độ: $level';
   static const String stepSkill = 'Trình độ kèo (không bắt buộc)';
   static const String stepSlotCount = 'Số ca liên tiếp';
-  static String slotCountNote(int max) => 'Chơi dài hơn: gộp tối đa $max ca liền nhau cùng sân (tiền sân cộng dồn).';
+  static String slotCountNote(int max) => 'Chơi dài hơn: gộp tối đa $max ca liền nhau cùng sân (giá sân cộng dồn).';
   static String slotCountLimited(int n) => 'Sân này chỉ còn $n ca liền nhau từ giờ bạn chọn.';
   static const String allFormats = 'Mọi hình thức';
   static const String allCourtTypes = 'Mọi loại sân';
@@ -73,96 +73,89 @@ class LfgStrings {
   static const String emptySlot = 'Chỗ trống';
   static const String heldSlot = 'Đang có người giữ chỗ';
   static const String you = '(Bạn)';
+  static const String unnamedMember = 'Người chơi đã vào kèo';
   static const String hostNote = 'Ghi chú của host';
-  static const String courtPrice = 'Tiền sân';
+  static const String courtPrice = 'Giá sân';
   static const String fillDeadline = 'Hạn đủ người';
   static const String yourTicket = 'Vé QR check-in của bạn';
   static const String ticketNote = 'Mỗi người có mã QR riêng. Xuất trình cho chủ sân khi check-in và check-out.';
   static const String rulesTitle = 'Quy định cọc & hủy';
-  /// [hostPaysCourt]: chủ kèo trả trước cả tiền sân, người vào trả phần của mình cho chủ kèo (cách BE làm).
+  /// [hostPaysCourt]: chủ kèo trả trước cả giá sân, người vào trả phần của mình cho chủ kèo (cách BE làm).
   /// [hostCanLeave]: host rời kèo thì quyền host chuyển cho người khác (bản giả lập); không thì host chỉ hủy kèo.
   /// [lateLeave]: sau T−48h người tham gia vẫn tự rời được nhưng không hoàn (cách BE làm).
   static String rules(int deposit, bool isTeam,
           {bool hostPaysCourt = false, bool hostCanLeave = true, bool lateLeave = false}) =>
       [
-        'Mỗi ${isTeam ? 'đội' : 'người'} vào kèo trả ${Formatters.vnd(deposit)} (chia đều tiền sân).',
-        if (isTeam) 'Team vs Team: người đại diện mỗi đội trả tiền, nhận hoàn tiền và chịu cộng/trừ Fair Play thay cả đội.',
+        'Mỗi ${isTeam ? 'đội' : 'người'} vào kèo trả ${Formatters.vnd(deposit)} (chia đều giá sân).',
+        if (isTeam) 'Team vs Team: người đại diện mỗi đội trả Điểm, nhận hoàn Điểm và chịu cộng/trừ Fair Play thay cả đội.',
         hostPaysCourt
-            ? 'Host đã trả trước toàn bộ tiền sân. Tiền của người vào kèo được tạm giữ; khi check-in hoặc sau giờ chơi, phần đó góp vào tiền sân và host được hoàn lại đúng số đó.'
-            : 'Tiền được giữ tới khi chủ sân check-out mới chuyển cho chủ sân.',
+            ? 'Host đã trả trước toàn bộ giá sân. Điểm của người vào kèo được tạm giữ; khi check-in hoặc sau giờ chơi, phần đó góp vào giá sân và host được hoàn lại đúng số đó.'
+            : 'Điểm được giữ tới khi chủ sân check-out mới chuyển cho chủ sân.',
         'Kèo phải đủ người trước giờ chơi 48 giờ, nếu không sẽ tự hủy và hoàn 100% cho tất cả.',
         'Trước giờ chơi 48 giờ: ai rời cũng được hoàn 100%, chỗ mở lại cho người khác.'
             '${hostCanLeave ? ' Host rời thì quyền host chuyển cho người vào sớm nhất.' : ''}',
-        if (!hostCanLeave)
-          'Host không rời được, nhưng tự hủy kèo được tới 24 giờ trước giờ chơi (mọi người được hoàn 100%, host bị trừ 10 điểm Fair Play).',
-        'Từ 24 giờ đến 1 giờ trước giờ chơi: muốn hủy kèo phải ${hostCanLeave ? '' : 'được host '}gửi yêu cầu và tất cả đồng ý; '
-            'khi đó hoàn 100% và không ai bị trừ Fair Play.',
+        if (!hostCanLeave) ...[
+          'Host không rời được, chỉ hủy kèo. Hủy trước giờ chơi 48 giờ: mọi người được hoàn 100%, host bị trừ 10 điểm Fair Play.',
+          'Host hủy dưới 48 giờ (hủy đơn phương): mọi người vẫn được hoàn 100%, host bị trừ 50% giá sân để bồi thường '
+              'chia đều cho người đã vào kèo và bị trừ 20 điểm Fair Play.',
+        ],
         if (lateLeave) ...[
-          'Sau 48 giờ trước giờ chơi bạn vẫn tự rời được nhưng không được hoàn tiền (chuyển cho host), chỗ không mở lại.',
+          'Sau 48 giờ trước giờ chơi bạn vẫn tự rời được nhưng không được hoàn Điểm (chuyển cho host), chỗ không mở lại.',
           'Rời trong 24 giờ trước giờ chơi còn bị trừ 10 điểm Fair Play.',
         ] else
-          'Sau 48 giờ trước giờ chơi: không tự rời được, chỉ hủy kèo khi tất cả đồng ý.',
-        'Vắng mặt hoặc trễ quá 15 phút sẽ mất tiền và bị trừ 10 điểm Fair Play.',
+          'Sau 48 giờ trước giờ chơi: không tự rời được nữa.',
+        'Vắng mặt hoặc trễ quá 15 phút sẽ mất Điểm và bị trừ 10 điểm Fair Play.',
       ].join('\n');
   static const String leave = 'Rời kèo';
   static const String cancelMatch = 'Hủy kèo';
   static const String confirmCancelTitle = 'Hủy kèo?';
   static const String confirmLeaveTitle = 'Rời kèo?';
   static String confirmLeaveMessage(int deposit, {bool isHost = false, String? nextHost}) =>
-      'Bạn được hoàn 100% tiền cọc (${Formatters.vnd(deposit)}) và chỗ của bạn mở lại cho người khác.'
+      'Bạn được hoàn 100% Điểm cọc (${Formatters.vnd(deposit)}) và chỗ của bạn mở lại cho người khác.'
       '${!isHost ? '' : nextHost == null ? ' Bạn là người cuối cùng nên kèo sẽ bị hủy.' : ' Quyền host sẽ chuyển cho $nextHost.'}';
   static const String keep = 'Không';
   static String leftMessage(int refund) =>
-      refund > 0 ? 'Đã rời kèo. ${Formatters.vnd(refund)} đã được hoàn vào ví.' : 'Đã rời kèo.';
+      refund > 0 ? 'Đã rời kèo. ${Formatters.vnd(refund)} đã được hoàn vào Ví điểm.' : 'Đã rời kèo.';
   static String confirmLateLeaveMessage(int paid, {required bool fairPlayPenalty}) =>
       'Kèo đã chốt nên bạn không được hoàn ${Formatters.vnd(paid)} (chuyển cho chủ kèo) và chỗ của bạn không mở lại.'
       '${fairPlayPenalty ? ' Đã trong 24 giờ trước giờ chơi nên bạn còn bị trừ 10 điểm Fair Play.' : ''}';
   static const String lateLeaveNote =
-      'Kèo đã chốt. Bạn vẫn rời được tới giờ chơi nhưng không được hoàn tiền; trong 24 giờ trước giờ chơi còn bị trừ 10 điểm Fair Play.';
+      'Kèo đã chốt. Bạn vẫn rời được tới giờ chơi nhưng không được hoàn Điểm; trong 24 giờ trước giờ chơi còn bị trừ 10 điểm Fair Play.';
   static const String reasonTitle = 'Lý do';
   static const String reasonHint = 'Nhập lý do';
 
-  // Yêu cầu hủy kèo đã chốt
-  static const String requestCancel = 'Yêu cầu hủy kèo';
-  static const String confirmRequestTitle = 'Gửi yêu cầu hủy kèo?';
-  static String confirmRequestMessage(int others, String deadline) =>
-      'Kèo chỉ bị hủy khi cả $others người còn lại đồng ý trước $deadline. Khi đó mọi người được hoàn 100% '
-      'và không ai bị trừ Fair Play. Chỉ cần 1 người từ chối thì yêu cầu bị bác và kèo vẫn diễn ra.';
-  static const String sendRequest = 'Gửi yêu cầu';
-  static const String requestSent = 'Đã gửi yêu cầu hủy. Chờ mọi người đồng ý.';
-  static String cancelRequestBy(String name) => '$name đề nghị hủy kèo';
-  static String approvalsCount(int approved, int total) => 'Đã đồng ý $approved/$total';
-  static String cancelRequestDeadline(String t) => 'Hạn trả lời: $t. Chưa đủ tất cả đồng ý thì kèo vẫn diễn ra.';
-  static const String approve = 'Đồng ý hủy';
-  static const String reject = 'Từ chối';
-  static const String approved = 'Đã đồng ý';
-  static const String notAnswered = 'Chưa trả lời';
-  static const String waitingOthers = 'Bạn đã đồng ý. Đang chờ những người còn lại.';
-  static const String rejectedMessage = 'Bạn đã từ chối. Kèo vẫn diễn ra.';
-  static const String mutualCancelledMessage = 'Tất cả đã đồng ý, kèo đã hủy. Mọi người được hoàn 100%.';
-  static const String confirmedNote =
-      'Kèo đã chốt. Muốn hủy, hãy gửi yêu cầu – cần tất cả đồng ý trước giờ chơi 1 giờ.';
-  static String requestOpensNote(String t) =>
-      'Kèo đã chốt. Từ $t (24 giờ trước giờ chơi) có thể gửi yêu cầu hủy kèo – cần tất cả đồng ý.';
-  static const String leaveTooLate =
-      'Đã qua hạn tự rời kèo (48 giờ trước giờ chơi). Từ 24 giờ trước giờ chơi có thể gửi yêu cầu hủy kèo.';
-  static const String cancelRequestTooEarly =
-      'Chưa tới 24 giờ trước giờ chơi: chủ kèo vẫn tự hủy kèo được, chưa cần gửi yêu cầu.';
+  static const String leaveTooLate = 'Đã qua hạn tự rời kèo (48 giờ trước giờ chơi).';
   static String hostCancelMessage(int courtPrice) =>
-      'Mọi người trong kèo được hoàn 100%, tiền sân ${Formatters.vnd(courtPrice)} của bạn cũng được hoàn đủ. '
+      'Mọi người trong kèo được hoàn 100%, giá sân ${Formatters.vnd(courtPrice)} của bạn cũng được hoàn đủ. '
       'Bạn sẽ bị trừ 10 điểm Fair Play vì hủy kèo.';
-  static const String hostCancelledMessage = 'Đã hủy kèo. Mọi người đã được hoàn tiền.';
+  static const String hostCancelledMessage = 'Đã hủy kèo. Mọi người đã được hoàn Điểm.';
+
+  // Chủ kèo hủy đơn phương (dưới 48h trước giờ chơi)
+  static const String lateCancelTitle = 'Cảnh báo hủy kèo đơn phương';
+  static const String lateCancelWarning = 'Bạn đang hủy kèo đơn phương dưới 48h. Bạn sẽ bị TRỪ 50% GIÁ SÂN để bồi '
+      'thường cho người chơi khác và trừ 20 điểm FairPlay.';
+  static const String lateCancelWarningNoJoiner = 'Bạn đang hủy kèo đơn phương dưới 48h. Kèo chưa có người vào nên '
+      'bạn được hoàn đủ giá sân, nhưng vẫn bị trừ 20 điểm FairPlay.';
+  static const String lateCancelLossLabel = 'Bạn mất';
+  static String lateCancelLossDetail(int courtPrice) => '50% giá sân ${Formatters.vnd(courtPrice)}';
+  static String lateCancelCompensation(int joiners) => 'Bồi thường mỗi người chơi ($joiners người)';
+  static const String lateCancelFairPlayLabel = 'Fair Play';
+  static const String lateCancelFairPlay = '−20 điểm';
+  static const String lateCancelRefundNote = 'Người chơi trong kèo vẫn được hoàn 100% Điểm của họ.';
+  static const String lateCancelConfirm = 'Đồng ý Hủy';
+  static const String lateCancelBack = 'Quay lại';
+  static String lateCancelledMessage(int loss) => loss > 0
+      ? 'Đã hủy kèo. Bạn bị trừ ${Formatters.vnd(loss)} và 20 điểm Fair Play.'
+      : 'Đã hủy kèo. Bạn bị trừ 20 điểm Fair Play.';
   static const String withdrawRequest = 'Rút yêu cầu';
-  static const String pendingApprovalNote = 'Bạn đã xin vào kèo. Chủ kèo duyệt thì mới trừ tiền và có vé.';
+  static const String pendingApprovalNote = 'Bạn đã xin vào kèo. Chủ kèo duyệt thì mới trừ Điểm và có vé.';
   static const String withdrawnMessage = 'Đã rút yêu cầu tham gia.';
   static const String invitedNote = 'Bạn được mời vào kèo này. Chấp nhận thì trả phần của mình và nhận vé QR.';
   static String acceptInvite(int amount) => 'Chấp nhận • ${Formatters.vnd(amount)}';
   static const String declineInvite = 'Từ chối';
   static const String declinedMessage = 'Đã từ chối lời mời.';
-  static const String tooLateNote =
-      'Đã quá hạn hủy kèo (1 giờ trước giờ chơi). Vắng mặt hoặc trễ quá 15 phút sẽ mất cọc và bị trừ 10 điểm Fair Play.';
-  static const String simulateApprove = 'Giả lập: mọi người đồng ý';
-  static const String simulateReject = 'Giả lập: có người từ chối';
+  static const String tooLateNote = 'Đã qua hạn tự rời kèo (48 giờ trước giờ chơi). '
+      'Vắng mặt hoặc trễ quá 15 phút sẽ mất cọc và bị trừ 10 điểm Fair Play.';
   static const String simulateJoin = 'Giả lập có người vào kèo';
 
   // Thanh toán cọc
@@ -172,11 +165,11 @@ class LfgStrings {
   static const String holdExpiredMessage = 'Chỗ đã được nhả cho người khác. Vui lòng thử lại.';
   static const String understood = 'Đã hiểu';
   static const String paymentMethod = 'Phương thức thanh toán';
-  static const String payWallet = 'Ví SportNexus';
+  static const String payWallet = 'Đổi Điểm';
   static String balance(int amount) => 'Số dư: ${Formatters.vnd(amount)}';
   static const String payVietQr = 'Chuyển khoản VietQR';
   static const String payVietQrHint = 'Quét mã bằng app ngân hàng';
-  static const String insufficient = 'Số dư ví không đủ. Hãy chọn VietQR hoặc nạp thêm tiền.';
+  static const String insufficient = 'Không đủ Điểm. Hãy chọn VietQR hoặc nạp thêm Điểm.';
   static const String amountToPay = 'Cọc cần trả';
   static const String confirmPay = 'XÁC NHẬN THANH TOÁN';
   static const String joinSuccess = 'Bạn đã vào kèo! Vé QR có trong chi tiết kèo.';
@@ -188,7 +181,7 @@ class LfgStrings {
   static const String stepFormat = 'Hình thức ghép';
   static const String stepTeamSize = 'Số người mỗi đội (loại sân)';
   static const String teamRepresentativeNote =
-      'Bạn là người đại diện đội: cọc, hoàn tiền và cộng/trừ Fair Play của cả đội đều tính cho bạn.';
+      'Bạn là người đại diện đội: cọc, hoàn Điểm và cộng/trừ Fair Play của cả đội đều tính cho bạn.';
   static const String stepFacility = 'Chọn sân';
   static const String stepTime = 'Chọn khung giờ';
   static const String stepNote = 'Ghi chú (không bắt buộc)';
@@ -198,15 +191,15 @@ class LfgStrings {
   static const String noFacilities = 'Không có sân nào cho môn này ở khu vực đã chọn.';
   static const String noSlots = 'Không còn khung giờ phù hợp trong ngày này.';
   static String depositExplain(String formatLabel, int slots, bool isTeam) =>
-      '$formatLabel: tiền sân chia đều $slots ${isTeam ? 'đội' : 'người'}, bạn cọc phần của mình.';
+      '$formatLabel: giá sân chia đều $slots ${isTeam ? 'đội' : 'người'}, bạn cọc phần của mình.';
   static const String continueToPay = 'TIẾP TỤC THANH TOÁN CỌC';
-  static const String continueToPayCourt = 'TIẾP TỤC THANH TOÁN TIỀN SÂN';
+  static const String continueToPayCourt = 'TIẾP TỤC THANH TOÁN GIÁ SÂN';
   static String hostPaysCourtExplain(int courtPrice, int perPerson) =>
-      'Bạn trả trước toàn bộ tiền sân ${Formatters.vnd(courtPrice)}. Mỗi người vào kèo trả lại cho bạn '
+      'Bạn trả trước toàn bộ giá sân ${Formatters.vnd(courtPrice)}. Mỗi người vào kèo trả lại cho bạn '
       '${Formatters.vnd(perPerson)} khi check-in hoặc sau giờ chơi.';
-  static const String amountToPayCourt = 'Tiền sân cần trả';
+  static const String amountToPayCourt = 'Giá sân cần trả';
   static const String hostPaysCourtNote =
-      'Bạn trả trước toàn bộ tiền sân; mỗi người vào kèo trả lại phần chia đều cho bạn khi check-in hoặc sau giờ chơi.';
+      'Bạn trả trước toàn bộ giá sân; mỗi người vào kèo trả lại phần chia đều cho bạn khi check-in hoặc sau giờ chơi.';
 
   // Lỗi
   static const String loginRequired = 'Vui lòng đăng nhập để ghép trận.';
@@ -222,15 +215,33 @@ class LfgStrings {
   static const String presetSlotUnavailable =
       'Ca được gợi ý không còn trống hoặc không nằm trong khung 48 giờ – 5 ngày tới. Vui lòng chọn ca khác.';
   static const String invalidFormat = 'Hình thức ghép không phù hợp với môn này.';
-  static const String cannotLeaveConfirmed = 'Kèo đã đủ người nên không thể rời. Hãy gửi yêu cầu hủy kèo.';
-  static const String cancelOnlyConfirmed = 'Kèo chưa đủ người: bạn có thể rời kèo và được hoàn 100%.';
-  static const String tooLateToCancel = 'Đã quá hạn hủy kèo (1 giờ trước giờ chơi).';
-  static const String cancelRequestExists = 'Kèo đang có một yêu cầu hủy chờ trả lời.';
-  static const String noCancelRequest = 'Yêu cầu hủy không còn hiệu lực.';
-  static const String alreadyResponded = 'Bạn đã trả lời yêu cầu này rồi.';
+  static const String cannotLeaveConfirmed = 'Kèo đã đủ người nên không thể rời.';
   static const String notMember = 'Bạn không ở trong kèo này.';
   static const String alreadyEnded = 'Kèo đã kết thúc hoặc đã bị hủy.';
   static const String loadError = 'Không tải được dữ liệu kèo. Vui lòng thử lại.';
   static const String retry = 'Thử lại';
-}
 
+  // ---- Kèo Đội vs Đội ----
+  static const String stepSideSize = 'Số người mỗi đội';
+  static String sideSizeLabel(int n) => '${n}v$n';
+  static const String pickTeamTitle = 'Chọn Đội đại diện thi đấu';
+  static const String pickTeamHint = 'Chọn đội bạn làm đội trưởng';
+  static String teamMembers(int n) => '$n thành viên';
+  static String teamWrongSize(int need, int has) => 'Cần đúng $need người, đội đang có $has';
+  static const String teamWrongSport = 'Đội thuộc môn khác';
+  static const String teamLocked = 'Đội đang bị khóa';
+  static const String noCaptainTeam = 'Bạn cần là đội trưởng của một đội đúng môn và đủ người để tạo / nhận kèo đội.';
+  static const String openMyTeams = 'Mở Đội của tôi';
+  static const String teamsLoadError = 'Không tải được danh sách đội.';
+  static const String teamRequired = 'Chọn đội đại diện thi đấu';
+  static String teamMatchNote(int side) =>
+      'Kèo Đội vs Đội ${side}v$side: chỉ đội trưởng nhận kèo thay cả đội. Mỗi thành viên 2 đội (trừ chủ kèo) '
+      'tự bị giữ phần Điểm của mình; ai thiếu Điểm thì cả đội chưa vào được.';
+  static const String claimTeamTitle = 'Nhận kèo bằng đội';
+  static const String claimTeamAction = 'Tiếp tục';
+  static const String cancel = 'Hủy';
+  static String teamVs(String a, String b) => '$a vs $b';
+  static const String waitingTeam = 'Đang chờ đội nhận kèo';
+  static const String sideA = 'Phe A';
+  static const String sideB = 'Phe B';
+}

@@ -53,3 +53,39 @@ class SlotHold {
     return seconds < 0 ? 0 : seconds;
   }
 }
+
+/// Một sân con thiếu khung giờ so với các sân khác cùng ngày (xem [findCourtsMismatch]).
+class CourtsMismatch {
+  final DateTime day;
+  final String court;
+
+  /// Các khung (bắt đầu, kết thúc) sân này chưa chọn mà sân khác cùng ngày đã chọn.
+  final List<(DateTime, DateTime)> missing;
+
+  const CourtsMismatch({required this.day, required this.court, required this.missing});
+}
+
+/// Đặt nhiều sân con cùng lúc: trong mỗi ngày, các sân đã chọn phải cùng bộ khung giờ
+/// (Sân 1 slot 1-2 thì Sân 2 cũng slot 1-2; Sân 1 slot 1-2 + Sân 2 slot 1 là không được).
+/// Trả về sân thiếu khung đầu tiên (theo ngày rồi tên sân); `null` = hợp lệ.
+CourtsMismatch? findCourtsMismatch(Iterable<TimeSlot> slots) {
+  final byDay = <DateTime, Map<String, Map<String, (DateTime, DateTime)>>>{};
+  for (final s in slots) {
+    final day = DateTime(s.start.year, s.start.month, s.start.day);
+    final key = '${s.start.hour}:${s.start.minute}-${s.end.hour}:${s.end.minute}';
+    ((byDay[day] ??= {})[s.courtName] ??= {})[key] = (s.start, s.end);
+  }
+  final days = byDay.keys.toList()..sort();
+  for (final day in days) {
+    final courts = byDay[day]!;
+    if (courts.length < 2) continue;
+    final all = <String, (DateTime, DateTime)>{for (final c in courts.values) ...c};
+    final names = courts.keys.toList()..sort();
+    for (final name in names) {
+      final missing = all.keys.where((k) => !courts[name]!.containsKey(k)).map((k) => all[k]!).toList()
+        ..sort((a, b) => a.$1.compareTo(b.$1));
+      if (missing.isNotEmpty) return CourtsMismatch(day: day, court: name, missing: missing);
+    }
+  }
+  return null;
+}

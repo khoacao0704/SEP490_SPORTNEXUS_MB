@@ -316,6 +316,79 @@ void main() {
     );
   });
 
+  test('kèo Đội vs Đội: đọc 2 đội + phe; nhận kèo gửi challengerTeamId; tạo kèo gửi hostTeamId + sideSize', () async {
+    final filled = ApiLfgRepository.matchFromApi(
+      _card(totalSlots: 9, remaining: 0, sport: 'Bóng đá', extra: {
+        'sideSize': 5,
+        'format': '5v5',
+        'hostTeamId': 't-a',
+        'hostTeamName': 'FC Sài Gòn',
+        'challengerTeamId': 't-b',
+        'challengerTeamName': 'Kiệt FC',
+        'participants': [
+          {'userId': 'u1', 'fullName': 'An', 'status': 'ACCEPTED', 'side': 'A'},
+          {'userId': 'u2', 'fullName': 'Bình', 'status': 'ACCEPTED', 'side': 'b'},
+        ],
+      }),
+      myId: _me,
+    )!;
+    expect(filled.isTeamMatch, isTrue);
+    expect(filled.hostTeam!.name, 'FC Sài Gòn');
+    expect(filled.challengerTeam!.name, 'Kiệt FC');
+    expect(filled.sideSize, 5);
+    expect(filled.totalSlots, 10);
+    expect(filled.host.side, 'A');
+    expect(filled.members.map((m) => m.side), ['A', 'A', 'B']);
+
+    final waiting = ApiLfgRepository.matchFromApi(_card(), myId: _me)!;
+    expect(waiting.isTeamMatch, isFalse);
+
+    server.ok('GET', ApiLfgRepository.cardPath('c1'), _card(extra: {'hostTeamId': 't-a', 'hostTeamName': 'FC Sài Gòn', 'sideSize': 1}));
+    server.ok('POST', ApiLfgRepository.claimPath('c1'), {'lfgCardId': 'c1'});
+    final claim = await repo.claimSlot('c1');
+    await repo.confirmClaim(claim.claimId, teamId: 't-b');
+    expect(server.requests.where((r) => r.method == 'POST').last.data, {'challengerTeamId': 't-b'});
+
+    final start = DateTime.now().add(const Duration(days: 3));
+    final slot = TimeSlot(
+      id: 's1',
+      facilityId: 'f1',
+      sport: Sport.football,
+      courtName: 'Sân 1',
+      start: start,
+      end: start.add(const Duration(hours: 1)),
+      price: 1000000,
+      isAvailable: true,
+    );
+    final facility = Facility(
+      id: 'f1',
+      name: 'Sân bóng',
+      address: '',
+      city: '',
+      district: '',
+      location: Facility.noLocation,
+      offerings: const [],
+      rating: 0,
+      reviewCount: 0,
+      imageUrls: const [],
+      openTime: '06:00',
+      closeTime: '22:00',
+      phone: '',
+    );
+    server.routes['POST ${ApiLfgRepository.feedPath}'] = (
+      201,
+      {'statusCode': 201, 'message': 'OK', 'data': _card(hostId: _me, sport: 'Bóng đá', totalSlots: 9, remaining: 9, extra: {'hostTeamId': 't-a', 'sideSize': 5})},
+    );
+    await repo.createMatch(
+      hold: SlotHold(holdId: 'h', slots: [slot], expiresAt: start),
+      facility: facility,
+      format: LfgFormat.teamVsTeam,
+      hostTeamId: 't-a',
+      sideSize: 5,
+    );
+    expect(server.requests.last.data, {'courtSlotId': 's1', 'hostTeamId': 't-a', 'sideSize': 5, 'requireApproval': false});
+  });
+
   test('vào kèo bị BE chặn (Fair Play / ví không đủ): hiện câu của BE', () async {
     server.ok('GET', ApiLfgRepository.cardPath('c1'), _card());
     server.fail('POST', ApiLfgRepository.claimPath('c1'), 403, 'Điểm Fair Play của bạn (25) thấp hơn mức tối thiểu 30');
@@ -434,47 +507,6 @@ void main() {
     ]);
     server.ok('GET', ApiLfgRepository.leaveReasonsPath, ['Ốm', 'Bận']);
     expect((await repo.getLeaveReasons()).map((r) => r.label), ['Ốm', 'Bận']);
-  });
-
-  test('yêu cầu hủy kèo đã chốt: chỉ host gửi, người tham gia bỏ phiếu theo id yêu cầu mới nhất', () async {
-    expect(repo.onlyHostRequestsCancel, isTrue);
-    // Kèo đủ người, còn ~48 giờ: đã qua hạn tự rời, chưa tới T−24h.
-    server.ok('GET', ApiLfgRepository.cardPath('c1'), _card(hostId: _me, remaining: 0, daysAhead: 2));
-    server.ok('POST', ApiLfgRepository.cancelRequestsPath('c1'), {'id': 'r1', 'status': 'PENDING'});
-    server.ok('GET', ApiLfgRepository.latestCancelRequestPath('c1'),
-        {'id': 'r1', 'status': 'PENDING', 'myVote': null, 'canVote': false, 'createdAt': DateTime.now().toUtc().toIso8601String()});
-    server.ok('POST', ApiLfgRepository.votePath('c1', 'r1'), null);
-
-    final requested = await repo.requestCancel('c1', reason: 'Trời mưa');
-    expect(server.requests.firstWhere((r) => r.method == 'POST').data, {'reason': 'Trời mưa'});
-    expect(requested.cancelRequest, isNotNull);
-    expect(requested.cancelRequest!.requestedBy, _me);
-    expect(requested.cancelRequest!.hasApproved(_me), isTrue);
-
-    server.requests.clear();
-    await repo.respondCancel('c1', approve: false);
-    final vote = server.requests.firstWhere((r) => r.method == 'POST');
-    expect(vote.path, ApiLfgRepository.votePath('c1', 'r1'));
-    expect(vote.data, {'approve': false});
-
-    // Yêu cầu đã bị bác / hết hạn: không còn hiện.
-    server.ok('GET', ApiLfgRepository.latestCancelRequestPath('c1'), {'id': 'r1', 'status': 'REJECTED'});
-    expect((await repo.getMatch('c1')).cancelRequest, isNull);
-  });
-
-  test('yêu cầu hủy: có danh sách phiếu thì biết ai đã đồng ý; không có thì chỉ biết phiếu của mình', () {
-    final match = ApiLfgRepository.matchFromApi(_card(remaining: 0), myId: _me)!;
-    final withVotes = ApiLfgRepository.cancelRequestFromApi({
-      'status': 'PENDING',
-      'votes': [
-        {'userId': 'u-a', 'approve': true},
-        {'userId': 'u-b', 'approve': null},
-      ],
-    }, match, myId: _me)!;
-    expect(withVotes.approvals.toSet(), {'u-host', 'u-a'});
-
-    final mine = ApiLfgRepository.cancelRequestFromApi({'status': 'PENDING', 'myVote': true}, match, myId: _me)!;
-    expect(mine.approvals.toSet(), {'u-host', _me});
   });
 
   test('host hủy kèo, chấp nhận / từ chối lời mời: gọi đúng API', () async {

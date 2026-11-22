@@ -204,7 +204,7 @@ void main() {
     await settle(tester);
     expect(find.text(WalletStrings.onlyVietQr), findsOneWidget);
 
-    final confirm = find.textContaining('Xác nhận nạp tiền');
+    final confirm = find.textContaining('Xác nhận nạp ');
     await tester.ensureVisible(confirm);
     await tester.tap(confirm);
     await settle(tester);
@@ -257,7 +257,7 @@ void main() {
 
     expect(find.text('Đặt sân Thiên Triều'), findsOneWidget);
     expect(find.text('Số dư ban đầu'), findsOneWidget);
-    expect(find.text('-140.000 đ'), findsOneWidget);
+    expect(find.text('-140.000 Điểm'), findsOneWidget);
 
     await tester.tap(find.text(WalletStrings.filterIn));
     await settle(tester);

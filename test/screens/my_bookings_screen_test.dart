@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/booking_strings.dart';
 import 'package:test1/core/strings/lfg_strings.dart';
@@ -13,6 +14,9 @@ import 'package:test1/data/mock/mock_split_payment_repository.dart';
 import 'package:test1/data/mock/mock_wallet_repository.dart';
 import 'package:test1/screens/booking/my_bookings_screen.dart';
 import 'package:test1/screens/lfg/lfg_match_detail_screen.dart';
+import 'package:test1/widgets/main_drawer.dart';
+
+import '../helpers/layout_check.dart';
 
 void main() {
   setUp(() async {
@@ -65,6 +69,20 @@ void main() {
     expect(find.text(BookingStrings.confirmCancelLate(700000)), findsOneWidget);
   });
 
+  testWidgets('vé QR: hộp thoại hiện mã QR, không lỗi bố cục (không trắng màn)', (tester) async {
+    await pump(tester);
+    await tester.tap(find.text(BookingStrings.ticket).first);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(BookingStrings.ticketTitle), findsOneWidget);
+    expect(find.byType(QrImageView), findsOneWidget);
+
+    await tester.tap(find.text(BookingStrings.close));
+    await tester.pumpAndSettle();
+    expect(find.byType(QrImageView), findsNothing);
+  });
+
   testWidgets('tab Kèo LFG: kèo thật của tôi, mở chi tiết có nút rời / yêu cầu hủy', (tester) async {
     await pump(tester);
     await tester.tap(find.text(BookingStrings.tabLfg));
@@ -75,5 +93,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(LfgMatchDetailScreen), findsOneWidget);
     expect(find.text(LfgStrings.leave), findsOneWidget);
+  });
+  testWidgets('mở menu bên ở Lịch đặt: mục đang chọn vẽ bình thường, không lỗi ListTile', (tester) async {
+    await pump(tester);
+    final scaffold = tester.firstState<ScaffoldState>(find.byType(Scaffold));
+    scaffold.openDrawer();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ErrorWidget), findsNothing);
+  });
+  testWidgets('menu bên: nhiều cỡ máy + chữ phóng to không tràn', (tester) async {
+    await expectNoOverflow(
+      tester,
+      'Menu bên',
+      () => const Scaffold(drawer: MainDrawer(selectedIndex: 3), body: SizedBox()),
+      interact: (tester) async {
+        tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+        await settleFrames(tester);
+      },
+    );
   });
 }

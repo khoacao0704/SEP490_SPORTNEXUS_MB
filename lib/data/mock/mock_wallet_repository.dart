@@ -125,7 +125,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
     return tx;
   }
 
-  // ---------------- Nạp tiền ----------------
+  // ---------------- Nạp Điểm ----------------
 
   @override
   Future<TopUpOrder> createTopUp(int amount) async {
@@ -142,7 +142,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
       type: TransactionType.topUp,
       amount: amount,
       status: TransactionStatus.pending,
-      description: 'Nạp tiền qua VietQR',
+      description: 'Nạp Điểm qua VietQR',
       reference: content,
     );
     await _save(add: tx);
@@ -179,11 +179,11 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
     await _save(balance: balance + tx.amount, replace: tx.copyWith(status: TransactionStatus.success));
   }
 
-  /// Cộng tiền hoàn vào ví. Chỉ các bản giả lập khác gọi (vd. hoàn cọc LFG); bản thật do BE tự cộng.
+  /// Cộng tiền hoàn vào Ví điểm. Chỉ các bản giả lập khác gọi (vd. hoàn cọc LFG); bản thật do BE tự cộng.
   Future<WalletTransaction> creditRefund({required int amount, required String description, String? reference}) =>
       credit(type: TransactionType.refund, amount: amount, description: description, reference: reference);
 
-  /// Cộng tiền vào ví (hoàn tiền, giải ngân cho Chủ sân...). Chỉ các bản giả lập khác gọi; bản thật do BE tự cộng.
+  /// Cộng tiền vào Ví điểm (hoàn Điểm, giải ngân cho Chủ sân...). Chỉ các bản giả lập khác gọi; bản thật do BE tự cộng.
   Future<WalletTransaction> credit({
     required TransactionType type,
     required int amount,
@@ -201,7 +201,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
     return tx;
   }
 
-  // ---------------- Rút tiền ----------------
+  // ---------------- Đổi Điểm ra tiền ----------------
 
   @override
   Future<List<BankAccount>> getBankAccounts() async {
@@ -254,7 +254,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
       type: TransactionType.withdrawal,
       amount: total,
       status: TransactionStatus.pending,
-      description: 'Rút tiền về ${account.bankName}',
+      description: 'Đổi Điểm ra tiền về ${account.bankName}',
       reference: '${account.bankCode} ${account.accountNumber} - ${account.accountHolder}',
     );
     await _save(balance: balance - total, add: tx);
@@ -279,7 +279,7 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
       await _save(replace: tx.copyWith(status: TransactionStatus.success));
       return;
     }
-    // Bị từ chối: hoàn lại tiền vào ví.
+    // Bị từ chối: hoàn lại tiền vào Ví điểm.
     final prefs = await SharedPreferences.getInstance();
     final balance = prefs.getInt(_keyBalance) ?? initialBalance;
     await _save(balance: balance + tx.amount, replace: tx.copyWith(status: TransactionStatus.failed));

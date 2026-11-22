@@ -138,7 +138,7 @@ class MainDrawer extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
 
-                  // Chia tiền sân: nhập mã bạn bè gửi
+                  // Chia Điểm sân: nhập mã bạn bè gửi
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.call_split,
@@ -158,7 +158,7 @@ class MainDrawer extends StatelessWidget {
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.account_balance_wallet_outlined,
-                    title: 'Nạp Ví Escrow',
+                    title: 'Nạp Điểm',
                     index: 5,
                     onTapCustom: () {
                       final messenger = ScaffoldMessenger.of(context);
@@ -218,22 +218,24 @@ class MainDrawer extends StatelessWidget {
                     child: const Icon(Icons.sports_tennis, size: 16, color: AppColors.primaryGreen),
                   ),
                   const SizedBox(width: 8),
-                  const Text(
-                    'SportNexus',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: AppColors.textMain,
+                  // Co lại (cắt "…") khi chữ to / máy hẹp thay vì đẩy cả hàng tràn khỏi menu.
+                  const Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        text: 'SportNexus',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textMain),
+                        children: [
+                          TextSpan(
+                            text: ' © 2026',
+                            style: TextStyle(fontWeight: FontWeight.normal, fontSize: 12, color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const Text(
-                    ' © 2026',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   const Icon(Icons.language, size: 20, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   const Text(
@@ -267,11 +269,12 @@ class MainDrawer extends StatelessWidget {
     return Stack(
       alignment: Alignment.centerLeft,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF1D5238) : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-          ),
+        // Material (không phải Container có màu nền): ListTile vẽ nền / hiệu ứng bấm lên Material gần nhất,
+        // bọc trong DecoratedBox có màu thì Flutter báo lỗi và mục đang chọn bị vẽ thành ô lỗi.
+        Material(
+          color: isSelected ? const Color(0xFF1D5238) : Colors.transparent,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
             leading: Icon(
