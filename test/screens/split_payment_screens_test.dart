@@ -119,7 +119,7 @@ void main() {
     await tester.pump();
     expect(find.text(BookingStrings.splitUnavailable), findsOneWidget);
     expect(find.text(SplitPaymentStrings.partsTitle), findsNothing);
-    expect(find.text('Thanh toán 100% tiền sân'), findsWidgets);
+    expect(find.text('Thanh toán 100% giá sân'), findsWidgets);
 
     await tester.pumpWidget(const SizedBox()); // dừng đồng hồ đếm ngược
   });

@@ -174,7 +174,7 @@ class _CourtPricingScreenState extends State<CourtPricingScreen> {
     keyboardType: TextInputType.number,
     inputFormatters: [ThousandsInputFormatter()],
     validator: _priceValidator,
-    decoration: ownerInputDecoration(label, suffix: 'đ'),
+    decoration: ownerInputDecoration(label, suffix: 'Điểm'),
   );
 
   @override

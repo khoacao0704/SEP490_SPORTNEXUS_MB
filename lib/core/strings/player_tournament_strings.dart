@@ -106,13 +106,13 @@ class PlayerTournamentStrings {
   static String teamSizeInvalid(int count) => '$count thành viên (không đủ điều kiện)';
   static const String confirmRegister = 'XÁC NHẬN ĐĂNG KÝ';
   static const String notEnoughBalance = 'Số dư không đủ để trả lệ phí.';
-  static const String topUp = 'Nạp tiền';
+  static const String topUp = 'Nạp Điểm';
   static const String registerSuccess = 'Đăng ký thành công!';
 
   // Rút
   static const String withdrawTitle = 'Rút đăng ký?';
   static String withdrawRefund(int amount) =>
-      'Lệ phí ${Formatters.vnd(amount)} được hoàn 100% về ví của người đã trả. Giải đội: cả đội sẽ bị rút.';
+      'Lệ phí ${Formatters.vnd(amount)} được hoàn 100% về Ví điểm của người đã trả. Giải đội: cả đội sẽ bị rút.';
   static const String withdrawNoRefund = 'Đã quá hạn đăng ký nên lệ phí KHÔNG được hoàn. Giải đội: cả đội sẽ bị rút.';
   static const String withdrawConfirm = 'Rút';
   static const String back = 'Quay lại';

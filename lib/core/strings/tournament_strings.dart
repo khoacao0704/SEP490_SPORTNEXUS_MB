@@ -58,7 +58,7 @@ class TournamentStrings {
   static const String about = 'Giới thiệu';
   static const String prizes = 'Giải thưởng';
   static const String rules = 'Điều lệ';
-  static const String feeRulesTitle = 'Lệ phí & hoàn tiền';
+  static const String feeRulesTitle = 'Lệ phí & hoàn Điểm';
   static String feeRules(int fee, String unitLower) => [
         'Lệ phí ${Formatters.vnd(fee)} mỗi $unitLower, người đăng ký (đội trưởng) trả cho cả ${unitLower == 'người' ? 'suất' : unitLower}.',
         'Rút trước hạn chót đăng ký: hoàn 100% lệ phí.',
@@ -101,10 +101,10 @@ class TournamentStrings {
       : 'Đã qua hạn đăng ký nên lệ phí ${Formatters.vnd(fee)} sẽ không được hoàn, các trận còn lại bị xử thua.';
   static const String keep = 'Không';
   static String withdrawnMessage(int refund) => refund > 0
-      ? 'Đã rút khỏi giải. ${Formatters.vnd(refund)} đã được hoàn vào ví.'
+      ? 'Đã rút khỏi giải. ${Formatters.vnd(refund)} đã được hoàn vào Ví điểm.'
       : 'Đã rút khỏi giải. Lệ phí không được hoàn.';
   static const String simulateCancel = 'Giả lập BTC hủy giải';
-  static const String cancelledByOrganizer = 'Ban tổ chức đã hủy giải. Lệ phí được hoàn 100% vào ví.';
+  static const String cancelledByOrganizer = 'Ban tổ chức đã hủy giải. Lệ phí được hoàn 100% vào Ví điểm.';
 
   // Đăng ký
   static const String registerTitle = 'Đăng Ký Giải';
@@ -120,14 +120,14 @@ class TournamentStrings {
   static const String memberNote = 'Thành viên phải có tài khoản SportNexus. Nhập email hoặc số điện thoại họ đã đăng ký.';
   static String needMembers(int more) => 'Cần thêm ít nhất $more thành viên.';
   static const String needPartner = 'Vui lòng thêm đồng đội.';
-  static const String agreeRules = 'Tôi đã đọc và đồng ý điều lệ giải, quy định lệ phí & hoàn tiền.';
+  static const String agreeRules = 'Tôi đã đọc và đồng ý điều lệ giải, quy định lệ phí & hoàn Điểm.';
   static const String mustAgree = 'Vui lòng đồng ý điều lệ giải.';
   static const String paymentMethod = 'Phương thức thanh toán';
-  static const String payWallet = 'Ví SportNexus';
+  static const String payWallet = 'Đổi Điểm';
   static String balance(int amount) => 'Số dư: ${Formatters.vnd(amount)}';
   static const String payVietQr = 'Chuyển khoản VietQR';
   static const String payVietQrHint = 'Quét mã bằng app ngân hàng';
-  static const String insufficient = 'Số dư ví không đủ. Hãy chọn VietQR hoặc nạp thêm tiền.';
+  static const String insufficient = 'Không đủ Điểm. Hãy chọn VietQR hoặc nạp thêm Điểm.';
   static const String amountToPay = 'Lệ phí cần trả';
   static const String confirmPay = 'XÁC NHẬN ĐĂNG KÝ';
   static const String registerSuccess = 'Đăng ký thành công! Theo dõi lịch thi đấu trong mục Giải của tôi.';

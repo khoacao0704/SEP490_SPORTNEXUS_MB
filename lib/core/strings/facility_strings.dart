@@ -59,6 +59,9 @@ class FacilityStrings {
   static const String chooseCourt = 'Chọn sân';
   static String courtName(int number) => 'Sân $number';
   static String freeSlotCount(int n) => n == 0 ? 'Kín lịch' : 'Trống $n khung';
+
+  /// Ô sân con: số khung đã chọn trên sân này (mọi ngày).
+  static String courtSelectedCount(int n) => 'Đã chọn $n';
   static const String available = 'Còn trống';
   static const String full = 'Đã đặt';
   static const String passed = 'Đã qua';
@@ -71,7 +74,7 @@ class FacilityStrings {
   static const String location = 'Vị trí';
   static const String sameCourtsNote =
       'Bạn đặt đúng sân con đã chọn. Khi check-in, chủ sân xếp bạn vào đúng sân này.';
-  static const String totalLabel = 'TỔNG TIỀN TẠM TÍNH';
+  static const String totalLabel = 'TỔNG ĐIỂM TẠM TÍNH';
   static const String selectSlotFirst = 'Chọn khung giờ để đặt sân';
   static const String multiSlotHint = 'Có thể chọn nhiều khung giờ, kể cả ở các ngày khác nhau.';
   static String selectedSlotCount(int n) => 'Đã chọn $n khung giờ';

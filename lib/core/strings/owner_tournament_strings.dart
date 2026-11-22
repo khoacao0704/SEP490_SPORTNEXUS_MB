@@ -24,7 +24,7 @@ class OwnerTournamentStrings {
   static String teamSizeHint(int min) => 'Tối thiểu $min người theo loại sân';
   static const String maxEntries = 'Số suất (kích thước sơ đồ)';
   static const String entryFee = 'Lệ phí mỗi đơn';
-  static const String feeNote = 'Lệ phí giữ ở app, về ví bạn khi giải kết thúc (tính vào doanh thu, có phí 10%).';
+  static const String feeNote = 'Lệ phí giữ ở app, về Ví điểm bạn khi giải kết thúc (tính vào doanh thu, có phí 10%).';
   static const String sectionDates = 'Thời gian';
   static const String deadline = 'Hạn đăng ký';
   static const String startDate = 'Khai mạc';
@@ -37,7 +37,7 @@ class OwnerTournamentStrings {
   static const String prizesNote = 'Bạn tự trao thưởng tại giải, app chỉ hiển thị.';
   static const String addPrize = 'Thêm giải thưởng';
   static const String prizeTitle = 'Tên giải (vd. Vô địch)';
-  static const String prizeAmount = 'Tiền thưởng';
+  static const String prizeAmount = 'Điểm thưởng';
   static const String prizeExtra = 'Hiện vật (vd. Cúp)';
   static const String rules = 'Điều lệ';
   static const String addRule = 'Thêm điều lệ';
@@ -90,8 +90,8 @@ class OwnerTournamentStrings {
   static const String cancelled = 'Đã hủy giải và hoàn lệ phí.';
   static const String keep = 'Giữ giải';
   static String feeLine(int fee) => 'Lệ phí ${Formatters.vnd(fee)} / đơn';
-  static String holding(int amount) => 'Lệ phí đang giữ: ${Formatters.vnd(amount)} (về ví khi giải kết thúc)';
-  static String paidOut(int amount) => 'Đã giải ngân ${Formatters.vnd(amount)} vào ví';
+  static String holding(int amount) => 'Lệ phí đang giữ: ${Formatters.vnd(amount)} (về Ví điểm khi giải kết thúc)';
+  static String paidOut(int amount) => 'Đã giải ngân ${Formatters.vnd(amount)} vào Ví điểm';
   static const String entriesTitle = 'Đơn đăng ký';
   static const String noEntries = 'Chưa có đơn đăng ký.';
   static String members(int n) => '$n người';

@@ -12,12 +12,14 @@ import '../../models/facility_search.dart';
 import '../../models/lfg_match.dart';
 import '../../models/player_survey.dart' show SkillLevel;
 import '../../models/sport.dart';
+import '../../models/team.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/facility/court_type_selector.dart';
 import '../../widgets/facility/slot_picker.dart';
 import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/lfg/lfg_actions.dart';
+import '../../widgets/lfg/team_picker.dart';
 import '../../widgets/review/fair_play_guard.dart';
 import 'lfg_match_detail_screen.dart';
 import 'lfg_payment_screen.dart';
@@ -56,6 +58,39 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
   Sport _sport = Sport.badminton;
   late LfgFormat _format = LfgFormat.forSport(_sport).last;
   late CourtType _courtType = _courtTypesFor(_sport).first;
+
+  /// Hình thức chọn được; có kèo Đội vs Đội thì môn nào cũng chọn được (môn vợt: đội 2 người).
+  static List<LfgFormat> _formatsFor(Sport sport) =>
+      AppRepositories.lfg.supportsTeamMatch ? LfgFormat.forSportWithTeams(sport) : LfgFormat.forSport(sport);
+
+  /// Kèo Đội vs Đội: chủ kèo chọn đội mình làm đội trưởng + số người mỗi đội.
+  bool get _isTeamMatch => _format.isTeam && AppRepositories.lfg.supportsTeamMatch;
+
+  /// Sân đã phân loại thì loại sân quyết định số người mỗi đội; chưa thì chủ kèo chọn.
+  late int _sideSize = _defaultSideSize();
+  int _defaultSideSize() =>
+      _courtType.isStandard ? LfgFormat.teamSideSizes(_sport).first : _courtType.playersPerTeam;
+
+  /// `null` khi chưa tải xong; [_teamsFailed] khi lỗi.
+  List<Team>? _captainTeams;
+  bool _teamsFailed = false;
+  Team? _team;
+
+  Future<void> _loadTeams() async {
+    if (_captainTeams != null) return;
+    if (_teamsFailed) setState(() => _teamsFailed = false);
+    try {
+      final teams = await loadCaptainTeams();
+      if (mounted) setState(() => _captainTeams = teams);
+    } catch (_) {
+      if (mounted) setState(() => _teamsFailed = true);
+    }
+  }
+
+  void _selectFormat(LfgFormat f) {
+    setState(() => _format = f);
+    if (_isTeamMatch) _loadTeams();
+  }
 
   /// Sân chưa phân loại (dữ liệu BE) thì chỉ có sân tiêu chuẩn: ẩn bước chọn số người mỗi đội.
   static List<CourtType> _courtTypesFor(Sport sport) =>
@@ -123,6 +158,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     }
     _loadDistricts();
     _loadFacilities().then((_) => _applyPreset());
+    if (_isTeamMatch) _loadTeams();
   }
 
   /// Chọn sẵn sân + ca của [CreateLfgMatchScreen.preset]; ca không còn hợp lệ (ngoài 48 giờ – 5 ngày, đã có người đặt)
@@ -237,7 +273,10 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
       _sport = sport;
       _format = LfgFormat.forSport(sport).last;
       _courtType = _courtTypesFor(sport).first;
+      _sideSize = _defaultSideSize();
+      _team = null;
     });
+    if (_isTeamMatch) _loadTeams();
     _loadFacilities();
   }
 
@@ -273,6 +312,11 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     final facility = _facility;
     final slot = _slot;
     if (facility == null || slot == null) return;
+    final team = _team;
+    if (_isTeamMatch && (team == null || teamIneligibleReason(team, _sport, _sideSize) != null)) {
+      showLfgError(context, LfgStrings.teamRequired);
+      return;
+    }
     final chain = _chain;
     final price = _chainPrice;
     // Chặn sớm lần nữa: điểm có thể đã đổi trong lúc đang ở màn này.
@@ -316,6 +360,8 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             format: _format,
             note: _noteController.text,
             skillLevel: _skill,
+            hostTeamId: _isTeamMatch ? team?.id : null,
+            sideSize: _isTeamMatch ? _sideSize : null,
           ),
           onRelease: () => AppRepositories.lfgFacility.releaseHold(hold.holdId),
         ),
@@ -332,6 +378,50 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
       context,
       MaterialPageRoute(builder: (_) => LfgMatchDetailScreen(matchId: created.id, initial: created)),
     );
+  }
+
+  /// Số người mỗi đội (khi sân chưa phân loại) + dropdown chọn đội đại diện.
+  List<Widget> _buildTeamSection() {
+    final teams = _captainTeams;
+    return [
+      if (_courtType.isStandard) ...[
+        const SizedBox(height: 18),
+        _title(LfgStrings.stepSideSize),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final n in LfgFormat.teamSideSizes(_sport))
+              _chip(label: LfgStrings.sideSizeLabel(n), selected: n == _sideSize, onTap: () => setState(() => _sideSize = n)),
+          ],
+        ),
+      ],
+      const SizedBox(height: 18),
+      _title(LfgStrings.pickTeamTitle),
+      if (teams != null)
+        CaptainTeamDropdown(
+          teams: teams,
+          sport: _sport,
+          sideSize: _sideSize,
+          selectedId: _team?.id,
+          onChanged: (t) => setState(() => _team = t),
+        )
+      else if (_teamsFailed)
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text(LfgStrings.teamsLoadError, style: TextStyle(fontSize: 12, color: Colors.red)),
+            TextButton(onPressed: _loadTeams, child: const Text(LfgStrings.retry)),
+          ],
+        )
+      else
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryGreen)),
+        ),
+      const SizedBox(height: 6),
+      Text(LfgStrings.teamMatchNote(_sideSize), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+    ];
   }
 
   @override
@@ -371,10 +461,11 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final f in LfgFormat.forSport(_sport))
-                _chip(label: f.label, selected: f == _format, onTap: () => setState(() => _format = f)),
+              for (final f in _formatsFor(_sport))
+                _chip(label: f.label, selected: f == _format, onTap: () => _selectFormat(f)),
             ],
           ),
+          if (_isTeamMatch) ..._buildTeamSection(),
           const SizedBox(height: 6),
           Text(
             AppRepositories.lfg.hostPaysCourt
@@ -395,14 +486,19 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                     selected: t == _courtType,
                     onTap: () {
                       if (t == _courtType) return;
-                      setState(() => _courtType = t);
+                      setState(() {
+                        _courtType = t;
+                        _sideSize = _defaultSideSize();
+                      });
                       _loadFacilities();
                     },
                   ),
               ],
             ),
-            const SizedBox(height: 6),
-            const Text(LfgStrings.teamRepresentativeNote, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            if (!_isTeamMatch) ...[
+              const SizedBox(height: 6),
+              const Text(LfgStrings.teamRepresentativeNote, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            ],
           ],
           const SizedBox(height: 18),
           _title(LfgStrings.stepFacility),

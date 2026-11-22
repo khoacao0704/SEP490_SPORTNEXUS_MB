@@ -22,15 +22,23 @@ class CourtSelector extends StatelessWidget {
   final List<String> courts;
   final String? selected;
 
+  /// Chọn nhiều sân cùng lúc: mọi sân trong tập này cùng sáng (thêm vào [selected]).
+  final Set<String> selectedCourts;
+
   /// Số khung còn đặt được của từng sân trong ngày đang xem.
   final Map<String, int> freeSlots;
+
+  /// Số khung người chơi đã chọn trên từng sân (để thấy sân nào đang có khung chọn khi xem sân khác).
+  final Map<String, int> pickedSlots;
   final ValueChanged<String> onSelected;
 
   const CourtSelector({
     super.key,
     required this.courts,
     required this.selected,
+    this.selectedCourts = const {},
     required this.freeSlots,
+    this.pickedSlots = const {},
     required this.onSelected,
   });
 
@@ -44,7 +52,8 @@ class CourtSelector extends StatelessWidget {
           _CourtChip(
             name: court,
             free: freeSlots[court] ?? 0,
-            selected: court == selected,
+            picked: pickedSlots[court] ?? 0,
+            selected: court == selected || selectedCourts.contains(court),
             onTap: () => onSelected(court),
           ),
       ],
@@ -55,10 +64,17 @@ class CourtSelector extends StatelessWidget {
 class _CourtChip extends StatelessWidget {
   final String name;
   final int free;
+  final int picked;
   final bool selected;
   final VoidCallback onTap;
 
-  const _CourtChip({required this.name, required this.free, required this.selected, required this.onTap});
+  const _CourtChip({
+    required this.name,
+    required this.free,
+    this.picked = 0,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +113,24 @@ class _CourtChip extends StatelessWidget {
                           : AppColors.primaryGreen,
                 ),
               ),
+              if (picked > 0)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.check_circle, size: 12, color: selected ? Colors.white : AppColors.tagOrangeText),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        FacilityStrings.courtSelectedCount(picked),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: selected ? Colors.white : AppColors.tagOrangeText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),

@@ -86,7 +86,12 @@ class _BookingTicketQrState extends State<BookingTicketQr> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        QrImageView(data: code, size: widget.size, backgroundColor: Colors.white),
+        // Khung cố định: QrImageView dùng LayoutBuilder nên không trả được kích thước intrinsic mà
+        // AlertDialog cần đo; không bọc thì hộp thoại vé lỗi bố cục và hiện trắng.
+        SizedBox.square(
+          dimension: widget.size,
+          child: QrImageView(data: code, size: widget.size, backgroundColor: Colors.white),
+        ),
         const SizedBox(height: 4),
         SelectableText(
           code,

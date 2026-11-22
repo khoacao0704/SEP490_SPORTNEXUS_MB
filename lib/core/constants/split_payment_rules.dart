@@ -1,4 +1,4 @@
-/// Quy tắc chia tiền đặt sân đã chốt.
+/// Quy tắc chia Điểm đặt sân đã chốt.
 class SplitPaymentRules {
   SplitPaymentRules._();
 
@@ -9,14 +9,14 @@ class SplitPaymentRules {
   /// Hết giờ mà chưa đủ thì hủy đặt sân và hoàn đủ cho những người đã trả.
   static const Duration window = Duration(minutes: 30);
 
-  /// Phần của mỗi người nhận link: tiền sân chia đều, làm tròn lên 1.000đ.
+  /// Phần của mỗi người nhận link: giá sân chia đều, làm tròn lên 1.000đ.
   static int shareAmount(int total, int parts) => ((total / parts) / 1000).ceil() * 1000;
 
   /// Phần người đặt trả trước (cọc): phần còn lại sau khi trừ phần của những người khác,
-  /// để tổng các phần đúng bằng tiền sân.
+  /// để tổng các phần đúng bằng giá sân.
   static int bookerAmount(int total, int parts) => total - shareAmount(total, parts) * (parts - 1);
 
-  // ---- Chia tiền bằng cách mời bạn (cách BE tính) ----
+  // ---- Chia Điểm bằng cách mời bạn (cách BE tính) ----
 
   /// Phần của mỗi người được mời trong một ca: tiền ca chia đều cho [people] người (gồm người đặt), làm tròn xuống.
   static int inviteeShare(int slotPrice, int people) => slotPrice ~/ people;

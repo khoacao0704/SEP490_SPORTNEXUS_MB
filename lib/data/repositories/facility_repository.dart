@@ -49,7 +49,7 @@ abstract class FacilityRepository {
   /// Nhả toàn bộ chỗ đang giữ của [holdId] (người dùng quay lại hoặc hết giờ).
   Future<void> releaseHold(String holdId);
 
-  /// Chuyển chỗ đang giữ sang một lượt giữ mới tới [until] (vd. chờ nhóm chia tiền 30 phút,
+  /// Chuyển chỗ đang giữ sang một lượt giữ mới tới [until] (vd. chờ nhóm chia Điểm 30 phút,
   /// hoặc giữ hẳn khi đặt thành công). Có [slotIds] thì chỉ chuyển các khung đó (mỗi khung một lượt đặt),
   /// các khung còn lại vẫn ở lượt giữ cũ. Các khung đã chuyển không bị ảnh hưởng khi nhả [holdId].
   Future<SlotHold> transferHold(String holdId, {required DateTime until, List<String>? slotIds});

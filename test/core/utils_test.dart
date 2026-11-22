@@ -45,7 +45,8 @@ void main() {
     test('tiền tệ', () {
       expect(Formatters.currency(1500000), '1.500.000');
       expect(Formatters.currency(900), '900');
-      expect(Formatters.vnd(120000), '120.000 đ');
+      expect(Formatters.vnd(120000), '120.000 Điểm');
+      expect(Formatters.bankVnd(120000), '120.000 đ');
     });
 
     test('ngày giờ', () {

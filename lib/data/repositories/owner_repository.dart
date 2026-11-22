@@ -38,8 +38,12 @@ abstract class OwnerRepository {
   /// Check-in một người vào đúng sân con người chơi đã chọn lúc đặt ([CourtSession.assignedCourt]).
   Future<CourtSession> checkIn({required String sessionId, required String userId});
 
-  /// Check-out cả lượt sân: xác nhận đã nhận đủ tiền sân, giải ngân phần escrow cho Chủ sân.
+  /// Check-out cả lượt sân: xác nhận đã nhận đủ giá sân, giải ngân phần escrow cho Chủ sân.
   Future<CourtSession> checkOut(String sessionId);
+
+  /// Chủ sân hủy đơn của khách (xem [OwnerCancelRules]). [reason] trống thì BE dùng lý do mặc định.
+  /// [lockSlot]: true thì ca sân chuyển sang Bảo trì, false thì mở lại cho người khác đặt.
+  Future<OwnerCancelResult> cancelBooking(String sessionId, {String? reason, bool lockSlot = false});
 
   // ---------------- Quản lý cơ sở & sân ----------------
 
@@ -84,7 +88,7 @@ abstract class OwnerRepository {
   Future<OwnerFacility> removeClosure(String facilityId, String closureId);
 
   // ---------------- Doanh thu & phí duy trì ----------------
-  // Ví Chủ sân (số dư, giao dịch, rút tiền) dùng WalletRepository: BE trả ví theo tài khoản đăng nhập.
+  // Ví Chủ sân (số dư, giao dịch, đổi Điểm ra tiền) dùng WalletRepository: BE trả ví theo tài khoản đăng nhập.
 
   /// Doanh thu tháng chứa [month]; bỏ trống [facilityId] thì gộp tất cả cơ sở.
   Future<MonthlyRevenue> getMonthlyRevenue(DateTime month, {String? facilityId});
@@ -92,7 +96,7 @@ abstract class OwnerRepository {
   /// Hóa đơn phí duy trì các tháng đã chốt, mới nhất trước.
   Future<List<ListingFeeBill>> getListingFees();
 
-  /// Trả phí bằng số dư ví Chủ sân. (Trả bằng VietQR: nạp đúng số tiền vào ví rồi gọi hàm này.)
+  /// Trả phí bằng số dư ví Chủ sân. (Trả bằng VietQR: nạp đúng số tiền vào Ví điểm rồi gọi hàm này.)
   /// Trả xong hóa đơn quá hạn cuối cùng thì các cơ sở hiện lại ngay.
   Future<ListingFeeBill> payListingFee(String billId);
 

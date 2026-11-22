@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/constants/fair_play_rules.dart';
 import '../../core/strings/review_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
@@ -26,7 +27,16 @@ class _PlayerDraft {
   /// Nhận xét trình độ (không bắt buộc).
   SkillVerdict? verdict;
   final Set<ReviewTag> tags = {};
+
+  /// Bắt buộc khi chấm thấp ([FairPlayRules.requiresReason]).
+  LowRatingReason? reason;
   final TextEditingController comment = TextEditingController();
+
+  bool get needsReason => FairPlayRules.requiresReason(stars);
+
+  /// Chưa chấm, hoặc đã chấm đủ: chấm thấp phải có lý do, lý do "Khác" phải có mô tả.
+  bool get isComplete =>
+      !needsReason || (reason != null && (!reason!.isOther || comment.text.trim().isNotEmpty));
 }
 
 class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
@@ -47,10 +57,39 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
   bool get _hasAnyRating =>
       (_canReviewFacility && _facilityStars > 0) || _players.values.any((d) => d.stars > 0 || d.verdict != null);
 
+  bool get _canSubmit => _hasAnyRating && _players.values.every((d) => d.isComplete);
+
+  /// `null` khi đang tải; [_reasonsFailed] khi tải lỗi.
+  List<LowRatingReason>? _reasons;
+  bool _reasonsFailed = false;
+
   @override
   void initState() {
     super.initState();
     _loadEligibility();
+    _loadReasons();
+  }
+
+  Future<void> _loadReasons() async {
+    if (_reasonsFailed) setState(() => _reasonsFailed = false);
+    try {
+      final reasons = await AppRepositories.review.getLowRatingReasons();
+      if (mounted) setState(() => _reasons = reasons);
+    } catch (_) {
+      if (mounted) setState(() => _reasonsFailed = true);
+    }
+  }
+
+  void _setStars(_PlayerDraft draft, int stars) {
+    setState(() {
+      draft.stars = stars;
+      // Chấm thấp chỉ chọn lý do; chấm từ mức trung bình trở lên chỉ có thẻ tốt.
+      if (draft.needsReason) {
+        draft.tags.clear();
+      } else {
+        draft.reason = null;
+      }
+    });
   }
 
   Future<void> _loadEligibility() async {
@@ -112,6 +151,7 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
               stars: entry.value.stars,
               tags: entry.value.tags,
               comment: entry.value.comment.text.trim(),
+              reasonId: entry.value.needsReason ? entry.value.reason?.id : null,
             ),
       ];
       if (players.isNotEmpty) await AppRepositories.review.ratePlayers(_session.sessionId, players);
@@ -217,7 +257,7 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
           child: SizedBox(
             height: 50,
             child: ElevatedButton(
-              onPressed: _hasAnyRating && !_isSubmitting ? _submit : null,
+              onPressed: _canSubmit && !_isSubmitting ? _submit : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.authPrimary,
                 foregroundColor: Colors.white,
@@ -307,14 +347,21 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
             StarRating(
               value: draft.stars,
               size: 28,
-              onChanged: (v) => setState(() => draft.stars = v),
+              onChanged: (v) => _setStars(draft, v),
             ),
-            if (draft.stars > 0) ...[
+            // Chấm 1–2 sao: phần lý do trượt mở ngay dưới hàng sao (trượt đóng khi chấm lại cao hơn).
+            AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOut,
+              alignment: Alignment.topCenter,
+              child: draft.needsReason ? _buildLowRatingSection(draft) : const SizedBox(width: double.infinity),
+            ),
+            if (!draft.needsReason && draft.stars > 0) ...[
               const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: ReviewTag.values.map((tag) {
+                children: ReviewTag.values.where((t) => t.isPositive).map((tag) {
                   final selected = draft.tags.contains(tag);
                   final color = tag.isPositive ? AppColors.primaryGreen : Colors.red;
                   return FilterChip(
@@ -358,6 +405,74 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
     );
   }
 
+  /// Lý do (bắt buộc) + nhận xét; "Khác" phải có mô tả.
+  Widget _buildLowRatingSection(_PlayerDraft draft) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        _buildReasons(draft),
+        const SizedBox(height: 8),
+        _commentField(
+          draft.comment,
+          hint: draft.reason?.isOther ?? false ? ReviewStrings.otherReasonHint : ReviewStrings.commentHint,
+          onChanged: (_) => setState(() {}),
+        ),
+        if (!draft.isComplete)
+          Text(
+            draft.reason == null ? ReviewStrings.lowRatingReasonRequired : ReviewStrings.otherReasonRequired,
+            style: const TextStyle(fontSize: 12, color: Colors.red),
+          ),
+      ],
+    );
+  }
+
+  /// Chọn đúng một lý do chấm thấp (radio, danh sách do BE quản lý).
+  Widget _buildReasons(_PlayerDraft draft) {
+    final reasons = _reasons;
+    if (reasons == null) {
+      if (!_reasonsFailed) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 6),
+          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryGreen)),
+        );
+      }
+      return Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text(ReviewStrings.reasonsLoadError, style: TextStyle(fontSize: 12, color: Colors.red)),
+          TextButton(onPressed: _loadReasons, child: const Text(ReviewStrings.retry)),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(ReviewStrings.lowRatingReasonTitle, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        RadioGroup<int>(
+          groupValue: draft.reason?.id,
+          onChanged: (id) => setState(() => draft.reason = reasons.where((r) => r.id == id).firstOrNull),
+          // Thẻ người chơi có nền riêng: cần Material để hiệu ứng bấm của radio hiện được.
+          child: Material(
+            type: MaterialType.transparency,
+            child: Column(
+              children: [
+                for (final r in reasons)
+                  RadioListTile<int>(
+                    value: r.id,
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    activeColor: AppColors.primaryGreen,
+                    title: Text(r.name, style: const TextStyle(fontSize: 13)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _sectionTitle(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain)),
@@ -374,12 +489,19 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
         child: child,
       );
 
-  Widget _commentField(TextEditingController controller, {int maxLength = 400}) => TextField(
+  Widget _commentField(
+    TextEditingController controller, {
+    int maxLength = 400,
+    String hint = ReviewStrings.commentHint,
+    ValueChanged<String>? onChanged,
+  }) =>
+      TextField(
         controller: controller,
         maxLines: 2,
         maxLength: maxLength,
+        onChanged: onChanged,
         decoration: InputDecoration(
-          hintText: ReviewStrings.commentHint,
+          hintText: hint,
           counterText: '',
           isDense: true,
           filled: true,

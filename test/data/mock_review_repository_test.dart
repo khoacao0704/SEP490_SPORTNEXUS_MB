@@ -105,10 +105,17 @@ void main() {
       expect(session.players.map((p) => p.userId), ['u-hoangnam', 'u-thutrang']);
 
       await repo.ratePlayers('ss-lfg-thientrieu', const [
-        PlayerReviewInput(playerId: 'u-hoangnam', stars: 2, tags: {ReviewTag.late}),
+        PlayerReviewInput(playerId: 'u-hoangnam', stars: 2, reasonId: 1),
         PlayerReviewInput(playerId: 'u-thutrang', stars: 4),
       ]);
       expect((await repo.getPendingReviews()).map((p) => p.sessionId), isNot(contains('ss-lfg-thientrieu')));
+    });
+
+    test('chấm thấp mà không có lý do thì bị từ chối', () async {
+      expect(
+        () => repo.ratePlayers('ss-lfg-thientrieu', const [PlayerReviewInput(playerId: 'u-hoangnam', stars: 1)]),
+        throwsA(isA<ReviewException>().having((e) => e.message, 'message', ReviewStrings.lowRatingReasonRequired)),
+      );
     });
 
     test('đã chấm tính riêng cho từng tài khoản', () async {

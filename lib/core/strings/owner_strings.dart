@@ -63,7 +63,7 @@ class OwnerStrings {
 
   // Tiền
   static const String money = 'Thanh toán';
-  static const String totalPrice = 'Tiền sân';
+  static const String totalPrice = 'Giá sân';
   static const String paidViaApp = 'Đã trả qua app (giữ escrow)';
   static const String remainingToCollect = 'Bạn tự thu tại sân';
   static String disbursed(int amount) => 'Đã giải ngân ${Formatters.vnd(amount)}';
@@ -102,13 +102,40 @@ class OwnerStrings {
   static const String confirmCheckOutTitle = 'Check-out lượt sân?';
   static String confirmCheckOut({required int escrow, required int remaining, required bool isLfg}) =>
       '${isLfg ? 'Check-out cho tất cả người chơi trong kèo. ' : ''}'
-      'Bấm check-out là xác nhận bạn đã nhận đủ tiền sân'
+      'Bấm check-out là xác nhận bạn đã nhận đủ giá sân'
       '${remaining > 0 ? ' (gồm ${Formatters.vnd(remaining)} bạn tự thu tại sân)' : ''}. '
       'Hệ thống giải ngân ${Formatters.vnd(escrow)} đang giữ escrow cho bạn, không thu hoa hồng.';
   static String checkOutSuccess(int amount) => 'Đã check-out. Giải ngân ${Formatters.vnd(amount)}.';
   static const String checkOutNeedsCheckIn = 'Chưa có ai check-in nên chưa thể check-out.';
   static const String cancel = 'Để sau';
   static const String loginRequired = 'Vui lòng đăng nhập lại.';
+
+  // Chủ sân hủy đơn của khách
+  static const String cancelBooking = 'Hủy đơn';
+  static const String cancelBookingTitle = 'Hủy đơn của khách?';
+  static const String cancelLateWarning = 'Bạn đang hủy đơn dưới 48h trước giờ chơi. Bạn sẽ bị PHẠT 20% GIÁ TRỊ ĐƠN '
+      'và trừ 10 điểm FairPlay (uy tín).';
+  static const String cancelEarlyWarning = 'Hủy đơn của khách, bạn sẽ bị PHẠT 10% GIÁ TRỊ ĐƠN.';
+  static const String cancelPenaltyLabel = 'Điểm phạt';
+  static String cancelPenaltyDetail(int percent, int total) => '$percent% giá trị đơn ${Formatters.vnd(total)}';
+  static const String cancelFairPlayLabel = 'Fair Play';
+  static String cancelFairPlay(int points) => '−$points điểm';
+  static const String cancelWalletNote = 'Điểm phạt trừ thẳng vào Ví điểm của bạn. Ví không đủ Điểm thì sẽ bị âm.';
+  static String cancelCustomerNote(int voucherPercent) =>
+      'Khách được hoàn 100% Điểm đã trả và nhận voucher giảm $voucherPercent%.';
+  static const String cancelLfgNote = 'Đây là kèo LFG: tất cả người chơi trong kèo đều được hoàn Điểm.';
+  static const String cancelReasonHint = 'Lý do hủy (không bắt buộc)';
+  static const String cancelLockSlot = 'Khóa ca sân sau khi hủy (Bảo trì)';
+  static const String cancelLockSlotHint = 'Không chọn thì ca sân mở lại cho người khác đặt.';
+  static const String cancelConfirm = 'Đồng ý Hủy';
+  static const String cancelBack = 'Quay lại';
+  static String cancelledMessage(OwnerCancelResult r) {
+    final penalties = [
+      if (r.penaltyAmount > 0) 'phạt ${Formatters.vnd(r.penaltyAmount)}',
+      if (r.fairPlayPenalty > 0) 'trừ ${r.fairPlayPenalty} điểm Fair Play',
+    ];
+    return penalties.isEmpty ? 'Đã hủy đơn.' : 'Đã hủy đơn. Bạn bị ${penalties.join(' và ')}.';
+  }
 
   // Quét QR
   static const String scanTitle = 'Quét QR Check-in';

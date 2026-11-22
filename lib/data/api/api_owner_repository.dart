@@ -1,3 +1,4 @@
+import '../../core/constants/owner_rules.dart';
 import '../../core/strings/owner_strings.dart';
 import '../../models/court_session.dart';               // ← CourtSession + TicketLookup
 import '../../models/court_type.dart';
@@ -369,6 +370,35 @@ class ApiOwnerRepository implements OwnerRepository {
 
   @override
   Future<CourtSession> checkOut(String sessionId) async => _todo();
+
+  static String cancelBookingPath(String bookingId) => '/api/v1/bookings/owner/$bookingId/cancel';
+
+  /// Mã lượt sân chính là bookingId (lấy từ /bookings/owner). Body: reason (tự nhập), lockSlotAfterCancel.
+  @override
+  Future<OwnerCancelResult> cancelBooking(String sessionId, {String? reason, bool lockSlot = false}) async {
+    final note = reason?.trim();
+    try {
+      final data = await _api.post(cancelBookingPath(sessionId), body: {
+        if (note != null && note.isNotEmpty) 'reason': note,
+        'lockSlotAfterCancel': lockSlot,
+      });
+      final json = data is Map<String, dynamic> ? data : const <String, dynamic>{};
+      int money(Object? v) => v is num ? v.round() : int.tryParse('$v') ?? 0;
+      final fairPlay = json['ownerFairPlayPenalty'];
+      return OwnerCancelResult(
+        penaltyAmount: money(json['ownerPenaltyAmount'] ?? json['penaltyAmount']),
+        fairPlayPenalty: fairPlay is num
+            ? fairPlay.abs().round()
+            : fairPlay == true
+                ? OwnerCancelRules.lateFairPlayPenalty
+                : 0,
+        refundAmount: money(json['refundAmount']),
+        lateCancel: json['lateCancel'] == true,
+      );
+    } on ApiException catch (e) {
+      throw OwnerException(e.message);
+    }
+  }
 
   @override
   @override

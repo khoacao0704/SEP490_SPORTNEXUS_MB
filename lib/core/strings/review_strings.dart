@@ -23,6 +23,11 @@ class ReviewStrings {
   static const String facilityPublicNote = 'Đánh giá sân hiển thị công khai kèm tên của bạn.';
   static const String facilityAlreadyReviewed = 'Bạn đã đánh giá sân này.';
   static const String commentHint = 'Nhận xét thêm (không bắt buộc)';
+  static const String lowRatingReasonTitle = 'Lý do chấm thấp (bắt buộc)';
+  static const String lowRatingReasonRequired = 'Chọn lý do vì sao bạn chấm thấp';
+  static const String otherReasonHint = 'Mô tả lý do (bắt buộc)';
+  static const String otherReasonRequired = 'Nhập mô tả cho lý do "Khác"';
+  static const String reasonsLoadError = 'Không tải được danh sách lý do.';
   static const String host = 'Chủ kèo';
   static const String skipped = 'Chưa chấm (sẽ bỏ qua)';
   static const String skillVerdictTitle = 'Trình độ thực tế so với khai báo (không bắt buộc)';

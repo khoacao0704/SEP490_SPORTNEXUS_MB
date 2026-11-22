@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/constants/booking_rules.dart';
 import '../../core/strings/booking_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/booking.dart';
@@ -46,14 +47,23 @@ class MockBookingRepository implements BookingRepository {
     required String sportLabel,
     required String location,
     required String schedule,
+    bool recurring = false,
+    int discountPercent = 0,
   }) async {
     await _delay();
     if (paymentType == BookingPaymentType.split) throw const BookingException(BookingStrings.useSplitFlow);
     final me = await _requireUser();
     final now = _now();
     final slots = [...hold.slots]..sort((a, b) => a.start.compareTo(b.start));
-    final total = slots.fold(0, (sum, s) => sum + s.price);
+    // Như BE: danh sách thành gói hợp lệ thì là gói (giảm giá); cờ [recurring] chỉ để báo lỗi khi không thành gói.
+    final packageError = _packageError(slots);
+    if (recurring && packageError != null) throw BookingException(BookingStrings.notAPackage(packageError));
+    final isPackage = packageError == null;
+    final percent = isPackage ? discountPercent : 0;
+    int priceOf(TimeSlot s) => RecurringBookingRules.discounted(s.price, percent);
+    final total = slots.fold(0, (sum, s) => sum + priceOf(s));
     final baseId = '${now.millisecondsSinceEpoch.toRadixString(36).toUpperCase()}${++_counter}';
+    final groupId = isPackage ? 'PKG-$baseId' : null;
     String idFor(int i) => slots.length == 1 ? baseId : '$baseId-${i + 1}';
 
     // Một giao dịch ví cho cả lần thanh toán; mỗi khung giờ là một lượt đặt riêng.
@@ -62,7 +72,7 @@ class MockBookingRepository implements BookingRepository {
         amount: total,
         type: TransactionType.bookingPayment,
         description: 'Đặt sân $facilityName'
-            '${slots.length > 1 ? ' • ${slots.length} khung giờ' : ''}',
+            '${isPackage ? ' • gói cố định' : slots.length > 1 ? ' • ${slots.length} khung giờ' : ''}',
         reference: baseId,
       );
     } on WalletException catch (e) {
@@ -85,10 +95,12 @@ class MockBookingRepository implements BookingRepository {
           schedule: Formatters.slotLabel(slot.start, slot.end),
           start: slot.start,
           end: slot.end,
-          totalPrice: slot.price,
+          totalPrice: priceOf(slot),
           paymentType: paymentType,
-          payments: [BookingPayment(userId: me.id, name: me.name, amount: slot.price)],
+          payments: [BookingPayment(userId: me.id, name: me.name, amount: priceOf(slot))],
           createdAt: now,
+          recurringGroupId: groupId,
+          originalPrice: priceOf(slot) != slot.price ? slot.price : null,
         ));
       }
     } on FacilityException catch (e) {
@@ -97,7 +109,7 @@ class MockBookingRepository implements BookingRepository {
         final holdId = _holds.remove(b.id);
         if (holdId != null) await _facility.releaseHold(holdId);
       }
-      await _wallet.creditRefund(amount: total, description: 'Hoàn tiền đặt sân $facilityName', reference: baseId);
+      await _wallet.creditRefund(amount: total, description: 'Hoàn Điểm đặt sân $facilityName', reference: baseId);
       throw BookingException(e.message);
     }
 
@@ -107,7 +119,7 @@ class MockBookingRepository implements BookingRepository {
     return bookings;
   }
 
-  /// Bản giả lập chia tiền gọi khi nhóm đã trả đủ (việc BE tự làm): mỗi khung giờ một lượt đặt,
+  /// Bản giả lập chia Điểm gọi khi nhóm đã trả đủ (việc BE tự làm): mỗi khung giờ một lượt đặt,
   /// phần của từng người chia theo tỉ lệ giá các khung. [holdIds]: slotId -> lượt giữ của khung đó.
   Future<List<Booking>> addFromSplit(SplitPayment split, {Map<String, String> holdIds = const {}}) async {
     final slots = [...split.slots]..sort((a, b) => a.start.compareTo(b.start));
@@ -184,7 +196,7 @@ class MockBookingRepository implements BookingRepository {
         CancelReason(code: 6, label: 'Khác (Tự nhập lý do)', isCustom: true),
       ];
 
-  // ---- Chia tiền mời bạn: bản giả lập dùng luồng mã/link của MockSplitPaymentRepository ----
+  // ---- Chia Điểm mời bạn: bản giả lập dùng luồng mã/link của MockSplitPaymentRepository ----
 
   @override
   bool get supportsSplitInvite => false;
@@ -229,16 +241,17 @@ class MockBookingRepository implements BookingRepository {
     final booking = (await _all()).where((b) => b.id == bookingId).firstOrNull;
     if (booking == null) throw const BookingException(BookingStrings.notFound);
     if (booking.bookerId != me.id) throw const BookingException(BookingStrings.onlyBookerCancels);
+    if (booking.isRecurring) return _cancelPackage(booking, me, now);
     if (!booking.canCancel(now, me.id)) throw const BookingException(BookingStrings.cannotCancel);
 
-    // Trước 24h (hoặc đơn chia tiền còn chờ góp): hoàn đủ cho từng người đã trả. Còn lại không hoàn cho ai.
+    // Trước 24h (hoặc đơn chia Điểm còn chờ góp): hoàn đủ cho từng người đã trả. Còn lại không hoàn cho ai.
     var refunded = 0;
     for (final p in booking.refundsInFull(now) ? booking.payments : const <BookingPayment>[]) {
       if (p.amount <= 0) continue;
       refunded += p.amount;
       await _wallet.creditRefund(
         amount: p.amount,
-        description: 'Hoàn tiền hủy đặt sân ${booking.facilityName}${p.userId == me.id ? '' : ' • phần của ${p.name}'}',
+        description: 'Hoàn Điểm hủy đặt sân ${booking.facilityName}${p.userId == me.id ? '' : ' • phần của ${p.name}'}',
         reference: booking.id,
       );
     }
@@ -248,6 +261,57 @@ class MockBookingRepository implements BookingRepository {
     final cancelled = booking.copyWith(cancelledAt: now, refunded: refunded);
     await _save(cancelled);
     return cancelled;
+  }
+
+  /// Như BE: hủy một buổi của gói = hủy mọi buổi chưa hủy, hoàn 100%; chỉ khi còn ≥48h trước buổi đầu còn lại.
+  Future<Booking> _cancelPackage(Booking booking, ({String id, String name}) me, DateTime now) async {
+    final package = BookingPackage(
+      booking.recurringGroupId!,
+      (await _all()).where((b) => b.recurringGroupId == booking.recurringGroupId).toList(),
+    );
+    if (!package.canCancel(now, me.id)) throw const BookingException(BookingStrings.packageCancelTooLate);
+    Booking? result;
+    for (final b in package.active) {
+      if (b.amountPaid > 0) {
+        await _wallet.creditRefund(
+          amount: b.amountPaid,
+          description: 'Hoàn Điểm hủy gói cố định ${b.facilityName}',
+          reference: b.id,
+        );
+      }
+      final holdId = _holds.remove(b.id);
+      if (holdId != null) await _facility.releaseHold(holdId);
+      final cancelled = b.copyWith(cancelledAt: now, refunded: b.amountPaid);
+      await _save(cancelled);
+      if (b.id == booking.id) result = cancelled;
+    }
+    return result ?? booking;
+  }
+
+  /// Lý do các khung không thành gói cố định (`null` = thành gói): ≥4 buổi, cùng sân con, cùng độ dài,
+  /// buổi sau cách buổi trước đúng 7 ngày. Các ca liền nhau trong cùng ngày tính là một buổi.
+  static String? _packageError(List<TimeSlot> sorted) {
+    final sessions = <List<TimeSlot>>[];
+    for (final s in sorted) {
+      final last = sessions.lastOrNull;
+      if (last != null && last.last.end == s.start && last.last.courtName == s.courtName) {
+        last.add(s);
+      } else {
+        sessions.add([s]);
+      }
+    }
+    if (sessions.length < RecurringBookingRules.minSessions) return BookingStrings.packageTooFew;
+    final first = sessions.first;
+    final length = first.last.end.difference(first.first.start);
+    for (var i = 1; i < sessions.length; i++) {
+      final s = sessions[i];
+      if (s.first.courtName != first.first.courtName) return BookingStrings.packageSameCourt;
+      if (s.last.end.difference(s.first.start) != length) return BookingStrings.packageSameLength;
+      if (s.first.start.difference(sessions[i - 1].first.start) != RecurringBookingRules.interval) {
+        return BookingStrings.packageWeekly;
+      }
+    }
+    return null;
   }
 
   // ---------------- Nội bộ ----------------

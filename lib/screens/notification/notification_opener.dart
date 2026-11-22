@@ -46,7 +46,7 @@ Future<void> openPlayerNotification(NavigatorState navigator, AppNotification n)
   await navigator.push(MaterialPageRoute(builder: (_) => page!));
 }
 
-/// Đơn chia tiền mở màn góp tiền; đơn thường mở tab Lịch Đặt.
+/// Đơn chia Điểm mở màn góp Điểm; đơn thường mở tab Lịch Đặt.
 Future<void> _openBooking(NavigatorState navigator, String bookingId) async {
   try {
     final booking = await AppRepositories.booking.getBooking(bookingId);

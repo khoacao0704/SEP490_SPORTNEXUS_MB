@@ -124,7 +124,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Nạp Tiền Vào Ví Escrow',
+          'Nạp Điểm Vào Ví',
           style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 18),
         ),
       ),
@@ -185,7 +185,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'SỐ TIỀN MUỐN NẠP (VND)',
+                    'SỐ ĐIỂM MUỐN NẠP (1 Điểm = 1 đ)',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
@@ -205,7 +205,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                         padding: EdgeInsets.symmetric(horizontal: 12),
                         child: Icon(Icons.payments_outlined, color: AppColors.primaryGreen, size: 28),
                       ),
-                      suffixText: 'đ',
+                      suffixText: 'Điểm',
                       suffixStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
                       suffixIcon: IconButton(
                         icon: const Icon(Icons.cancel, color: Color(0xFF94A3B8), size: 20),
@@ -233,7 +233,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                       ),
                     ),
                     onChanged: (value) {
-                      String raw = value.replaceAll('.', '').replaceAll(',', '').replaceAll('đ', '').trim();
+                      String raw = value.replaceAll('.', '').replaceAll(',', '').replaceAll('Điểm', '').replaceAll('đ', '').trim();
                       int? parsed = int.tryParse(raw);
                       if (parsed != null) {
                         setState(() {
@@ -274,7 +274,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                             ),
                             child: Center(
                               child: Text(
-                                '+${_formatCurrency(amt)} đ',
+                                '+${_formatCurrency(amt)} Điểm',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
@@ -304,7 +304,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'PHƯƠNG THỨC NẠP TIỀN',
+                    'PHƯƠNG THỨC CHUYỂN KHOẢN',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
@@ -420,7 +420,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                     children: [
                       const Expanded(
                         child: Text(
-                          'Chi tiết nạp ví',
+                          'Chi tiết nạp Điểm',
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
                         ),
                       ),
@@ -439,7 +439,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _buildSummaryRow('Số tiền nạp', '${_formatCurrency(_selectedAmount)} đ'),
+                  _buildSummaryRow('Số Điểm nhận', '${_formatCurrency(_selectedAmount)} Điểm'),
                   const SizedBox(height: 8),
                   _buildSummaryRow('Nguồn tiền', paymentName),
                   const SizedBox(height: 8),
@@ -457,7 +457,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                               style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
                             ),
                             Text(
-                              'Tiền thực trừ',
+                              'Số tiền chuyển khoản',
                               style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                             ),
                           ],
@@ -502,7 +502,7 @@ class _TopUpWalletScreenState extends State<TopUpWalletScreen> {
                           const SizedBox(width: 8),
                           Flexible(
                             child: Text(
-                              'Xác nhận nạp tiền vào ví (${_formatCurrency(_selectedAmount)} đ)',
+                              'Xác nhận nạp ${_formatCurrency(_selectedAmount)} Điểm',
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,

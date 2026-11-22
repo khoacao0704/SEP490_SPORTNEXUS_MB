@@ -24,6 +24,19 @@ enum LfgFormat {
       ? const [LfgFormat.teamVsTeam]
       : const [LfgFormat.singles, LfgFormat.doubles];
 
+  /// Đội vs Đội dùng được cho mọi môn có Đội (môn vợt: đội 2 người đánh đôi).
+  static List<LfgFormat> forSportWithTeams(Sport sport) {
+    final formats = forSport(sport);
+    return formats.contains(teamVsTeam) ? formats : [...formats, teamVsTeam];
+  }
+
+  /// Số người mỗi đội chọn được cho kèo Đội vs Đội: theo loại sân của môn (bóng đá 5/7/11, bóng rổ 3/5),
+  /// môn vợt là 2 (đánh đôi). BE kiểm tra lại theo thể thức của môn / sân.
+  static List<int> teamSideSizes(Sport sport) {
+    final sizes = CourtType.forSport(sport).where((t) => !t.isStandard).map((t) => t.playersPerTeam).toList();
+    return sizes.isEmpty ? const [2] : sizes;
+  }
+
   static LfgFormat fromApi(String value) => values.firstWhere((f) => f.apiValue == value);
 }
 
@@ -31,7 +44,7 @@ enum LfgStatus {
   /// Chưa đủ người, nhận Flash Claim tới T−48h. Ai rời cũng được hoàn 100%.
   open,
 
-  /// Đã chốt (đủ người): không rời được, chỉ hủy được khi tất cả cùng đồng ý trước T−24h.
+  /// Đã chốt (đủ người): người vào kèo rời thì không được hoàn; chủ kèo hủy dưới 48h thì bị phạt giá sân.
   confirmed,
   cancelled,
   completed,
@@ -41,7 +54,7 @@ enum LfgCancelReason {
   /// Tới T−48h vẫn chưa đủ người: hoàn 100% cho tất cả.
   notEnoughPlayers('NotEnoughPlayers'),
 
-  /// Kèo đã chốt, tất cả thành viên đồng ý hủy trước T−24h: hoàn 100%, không trừ Fair Play.
+  /// Dữ liệu cũ: cả kèo bỏ phiếu đồng ý hủy (BE đã bỏ vote hủy kèo 20/11/2026; giữ để đọc kèo cũ).
   mutualAgreement('MutualAgreement'),
 
   /// Người cuối cùng (host) rời kèo chưa đủ người.
@@ -57,57 +70,9 @@ enum LfgCancelReason {
   static LfgCancelReason fromApi(String value) => values.firstWhere((r) => r.apiValue == value);
 }
 
-/// Yêu cầu hủy một kèo đã chốt (gửi trong khoảng T−24h tới T−1h). Người gửi tự tính là đồng ý; một người từ chối
-/// là bác ngay. Hết hạn ([expiresAt], mặc định T−1h) nếu chưa đủ tất cả đồng ý (kèo vẫn diễn ra).
-class LfgCancelRequest {
-  final String requestedBy;
-  final String requestedByName;
-  final DateTime createdAt;
-
-  /// Hạn trả lời BE trả; `null` thì dùng [LfgMatch.cancelRequestDeadline].
-  final DateTime? expiresAt;
-
-  /// userId các thành viên đã đồng ý (gồm người gửi).
-  final List<String> approvals;
-
-  const LfgCancelRequest({
-    required this.requestedBy,
-    required this.requestedByName,
-    required this.createdAt,
-    required this.approvals,
-    this.expiresAt,
-  });
-
-  bool hasApproved(String userId) => approvals.contains(userId);
-
-  LfgCancelRequest approve(String userId) => LfgCancelRequest(
-        requestedBy: requestedBy,
-        requestedByName: requestedByName,
-        createdAt: createdAt,
-        expiresAt: expiresAt,
-        approvals: [...approvals, if (!approvals.contains(userId)) userId],
-      );
-
-  factory LfgCancelRequest.fromJson(Map<String, dynamic> json) => LfgCancelRequest(
-        requestedBy: json['requestedBy'] as String,
-        requestedByName: json['requestedByName'] as String,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        expiresAt: json['expiresAt'] == null ? null : DateTime.parse(json['expiresAt'] as String),
-        approvals: (json['approvals'] as List).cast<String>(),
-      );
-
-  Map<String, dynamic> toJson() => {
-        'requestedBy': requestedBy,
-        'requestedByName': requestedByName,
-        'createdAt': createdAt.toIso8601String(),
-        if (expiresAt != null) 'expiresAt': expiresAt!.toIso8601String(),
-        'approvals': approvals,
-      };
-}
-
 /// Trạng thái của người dùng hiện tại với một kèo mà họ CHƯA vào hẳn.
 enum LfgMyStatus {
-  /// Đã xin vào kèo cần chủ kèo duyệt (chưa trừ tiền).
+  /// Đã xin vào kèo cần chủ kèo duyệt (chưa trừ Điểm).
   pendingApproval,
 
   /// Được mời vào kèo (đang giữ chỗ), cần chấp nhận và trả phần của mình.
@@ -123,12 +88,16 @@ class LfgMember {
   final bool isHost;
   final DateTime joinedAt;
 
+  /// Phe trong kèo Đội vs Đội: 'A' = đội chủ kèo, 'B' = đội nhận kèo; `null` với kèo thường.
+  final String? side;
+
   const LfgMember({
     required this.userId,
     required this.name,
     required this.fairPlayScore,
     required this.joinedAt,
     this.isHost = false,
+    this.side,
   });
 
   factory LfgMember.fromJson(Map<String, dynamic> json) => LfgMember(
@@ -146,6 +115,14 @@ class LfgMember {
         'isHost': isHost,
         'joinedAt': joinedAt.toIso8601String(),
       };
+}
+
+/// Đội gắn với kèo Đội vs Đội (BE chỉ trả id + tên).
+class LfgTeamRef {
+  final String id;
+  final String name;
+
+  const LfgTeamRef({required this.id, required this.name});
 }
 
 /// Một kèo ghép trận. Sân đã được host đặt sẵn; mỗi người (đội) trả phần cọc của mình.
@@ -167,7 +144,7 @@ class LfgMatch {
   final DateTime start;
   final DateTime end;
 
-  /// Tiền sân của khung giờ; chia đều cho các chỗ.
+  /// Giá sân của khung giờ; chia đều cho các chỗ.
   final int courtPrice;
 
   /// Thành viên đã thanh toán, host đứng đầu.
@@ -179,9 +156,6 @@ class LfgMatch {
   final DateTime createdAt;
 
   final LfgCancelReason? cancelReason;
-
-  /// Yêu cầu hủy đang chờ mọi người đồng ý (chỉ có ở kèo đã chốt).
-  final LfgCancelRequest? cancelRequest;
 
   // ---- Dữ liệu BE (kèo có số người / giá / định dạng tùy chủ kèo); bản giả lập để trống ----
 
@@ -206,8 +180,16 @@ class LfgMatch {
   /// Trình độ kèo (thẻ trình độ của BE); `null` = mọi trình độ.
   final SkillLevel? skillLevel;
 
-  /// Hạn chủ kèo tự hủy do BE trả (`hostCancelUntil`); bản giả lập để trống → T−24h.
+  /// Mốc chủ kèo hủy không bị phạt tiền do BE trả (`hostCancelUntil`, theo cấu hình Lfg:LockMinutes);
+  /// trống → T−48h.
   final DateTime? hostCancelUntilOverride;
+
+  /// Kèo Đội vs Đội: đội của chủ kèo (phe A) và đội đã nhận kèo (phe B, `null` khi chưa có).
+  final LfgTeamRef? hostTeam;
+  final LfgTeamRef? challengerTeam;
+
+  /// Số người mỗi đội (kèo Đội vs Đội), vd. 5 với 5v5.
+  final int? sideSize;
 
   const LfgMatch({
     required this.id,
@@ -228,7 +210,6 @@ class LfgMatch {
     this.heldSlots = 0,
     this.note = '',
     this.cancelReason,
-    this.cancelRequest,
     this.totalSlotsOverride,
     this.slotsLeftOverride,
     this.pricePerPersonOverride,
@@ -237,7 +218,13 @@ class LfgMatch {
     this.bookingId,
     this.skillLevel,
     this.hostCancelUntilOverride,
+    this.hostTeam,
+    this.challengerTeam,
+    this.sideSize,
   });
+
+  /// Kèo Đội vs Đội: chỉ đội trưởng nhận kèo thay cả đội (người lẻ không vào được).
+  bool get isTeamMatch => hostTeam != null;
 
   LfgMember get host => members.firstWhere((m) => m.isHost, orElse: () => members.first);
 
@@ -260,19 +247,28 @@ class LfgMatch {
   /// Hạn tự rời kèo (hoàn 100%).
   DateTime get leaveDeadline => start.subtract(LfgRules.fillDeadlineBeforeStart);
 
-  /// Hạn chủ kèo tự hủy kèo (T−24h). Từ mốc này muốn hủy phải gửi yêu cầu và tất cả đồng ý.
+  /// Mốc chủ kèo hủy kèo không bị phạt tiền (mặc định T−48h). Từ mốc này hủy là hủy đơn phương:
+  /// mất [hostLateCancelLoss] (chia đều bồi thường cho người đã vào kèo) và bị trừ nặng Fair Play.
   DateTime get hostCancelDeadline => hostCancelUntilOverride ?? start.subtract(LfgRules.hostCancelBeforeStart);
-
-  /// Mở gửi yêu cầu hủy (= hết hạn chủ kèo tự hủy).
-  DateTime get cancelRequestOpensAt => hostCancelDeadline;
 
   /// Rời kèo từ mốc này bị trừ Fair Play.
   DateTime get fairPlayPenaltyFrom => start.subtract(LfgRules.lateLeavePenaltyBeforeStart);
 
-  bool canHostCancel(DateTime now) => now.isBefore(hostCancelDeadline);
+  /// Chủ kèo hủy được tới giờ chơi (BE còn chặn khi đã check-in).
+  bool canHostCancel(DateTime now) => now.isBefore(start);
 
-  /// Đang trong khoảng gửi yêu cầu hủy (T−24h tới T−1h).
-  bool inCancelRequestWindow(DateTime now) => !now.isBefore(cancelRequestOpensAt) && now.isBefore(cancelRequestDeadline);
+  /// Hủy lúc [now] là hủy đơn phương (từ [hostCancelDeadline] trở đi) → bị phạt giá sân.
+  bool isLateHostCancel(DateTime now) => !now.isBefore(hostCancelDeadline);
+
+  /// Số người (đội) đã vào kèo, không tính chủ kèo — những người được bồi thường khi chủ kèo hủy đơn phương.
+  int get joinerCount => members.where((m) => !m.isHost).length;
+
+  /// Giá sân chủ kèo mất khi hủy đơn phương; chưa có ai vào kèo thì được hoàn đủ (0).
+  int get hostLateCancelLoss =>
+      joinerCount == 0 ? 0 : (courtPrice * LfgRules.hostLateCancelLossPercent / 100).round();
+
+  /// Mỗi người đã vào kèo nhận thêm chừng này bồi thường (ngoài Điểm của họ được hoàn 100%).
+  int get lateCancelCompensationPerJoiner => joinerCount == 0 ? 0 : (hostLateCancelLoss / joinerCount).round();
 
   DateTime get fillDeadline => start.subtract(LfgRules.fillDeadlineBeforeStart);
 
@@ -286,13 +282,6 @@ class LfgMatch {
     return isFull ? LfgStatus.confirmed : LfgStatus.open;
   }
 
-  /// Hạn chót gửi / đồng ý yêu cầu hủy kèo đã chốt (T−1h).
-  DateTime get cancelRequestDeadline => start.subtract(LfgRules.cancelRequestClosesBeforeStart);
-
-  /// Yêu cầu hủy còn hiệu lực (chưa hết hạn trả lời).
-  LfgCancelRequest? activeCancelRequest(DateTime now) =>
-      now.isBefore(cancelRequest?.expiresAt ?? cancelRequestDeadline) ? cancelRequest : null;
-
   /// Còn nhận người: chưa hủy/chốt, chưa tới T−48h, còn chỗ trống.
   bool isClaimable(DateTime now) => status(now) == LfgStatus.open && now.isBefore(fillDeadline) && slotsLeft > 0;
 
@@ -303,8 +292,6 @@ class LfgMatch {
     List<LfgMember>? members,
     int? heldSlots,
     LfgCancelReason? cancelReason,
-    LfgCancelRequest? cancelRequest,
-    bool clearCancelRequest = false,
   }) =>
       LfgMatch(
         id: id,
@@ -325,7 +312,6 @@ class LfgMatch {
         heldSlots: heldSlots ?? this.heldSlots,
         note: note,
         cancelReason: cancelReason ?? this.cancelReason,
-        cancelRequest: clearCancelRequest ? null : (cancelRequest ?? this.cancelRequest),
         totalSlotsOverride: totalSlotsOverride,
         slotsLeftOverride: slotsLeftOverride,
         pricePerPersonOverride: pricePerPersonOverride,
@@ -334,6 +320,9 @@ class LfgMatch {
         bookingId: bookingId,
         skillLevel: skillLevel,
         hostCancelUntilOverride: hostCancelUntilOverride,
+        hostTeam: hostTeam,
+        challengerTeam: challengerTeam,
+        sideSize: sideSize,
       );
 
   factory LfgMatch.fromJson(Map<String, dynamic> json) => LfgMatch(
@@ -355,9 +344,6 @@ class LfgMatch {
         heldSlots: (json['heldSlots'] as num?)?.toInt() ?? 0,
         note: json['note'] as String? ?? '',
         cancelReason: json['cancelReason'] == null ? null : LfgCancelReason.fromApi(json['cancelReason'] as String),
-        cancelRequest: json['cancelRequest'] == null
-            ? null
-            : LfgCancelRequest.fromJson(json['cancelRequest'] as Map<String, dynamic>),
         skillLevel: SkillLevel.fromApi(json['skillLevel']),
       );
 
@@ -380,7 +366,6 @@ class LfgMatch {
         'heldSlots': heldSlots,
         'note': note,
         if (cancelReason != null) 'cancelReason': cancelReason!.apiValue,
-        if (cancelRequest != null) 'cancelRequest': cancelRequest!.toJson(),
         if (skillLevel != null) 'skillLevel': skillLevel!.apiValue,
       };
 }

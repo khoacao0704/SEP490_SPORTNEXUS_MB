@@ -215,7 +215,7 @@ class Tournament {
   /// Lịch tạm đóng sân tạo kèm giải.
   final String? closureId;
 
-  /// Lệ phí đã giải ngân về ví Chủ sân (khi giải kết thúc).
+  /// Lệ phí đã giải ngân về Ví điểm Chủ sân (khi giải kết thúc).
   final DateTime? paidOutAt;
 
   /// Kích thước sơ đồ sau khi bốc thăm (lũy thừa của 2, có thể nhỏ hơn [maxEntries] khi thiếu đội).

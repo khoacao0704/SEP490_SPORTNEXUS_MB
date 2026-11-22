@@ -10,8 +10,14 @@ class Formatters {
     return amount.toString().replaceAllMapped(_thousands, (m) => '${m[1]}.');
   }
 
-  /// 1500000 -> "1.500.000 đ"
-  static String vnd(int amount) => '${currency(amount)} đ';
+  /// Đơn vị hiển thị trong app: mọi số tiền hiện là Điểm (1 đ = 1 Điểm, nhóm chốt 20/11/2026).
+  static const String pointUnit = 'Điểm';
+
+  /// 1500000 -> "1.500.000 Điểm". Dùng cho mọi số tiền trong app (giá sân, cọc, ví, hoàn, phạt, doanh thu…).
+  static String vnd(int amount) => '${currency(amount)} $pointUnit';
+
+  /// 1500000 -> "1.500.000 đ". CHỈ dùng ở bước chuyển khoản ngân hàng thật (nạp qua VietQR, rút về tài khoản).
+  static String bankVnd(int amount) => '${currency(amount)} đ';
 
   static String _two(int n) => n.toString().padLeft(2, '0');
 

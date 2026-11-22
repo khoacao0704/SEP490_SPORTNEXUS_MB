@@ -249,7 +249,7 @@ class MockAuthRepository implements AuthRepository {
 
   @override
   Future<void> logout({bool revoke = true}) async {
-    // Chỉ xóa dữ liệu phiên; giữ lại ví, lịch đặt và tài khoản giả lập.
+    // Chỉ xóa dữ liệu phiên; giữ lại Ví điểm, lịch đặt và tài khoản giả lập.
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(keyIsLoggedIn);
     await prefs.remove(keyUserName);

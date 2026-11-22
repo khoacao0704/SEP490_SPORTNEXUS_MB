@@ -396,7 +396,7 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            Formatters.vnd(_order.amount),
+            Formatters.bankVnd(_order.amount),
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
           ),
         ],
@@ -462,7 +462,7 @@ class _VietQrPaymentScreenState extends State<VietQrPaymentScreen> {
             copyValue: (_order.receiverAccountNumber ?? '').replaceAll(' ', ''),
           ),
           row(WalletStrings.accountName, _order.receiverAccountName ?? ''),
-          row(WalletStrings.amount, Formatters.vnd(_order.amount), copyValue: '${_order.amount}'),
+          row(WalletStrings.amount, Formatters.bankVnd(_order.amount), copyValue: '${_order.amount}'),
           row(
             WalletStrings.transferContent,
             _order.transferContent ?? '',

@@ -32,7 +32,7 @@ class MockPlayerTournamentRepository implements PlayerTournamentRepository {
   final List<TournamentParticipant> _participants = [];
   final Map<String, List<BracketMatch>> _brackets = {};
 
-  /// Ai đã trả tiền cho từng suất (key = teamId hoặc participantId).
+  /// Ai đã trả Điểm cho từng suất (key = teamId hoặc participantId).
   final Map<String, String> _payers = {};
   bool _seeded = false;
   int _seq = 0;
@@ -237,7 +237,7 @@ class MockPlayerTournamentRepository implements PlayerTournamentRepository {
     return invitations.where((i) => !pendingOnly || i.isPending).toList();
   }
 
-  /// Nhận lời = đăng ký bảng con như [join]; lỗi (hết hạn, thiếu tiền) thì lời mời vẫn chờ.
+  /// Nhận lời = đăng ký bảng con như [join]; lỗi (hết hạn, thiếu Điểm) thì lời mời vẫn chờ.
   @override
   Future<void> respondInvitation(String invitationId, {required bool accept}) async {
     await _me();

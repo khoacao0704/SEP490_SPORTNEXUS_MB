@@ -15,7 +15,7 @@ class AiChatStrings {
     'Tìm sân cầu lông tối nay ở Quận 7',
     'Có kèo pickleball nào cuối tuần không?',
     'Sân bóng đá dưới 300k ngày mai',
-    'Hủy đặt sân thì có được hoàn tiền không?',
+    'Hủy đặt sân thì có được hoàn Điểm không?',
   ];
   static const String inputHint = 'Nhập câu hỏi…';
   static const String send = 'Gửi';

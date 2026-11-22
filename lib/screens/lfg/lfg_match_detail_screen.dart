@@ -100,19 +100,119 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     });
   }
 
-  /// Host không rời được (BE): tự hủy kèo tới T−24h, mọi người được hoàn 100%.
+  /// Host không rời được (BE), chỉ hủy kèo tới giờ chơi. Mọi người luôn được hoàn 100%.
+  /// Dưới 48h (hủy đơn phương): cảnh báo gắt số giá sân bị trừ để bồi thường và −20 Fair Play.
   Future<void> _hostCancel() async {
     final m = _match!;
-    if (!await _confirm(LfgStrings.confirmCancelTitle, LfgStrings.hostCancelMessage(m.courtPrice), LfgStrings.cancelMatch)) {
-      return;
-    }
+    final late = m.isLateHostCancel(DateTime.now());
+    final ok = late
+        ? await _confirmLateCancel(m)
+        : await _confirm(LfgStrings.confirmCancelTitle, LfgStrings.hostCancelMessage(m.courtPrice), LfgStrings.cancelMatch);
+    if (!ok) return;
     await _run(() async {
       await AppRepositories.lfg.cancelMatch(m.id);
-      _snack(LfgStrings.hostCancelledMessage);
+      _snack(late ? LfgStrings.lateCancelledMessage(m.hostLateCancelLoss) : LfgStrings.hostCancelledMessage);
     });
   }
 
-  /// Rút yêu cầu vào kèo đang chờ chủ kèo duyệt (chưa trừ tiền).
+  Future<bool> _confirmLateCancel(LfgMatch m) async {
+    final hasJoiners = m.joinerCount > 0;
+    Widget row(String label, String value, {String? detail}) => Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textMain)),
+                    if (detail != null)
+                      Text(detail, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  value,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+        );
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 44),
+        title: const Text(
+          LfgStrings.lateCancelTitle,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                hasJoiners ? LfgStrings.lateCancelWarning : LfgStrings.lateCancelWarningNoJoiner,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textMain, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red),
+                ),
+                child: Column(
+                  children: [
+                    if (hasJoiners) ...[
+                      row(
+                        LfgStrings.lateCancelLossLabel,
+                        '−${Formatters.vnd(m.hostLateCancelLoss)}',
+                        detail: LfgStrings.lateCancelLossDetail(m.courtPrice),
+                      ),
+                      row(
+                        LfgStrings.lateCancelCompensation(m.joinerCount),
+                        Formatters.vnd(m.lateCancelCompensationPerJoiner),
+                      ),
+                    ],
+                    row(LfgStrings.lateCancelFairPlayLabel, LfgStrings.lateCancelFairPlay),
+                  ],
+                ),
+              ),
+              if (hasJoiners) ...[
+                const SizedBox(height: 10),
+                const Text(
+                  LfgStrings.lateCancelRefundNote,
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(LfgStrings.lateCancelBack)),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text(LfgStrings.lateCancelConfirm),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  /// Rút yêu cầu vào kèo đang chờ chủ kèo duyệt (chưa trừ Điểm).
   Future<void> _withdraw() => _run(() async {
         await AppRepositories.lfg.leaveMatch(_match!.id);
         _snack(LfgStrings.withdrawnMessage);
@@ -126,35 +226,6 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
   Future<void> _declineInvite() => _run(() async {
         await AppRepositories.lfg.declineInvitation(_match!.id);
         _snack(LfgStrings.declinedMessage);
-      });
-
-  Future<void> _requestCancel() async {
-    final m = _match!;
-    final deadline = '${Formatters.time(m.cancelRequestDeadline)} ${Formatters.weekdayDayMonth(m.cancelRequestDeadline)}';
-    final reason = await confirmLfgWithReason(
-      context,
-      title: LfgStrings.confirmRequestTitle,
-      message: LfgStrings.confirmRequestMessage(m.members.length - 1, deadline),
-      action: LfgStrings.sendRequest,
-    );
-    if (reason == null) return;
-    await _run(() async {
-      await AppRepositories.lfg.requestCancel(m.id, reason: reason);
-      _snack(LfgStrings.requestSent);
-    });
-  }
-
-  Future<void> _respond(bool approve) => _run(() async {
-        final updated = await AppRepositories.lfg.respondCancel(_match!.id, approve: approve);
-        _snack(approve
-            ? (updated.cancelReason != null ? LfgStrings.mutualCancelledMessage : LfgStrings.waitingOthers)
-            : LfgStrings.rejectedMessage);
-      });
-
-  Future<void> _simulateRespond(bool approve) => _run(() async {
-        final updated =
-            await (AppRepositories.lfg as SandboxLfgSimulator).simulateOthersRespond(_match!.id, approve: approve);
-        if (updated.cancelReason != null) _snack(LfgStrings.mutualCancelledMessage);
       });
 
   Future<void> _simulateJoin() => _run(() async {
@@ -226,10 +297,6 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                   _buildHeader(m, now),
                   const SizedBox(height: 14),
                   _buildMembers(m),
-                  if (_myId != null && m.isMember(_myId!) && m.activeCancelRequest(now) != null) ...[
-                    const SizedBox(height: 14),
-                    _buildCancelRequest(m, m.activeCancelRequest(now)!),
-                  ],
                   if (_myId != null && m.isMember(_myId!) && _hasActiveTicket(m, now)) ...[
                     const SizedBox(height: 14),
                     _buildTicket(m),
@@ -280,7 +347,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
         padding: const EdgeInsets.only(top: 6),
         child: Row(
           children: [
-            Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+            Flexible(child: Text(label, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
             const SizedBox(width: 12),
             // Giá trị dài (vd. hạn đủ người) xuống dòng thay vì tràn ra ngoài màn hình hẹp.
             Expanded(
@@ -318,6 +385,13 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                       Formatters.slotLabel(m.start, m.end),
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
                     ),
+                    if (m.isTeamMatch)
+                      Text(
+                        m.challengerTeam == null
+                            ? '${m.hostTeam!.name} • ${LfgStrings.waitingTeam}'
+                            : LfgStrings.teamVs(m.hostTeam!.name, m.challengerTeam!.name),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+                      ),
                   ],
                 ),
               ),
@@ -341,6 +415,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
   }
 
   Widget _buildMembers(LfgMatch m) {
+    if (m.isTeamMatch) return _buildTeamMembers(m);
     final rows = <Widget>[];
     for (var i = 0; i < m.totalSlots; i++) {
       if (i < m.members.length) {
@@ -351,16 +426,17 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
           dense: true,
           leading: CircleAvatar(
             backgroundColor: member.isHost ? AppColors.primaryGreen : AppColors.lightGreen,
+            // BE không trả danh sách người chơi thì chỗ đã có người không có tên.
             child: Text(
-              member.name.characters.first.toUpperCase(),
+              member.name.isEmpty ? '?' : member.name.characters.first.toUpperCase(),
               style: TextStyle(fontWeight: FontWeight.bold, color: member.isHost ? Colors.white : AppColors.primaryGreen),
             ),
           ),
           title: Text(
-            '${member.name}${isMe ? ' ${LfgStrings.you}' : ''}',
+            '${member.name.isEmpty ? LfgStrings.unnamedMember : member.name}${isMe ? ' ${LfgStrings.you}' : ''}',
             style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
           ),
-          subtitle: Text(LfgStrings.fairPlay(member.fairPlayScore)),
+          subtitle: member.name.isEmpty ? null : Text(LfgStrings.fairPlay(member.fairPlayScore)),
           trailing: member.isHost
               ? const Text(LfgStrings.host, style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen))
               : null,
@@ -388,6 +464,54 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     );
   }
 
+  /// Kèo Đội vs Đội: người chơi chia theo phe (A = đội chủ kèo, B = đội nhận kèo).
+  Widget _buildTeamMembers(LfgMatch m) {
+    Widget sideHeader(String side, String? team) => Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 2),
+          child: Text(
+            '$side • ${team ?? LfgStrings.waitingTeam}',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+          ),
+        );
+    Widget row(LfgMember member) {
+      final isMe = member.userId == _myId;
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        leading: CircleAvatar(
+          backgroundColor: member.isHost ? AppColors.primaryGreen : AppColors.lightGreen,
+          child: Text(
+            member.name.isEmpty ? '?' : member.name.characters.first.toUpperCase(),
+            style: TextStyle(fontWeight: FontWeight.bold, color: member.isHost ? Colors.white : AppColors.primaryGreen),
+          ),
+        ),
+        title: Text(
+          '${member.name}${isMe ? ' ${LfgStrings.you}' : ''}',
+          style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
+        ),
+        subtitle: Text(LfgStrings.fairPlay(member.fairPlayScore)),
+        trailing: member.isHost
+            ? const Text(LfgStrings.host, style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen))
+            : null,
+      );
+    }
+
+    final sideA = m.members.where((x) => x.isHost || x.side != 'B').toList();
+    final sideB = m.members.where((x) => !x.isHost && x.side == 'B').toList();
+    return _section(
+      '${LfgStrings.members} (${LfgStrings.slotsFilled(m.members.length, m.totalSlots, false)})',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          sideHeader(LfgStrings.sideA, m.hostTeam?.name),
+          ...sideA.map(row),
+          sideHeader(LfgStrings.sideB, m.challengerTeam?.name),
+          ...sideB.map(row),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTicket(LfgMatch m) {
     return _section(
       LfgStrings.yourTicket,
@@ -400,123 +524,6 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCancelRequest(LfgMatch m, LfgCancelRequest request) {
-    final iApproved = request.hasApproved(_myId!);
-    final approvedCount = m.members.where((x) => request.hasApproved(x.userId)).length;
-    final due = request.expiresAt ?? m.cancelRequestDeadline;
-    final deadline = '${Formatters.time(due)} ${Formatters.weekdayDayMonth(due)}';
-    final isSandbox = AppRepositories.lfg is SandboxLfgSimulator;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.tagOrangeBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.tagOrangeText),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.how_to_vote_outlined, color: AppColors.tagOrangeText),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  LfgStrings.cancelRequestBy(
-                    request.requestedBy == _myId ? '${request.requestedByName} ${LfgStrings.you}' : request.requestedByName,
-                  ),
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain),
-                ),
-              ),
-              Text(
-                LfgStrings.approvalsCount(approvedCount, m.members.length),
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          for (final member in m.members)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    request.hasApproved(member.userId) ? Icons.check_circle : Icons.schedule,
-                    size: 16,
-                    color: request.hasApproved(member.userId) ? AppColors.primaryGreen : AppColors.textSecondary,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      '${member.name}${member.userId == _myId ? ' ${LfgStrings.you}' : ''}',
-                      style: const TextStyle(fontSize: 13, color: AppColors.textMain),
-                    ),
-                  ),
-                  Text(
-                    request.hasApproved(member.userId) ? LfgStrings.approved : LfgStrings.notAnswered,
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 4),
-          Text(
-            LfgStrings.cancelRequestDeadline(deadline),
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 10),
-          if (iApproved)
-            const Text(
-              LfgStrings.waitingOthers,
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textMain),
-            )
-          else
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _isBusy ? null : () => _respond(false),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.textMain,
-                      side: const BorderSide(color: AppColors.cardBorder),
-                      backgroundColor: AppColors.white,
-                    ),
-                    child: const Text(LfgStrings.reject),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isBusy ? null : () => _respond(true),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                    child: const Text(LfgStrings.approve),
-                  ),
-                ),
-              ],
-            ),
-          if (isSandbox) ...[
-            const Divider(height: 20),
-            Wrap(
-              spacing: 4,
-              children: [
-                TextButton(
-                  onPressed: _isBusy ? null : () => _simulateRespond(true),
-                  child: const Text(LfgStrings.simulateApprove, style: TextStyle(fontSize: 12)),
-                ),
-                TextButton(
-                  onPressed: _isBusy ? null : () => _simulateRespond(false),
-                  child: const Text(LfgStrings.simulateReject, style: TextStyle(fontSize: 12)),
-                ),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -567,8 +574,8 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
         ],
       );
     } else if (isMember && active && m.isHostedBy(_myId!) && !repo.hostCanLeave) {
-      // Host (BE): không rời được; tự hủy kèo tới T−24h, sau đó gửi yêu cầu hủy (T−24h tới T−1h).
-      button = m.canHostCancel(now) ? _redButton(LfgStrings.cancelMatch, _hostCancel) : _lateActions(m, now, status);
+      // Host (BE): không rời được, hủy kèo được tới giờ chơi; dưới 48h là hủy đơn phương (bị phạt, xem _hostCancel).
+      if (m.canHostCancel(now)) button = _redButton(LfgStrings.cancelMatch, _hostCancel);
     } else if (!isMember && m.isClaimable(now)) {
       button = ElevatedButton.icon(
         onPressed: _isBusy ? null : _claim,
@@ -587,7 +594,7 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
       final alone = m.members.length == 1;
       button = _redButton(alone ? LfgStrings.cancelMatch : LfgStrings.leave, _leave);
     } else if (isMember && active) {
-      button = _lateActions(m, now, status);
+      button = _lateActions(m, now);
     }
     if (button == null) return null;
     return SafeArea(
@@ -599,35 +606,17 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     );
   }
 
-  /// Sau T−48h: kèo đã chốt chỉ hủy được khi tất cả đồng ý, yêu cầu gửi trong khoảng T−24h tới T−1h
-  /// (trước T−24h host tự hủy được). BE: chỉ host gửi yêu cầu; người tham gia vẫn tự rời được tới giờ chơi (không hoàn).
-  Widget _lateActions(LfgMatch m, DateTime now, LfgStatus status) {
-    final repo = AppRepositories.lfg;
-    final isHost = m.isHostedBy(_myId!);
-    final mayRequest = status == LfgStatus.confirmed && (isHost || !repo.onlyHostRequestsCancel);
-    final canRequest = mayRequest && m.inCancelRequestWindow(now);
-    final requestLater = mayRequest && now.isBefore(m.cancelRequestOpensAt);
-    final hasRequest = m.activeCancelRequest(now) != null;
-    final canLateLeave = repo.lateLeaveAllowed && !isHost && now.isBefore(m.start);
-    final opensAt = '${Formatters.time(m.cancelRequestOpensAt)} ${Formatters.weekdayDayMonth(m.cancelRequestOpensAt)}';
+  /// Sau T−48h (người tham gia): BE vẫn cho rời tới giờ chơi nhưng không hoàn; bản giả lập không cho rời.
+  Widget _lateActions(LfgMatch m, DateTime now) {
+    final canLateLeave = AppRepositories.lfg.lateLeaveAllowed && !m.isHostedBy(_myId!) && now.isBefore(m.start);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          canLateLeave
-              ? LfgStrings.lateLeaveNote
-              : canRequest
-                  ? LfgStrings.confirmedNote
-                  : requestLater
-                      ? LfgStrings.requestOpensNote(opensAt)
-                      : LfgStrings.tooLateNote,
+          canLateLeave ? LfgStrings.lateLeaveNote : LfgStrings.tooLateNote,
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
-        if (canRequest && !hasRequest) ...[
-          const SizedBox(height: 8),
-          SizedBox(width: double.infinity, child: _redButton(LfgStrings.requestCancel, _requestCancel)),
-        ],
         if (canLateLeave) ...[
           const SizedBox(height: 8),
           SizedBox(width: double.infinity, child: _redButton(LfgStrings.leave, _leave)),

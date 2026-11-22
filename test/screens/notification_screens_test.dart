@@ -47,7 +47,7 @@ void main() {
 
     await tester.tap(find.text('${NotificationStrings.filterUnread} (3)'));
     await tester.pumpAndSettle();
-    expect(find.text('Rút tiền thành công'), findsNothing);
+    expect(find.text('Đổi Điểm ra tiền thành công'), findsNothing);
     expect(find.text('Sắp tới giờ chơi'), findsOneWidget);
 
     await tester.tap(find.byTooltip(NotificationStrings.markAllRead));
@@ -60,7 +60,7 @@ void main() {
     await pump(tester, const NotificationsScreen());
     await tester.tap(find.widgetWithText(ChoiceChip, 'Ví'));
     await tester.pumpAndSettle();
-    expect(find.text('Nạp tiền thành công'), findsOneWidget);
+    expect(find.text('Nạp Điểm thành công'), findsOneWidget);
     expect(find.text('Sắp tới giờ chơi'), findsNothing);
   });
 
@@ -95,16 +95,16 @@ void main() {
     await tester.tap(find.widgetWithText(ChoiceChip, 'Kèo LFG'));
     await tester.pumpAndSettle();
     expect(find.text('Có người vào kèo của bạn'), findsOneWidget);
-    expect(find.text('Nạp tiền thành công'), findsNothing);
+    expect(find.text('Nạp Điểm thành công'), findsNothing);
   });
 
   testWidgets('vuốt sang trái để xoá một thông báo', (tester) async {
     await pump(tester, const NotificationsScreen());
-    await tester.drag(find.text('Rút tiền thành công'), const Offset(-600, 0));
+    await tester.drag(find.text('Đổi Điểm ra tiền thành công'), const Offset(-600, 0));
     await tester.pumpAndSettle();
-    expect(find.text('Rút tiền thành công'), findsNothing);
+    expect(find.text('Đổi Điểm ra tiền thành công'), findsNothing);
     expect(find.text(NotificationStrings.deleted), findsOneWidget);
-    expect((await tester.runAsync(repo.getNotifications))!.any((n) => n.title == 'Rút tiền thành công'), isFalse);
+    expect((await tester.runAsync(repo.getNotifications))!.any((n) => n.title == 'Đổi Điểm ra tiền thành công'), isFalse);
   });
 
   testWidgets('xoá thông báo đã đọc: hỏi lại rồi chỉ còn thông báo chưa đọc', (tester) async {
@@ -117,7 +117,7 @@ void main() {
     await tester.tap(find.text(NotificationStrings.deleteConfirm));
     await tester.pumpAndSettle();
 
-    expect(find.text('Nạp tiền thành công'), findsNothing);
+    expect(find.text('Nạp Điểm thành công'), findsNothing);
     expect(find.text('Sắp tới giờ chơi'), findsOneWidget);
     expect(find.byKey(const ValueKey('unread-dot')), findsNWidgets(3));
   });

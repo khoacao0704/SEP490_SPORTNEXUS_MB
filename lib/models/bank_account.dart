@@ -41,7 +41,7 @@ class BankAccount {
       };
 }
 
-/// Lệnh nạp tiền qua VietQR: người dùng chuyển khoản đúng số tiền + nội dung, BE xác nhận rồi mới cộng ví.
+/// Lệnh nạp Điểm qua VietQR: người dùng chuyển khoản đúng số tiền + nội dung, BE xác nhận rồi mới cộng ví.
 class TopUpOrder {
   /// Mã lệnh nạp (BE: orderCode của PayOS) để hỏi trạng thái / hủy.
   final String transactionId;

@@ -12,7 +12,7 @@ import '../wallet/transaction_history_screen.dart';
 import '../wallet/withdraw_screen.dart';
 import 'listing_fee_screen.dart';
 
-/// Doanh thu & Ví của Chủ sân: số dư ví (rút tiền, lịch sử), doanh thu theo tháng / cơ sở, phí tạm tính.
+/// Doanh thu & Ví của Chủ sân: số dư ví (đổi Điểm ra tiền, lịch sử), doanh thu theo tháng / cơ sở, phí tạm tính.
 class OwnerFinanceScreen extends StatefulWidget {
   const OwnerFinanceScreen({super.key});
 

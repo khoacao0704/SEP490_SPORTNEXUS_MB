@@ -11,9 +11,16 @@ import 'package:test1/data/repositories/booking_repository.dart';
 import 'package:test1/models/booking.dart';
 import 'package:test1/models/sport.dart';
 import 'package:test1/models/time_slot.dart';
+import 'package:test1/core/utils/formatters.dart';
+import 'package:test1/data/mock/mock_lfg_repository.dart';
+import 'package:test1/data/mock/mock_review_repository.dart';
+import 'package:test1/data/mock/mock_split_payment_repository.dart';
 import 'package:test1/screens/booking/booking_checkout_screen.dart';
+import 'package:test1/screens/booking/my_bookings_screen.dart';
 import 'package:test1/screens/booking/split_booking_screen.dart';
 import 'package:test1/screens/booking/split_payments_screen.dart';
+
+import '../helpers/layout_check.dart';
 
 const _me = 'u-player-001';
 
@@ -65,8 +72,12 @@ class _InviteBookings extends MockBookingRepository {
     return current = split(hostPaid: true, friendPaid: true, hostIsMe: false, done: true);
   }
 
+  /// Có giá trị thì trả bù báo lỗi này (như BE: ví không đủ…).
+  String? payError;
+
   @override
   Future<Booking> payRemaining(String bookingId) async {
+    if (payError != null) throw BookingException(payError!);
     calls.add('payRemaining');
     return current = split(hostPaid: true, friendPaid: true, hostIsMe: true, done: true);
   }
@@ -97,6 +108,27 @@ class _InviteBookings extends MockBookingRepository {
       ],
     );
   }
+}
+
+extension on Booking {
+  /// Như một dòng của my-bookings: không có danh sách người góp.
+  Booking withoutParticipants() => Booking(
+        id: id,
+        bookerId: bookerId,
+        facilityName: facilityName,
+        location: location,
+        sportLabel: sportLabel,
+        courtName: courtName,
+        schedule: schedule,
+        start: start,
+        end: end,
+        totalPrice: totalPrice,
+        paymentType: paymentType,
+        payments: payments,
+        createdAt: createdAt,
+        awaitingPayment: awaitingPayment,
+        myShare: myShare,
+      );
 }
 
 void main() {
@@ -176,21 +208,79 @@ void main() {
     await tester.pumpWidget(const SizedBox()); // dừng đồng hồ
   });
 
-  testWidgets('người đặt: chưa ai góp thì mời thêm được; trả nốt phần còn lại có hỏi xác nhận', (tester) async {
+  testWidgets('người đặt: khoản còn thiếu + nút "Thanh toán khoản còn thiếu" nổi bật, hỏi xác nhận rồi trả bù',
+      (tester) async {
     bookings.current = _InviteBookings.split(hostPaid: true, friendPaid: false, hostIsMe: true);
     await pump(tester, const SplitBookingScreen(bookingId: 'b1'));
 
     expect(find.text(SplitPaymentStrings.inviteMore), findsOneWidget);
     expect(find.textContaining('GÓP'), findsNothing); // người đặt đã trả phần của mình
+    expect(find.text(SplitPaymentStrings.remainingBanner(50000, 1)), findsOneWidget);
+    final button = find.widgetWithText(ElevatedButton, SplitPaymentStrings.payRemaining(50000));
+    expect(button, findsOneWidget);
+    // Nằm ngay dưới đồng hồ hạn góp, trên danh sách người góp.
+    expect(tester.getTopLeft(button).dy, lessThan(tester.getTopLeft(find.text('Nguyễn An')).dy));
 
-    await tester.tap(find.text(SplitPaymentStrings.payRemaining(50000)));
+    // Để sau: không gọi BE.
+    await tester.tap(button);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text(SplitPaymentStrings.payRemainingConfirm), findsOneWidget);
+    expect(find.text(SplitPaymentStrings.payRemainingConfirm(1)), findsOneWidget);
+    await tester.tap(find.text(SplitPaymentStrings.cancel));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(bookings.calls, isEmpty);
+
+    await tester.tap(button);
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text(SplitPaymentStrings.confirm));
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(bookings.calls, ['payRemaining']);
+    expect(find.text(SplitPaymentStrings.payRemainingDone), findsOneWidget);
     expect(find.text(SplitPaymentStrings.fullyPaidNote), findsOneWidget);
+    expect(button, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('trả bù lỗi (ví không đủ): báo câu của BE, đơn vẫn chờ góp', (tester) async {
+    bookings.current = _InviteBookings.split(hostPaid: true, friendPaid: false, hostIsMe: true);
+    bookings.payError = 'Số dư ví không đủ.';
+    await pump(tester, const SplitBookingScreen(bookingId: 'b1'));
+
+    await tester.tap(find.text(SplitPaymentStrings.payRemaining(50000)));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text(SplitPaymentStrings.confirm));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Số dư ví không đủ.'), findsOneWidget);
+    expect(find.text(SplitPaymentStrings.payRemaining(50000)), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Lịch Đặt & QR: người đặt có nút "Trả bù" ngay trên thẻ đơn chờ góp; người được mời thì không',
+      (tester) async {
+    AppRepositories.review = MockReviewRepository(latency: Duration.zero);
+    AppRepositories.split = MockSplitPaymentRepository(facility: facility, latency: Duration.zero, bookings: bookings);
+    AppRepositories.lfg = MockLfgRepository(latency: Duration.zero);
+    bookings.current = _InviteBookings.split(hostPaid: true, friendPaid: false, hostIsMe: true);
+    // Danh sách my-bookings của BE không có người góp: phải tải chi tiết mới biết khoản còn thiếu.
+    bookings.mine = [bookings.current!.withoutParticipants()];
+    await pump(tester, const MyBookingsScreen());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.text(SplitPaymentStrings.payRemainingShort));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(Formatters.vnd(50000)), findsOneWidget);
+    await tester.tap(find.text(SplitPaymentStrings.confirm));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(bookings.calls, ['payRemaining']);
+    expect(find.text(SplitPaymentStrings.payRemainingDone), findsOneWidget);
+
+    bookings.mine = [_InviteBookings.split(hostPaid: true, friendPaid: false, hostIsMe: false).withoutParticipants()];
+    await tester.pumpWidget(const SizedBox());
+    await pump(tester, const MyBookingsScreen());
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(SplitPaymentStrings.openSplit), findsOneWidget);
+    expect(find.text(SplitPaymentStrings.payRemainingShort), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -248,5 +338,27 @@ void main() {
     expect(bookings.createdWith, ['u-a']);
     expect(find.byType(SplitBookingScreen), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('bố cục: nút trả bù + popup không tràn ở mọi cỡ máy, chữ phóng to', (tester) async {
+    AppRepositories.review = MockReviewRepository(latency: Duration.zero);
+    AppRepositories.split = MockSplitPaymentRepository(facility: facility, latency: Duration.zero, bookings: bookings);
+    AppRepositories.lfg = MockLfgRepository(latency: Duration.zero);
+    Booking pending() => _InviteBookings.split(hostPaid: true, friendPaid: false, hostIsMe: true);
+    final problems = <String>[
+      ...await collectLayoutProblems(tester, 'Chia tiền', () {
+        bookings.current = pending();
+        return const SplitBookingScreen(bookingId: 'b1');
+      }, interact: (t) async {
+        await t.tap(find.text(SplitPaymentStrings.payRemaining(50000)));
+        await settleFrames(t);
+      }),
+      ...await collectLayoutProblems(tester, 'Lịch đặt', () {
+        bookings.current = pending();
+        bookings.mine = [pending().withoutParticipants()];
+        return const MyBookingsScreen();
+      }),
+    ];
+    expect(problems, isEmpty, reason: problems.join('\n'));
   });
 }

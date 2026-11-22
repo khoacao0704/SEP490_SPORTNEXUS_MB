@@ -303,21 +303,6 @@ class LfgMatchCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   LfgStatusChip(match: match, now: now),
                 ],
-                if ((isMine || joined) && match.activeCancelRequest(now) != null) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.how_to_vote_outlined, size: 16, color: AppColors.tagOrangeText),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          LfgStrings.cancelRequestBy(match.cancelRequest!.requestedByName),
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),

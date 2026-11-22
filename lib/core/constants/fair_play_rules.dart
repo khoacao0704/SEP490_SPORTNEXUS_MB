@@ -20,6 +20,11 @@ class FairPlayRules {
   /// Thời hạn chấm người chơi cùng trận, tính từ giờ kết thúc trận.
   static const Duration reviewWindow = Duration(hours: 24);
 
+  /// Chấm người chơi từ mức này trở xuống phải chọn lý do (nhóm chốt 16/11/2026).
+  static const int reasonRequiredMaxStars = 2;
+
+  static bool requiresReason(int stars) => stars >= 1 && stars <= reasonRequiredMaxStars;
+
   /// Vắng mặt, check-in trễ quá [lateLimit], hủy muộn hoặc chủ kèo hủy kèo.
   static const int noShowPenalty = -10;
   static const Duration lateLimit = Duration(minutes: 15);

@@ -22,6 +22,9 @@ abstract class ReviewRepository {
   /// Người đã chấm trước đó thì bỏ qua. Ném [ReviewException] khi hết hạn hoặc lỗi.
   Future<void> ratePlayers(String sessionId, List<PlayerReviewInput> players);
 
+  /// Lý do chọn khi chấm người chơi thấp (có một mục "Khác").
+  Future<List<LowRatingReason>> getLowRatingReasons();
+
   // ---------------- Đánh giá cơ sở ----------------
 
   /// Đánh giá công khai của một cơ sở, mới nhất trước. [stars] lọc theo số sao.

@@ -123,4 +123,55 @@ void main() {
     expect(find.text(Formatters.vnd(120000)), findsOneWidget);
     expect(find.text(OwnerStrings.checkIn), findsOneWidget);
   });
+
+  testWidgets('Chủ sân hủy đơn dưới 48h: cảnh báo phạt 20% + −10 Fair Play, xác nhận thì đơn bị hủy', (tester) async {
+    final session = await AppRepositories.owner.getSession('OW1001');
+    final now = DateTime.now();
+    expect(session.isLateOwnerCancel(now), isTrue);
+    await pump(tester, OwnerSessionDetailScreen(session: session));
+
+    await tester.tap(find.text(OwnerStrings.cancelBooking));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerStrings.cancelLateWarning), findsOneWidget);
+    final penalty = session.ownerCancelPenalty(now);
+    expect(penalty, (session.totalPrice * 0.2).round());
+    expect(find.text('−${Formatters.vnd(penalty)}'), findsOneWidget);
+    expect(find.text(OwnerStrings.cancelFairPlay(10)), findsOneWidget);
+    expect(find.text(OwnerStrings.cancelWalletNote), findsOneWidget);
+
+    // Quay lại: không hủy.
+    await tester.tap(find.text(OwnerStrings.cancelBack));
+    await tester.pumpAndSettle();
+    expect((await AppRepositories.owner.getSession('OW1001')).cancelledAt, isNull);
+
+    await tester.tap(find.text(OwnerStrings.cancelBooking));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'Sân hỏng đèn');
+    await tester.tap(find.text(OwnerStrings.cancelLockSlot));
+    await tester.tap(find.text(OwnerStrings.cancelConfirm));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Bạn bị phạt ${Formatters.vnd(penalty)} và trừ 10 điểm Fair Play'), findsOneWidget);
+    expect(find.text(OwnerStrings.statusCancelled), findsOneWidget);
+    expect(find.text(OwnerStrings.cancelBooking), findsNothing);
+  });
+
+  testWidgets('popup hủy đơn không tràn trên máy nhỏ, chữ phóng to', (tester) async {
+    final session = await AppRepositories.owner.getSession('LFGOW1');
+    tester.view.physicalSize = const Size(320 * 2, 568 * 2);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      home: MediaQuery(
+        data: const MediaQueryData(size: Size(320, 568), textScaler: TextScaler.linear(1.6)),
+        child: OwnerSessionDetailScreen(session: session),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text(OwnerStrings.cancelBooking), 200);
+    await tester.tap(find.text(OwnerStrings.cancelBooking));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(OwnerStrings.cancelConfirm), findsOneWidget);
+  });
 }

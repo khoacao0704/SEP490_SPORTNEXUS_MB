@@ -48,11 +48,11 @@ class NotificationStrings {
   static String groupDescription(NotificationGroup group) {
     switch (group) {
       case NotificationGroup.booking:
-        return 'Đặt sân, chia tiền, hủy sân, nhắc giờ chơi';
+        return 'Đặt sân, chia Điểm, hủy sân, nhắc giờ chơi';
       case NotificationGroup.lfg:
         return 'Có người vào kèo, kèo đủ người, kèo bị hủy, lời mời';
       case NotificationGroup.wallet:
-        return 'Nạp tiền, rút tiền, hoàn tiền, chốt tiền kèo';
+        return 'Nạp Điểm, đổi Điểm ra tiền, hoàn Điểm, chốt Điểm kèo';
       case NotificationGroup.review:
         return 'Điểm Fair Play sau trận, kết quả kiểm duyệt đánh giá';
       case NotificationGroup.team:

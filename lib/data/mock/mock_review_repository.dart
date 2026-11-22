@@ -64,6 +64,9 @@ class MockReviewRepository implements ReviewRepository {
     if (session == null) throw const ReviewException(ReviewStrings.sessionNotFound);
     if (session.isExpired(_now())) throw const ReviewException(ReviewStrings.expired);
     if (players.any((p) => p.stars < 1 || p.stars > 5)) throw const ReviewException(ReviewStrings.invalidStars);
+    if (players.any((p) => FairPlayRules.requiresReason(p.stars) && p.reasonId == null)) {
+      throw const ReviewException(ReviewStrings.lowRatingReasonRequired);
+    }
     final validIds = session.players.map((p) => p.userId).toSet();
     if (players.any((p) => !validIds.contains(p.playerId))) {
       throw const ReviewException(ReviewStrings.sessionNotFound);
@@ -73,6 +76,20 @@ class MockReviewRepository implements ReviewRepository {
     final key = keyRated(await _currentUserId());
     final rated = {...prefs.getStringList(key) ?? <String>[], ...players.map((p) => '$sessionId/${p.playerId}')};
     await prefs.setStringList(key, rated.toList());
+  }
+
+  /// Giống danh sách trên BE.
+  static const List<LowRatingReason> lowRatingReasons = [
+    LowRatingReason(id: 1, name: 'Bỏ về giữa chừng'),
+    LowRatingReason(id: 2, name: 'Chửi thề, xúc phạm'),
+    LowRatingReason(id: 3, name: 'Cố ý phạm lỗi, chơi xấu'),
+    LowRatingReason(id: 4, name: 'Khác'),
+  ];
+
+  @override
+  Future<List<LowRatingReason>> getLowRatingReasons() async {
+    await _delay();
+    return lowRatingReasons;
   }
 
   // ---------------- Đánh giá cơ sở ----------------
@@ -293,7 +310,7 @@ class MockReviewRepository implements ReviewRepository {
         endAgo: 360,
         players: const [ReviewablePlayer(userId: 'u-quocbao', name: 'Quốc Bảo', isHost: true)],
       ),
-      // Đơn chia tiền: chỉ có người chơi khi từ 2 người góp tiền cùng check-in.
+      // Đơn chia Điểm: chỉ có người chơi khi từ 2 người góp Điểm cùng check-in.
       session(
         id: 'ss-booking-thaodien',
         type: SessionType.booking,

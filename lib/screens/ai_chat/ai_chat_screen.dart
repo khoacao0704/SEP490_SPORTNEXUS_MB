@@ -222,7 +222,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
     }
   }
 
-  /// Mở màn tạo kèo với sân + ca AI gợi ý chọn sẵn (không gọi /ai/messages/{id}/lfg vì API đó trừ tiền ngay).
+  /// Mở màn tạo kèo với sân + ca AI gợi ý chọn sẵn (không gọi /ai/messages/{id}/lfg vì API đó trừ Điểm ngay).
   Future<void> _createLfg(AiMessage m, AiFacilitySuggestion facility, AiSlot s) async {
     final sport = facility.sport;
     if (sport == null) {

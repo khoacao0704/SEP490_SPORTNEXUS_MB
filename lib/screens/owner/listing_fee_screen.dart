@@ -10,13 +10,13 @@ import '../../models/owner_finance.dart';
 import '../../theme/app_colors.dart';
 import '../wallet/vietqr_payment_screen.dart';
 
-/// Hóa đơn quá hạn cũ nhất (nếu có) — đang nợ thì cơ sở bị ẩn và không rút tiền được.
+/// Hóa đơn quá hạn cũ nhất (nếu có) — đang nợ thì cơ sở bị ẩn và không đổi Điểm ra tiền được.
 ListingFeeBill? overdueBill(List<ListingFeeBill> bills, DateTime now) {
   final overdue = bills.where((b) => b.status(now) == FeeStatus.overdue).toList();
   return overdue.isEmpty ? null : overdue.last;
 }
 
-/// Trả một hóa đơn phí: trừ ví hoặc chuyển khoản VietQR (nạp đúng số tiền vào ví rồi trừ).
+/// Trả một hóa đơn phí: trừ ví hoặc chuyển khoản VietQR (nạp đúng số tiền vào Ví điểm rồi trừ).
 /// Trả về `true` nếu đã trả xong.
 Future<bool> payListingFee(BuildContext context, ListingFeeBill bill) async {
   final wallet = AppRepositories.ownerWallet;

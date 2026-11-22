@@ -35,7 +35,7 @@ enum NotificationReference {
   communityPost('COMMUNITY_POST'),
   report('REPORT'),
 
-  /// Ví (nạp tiền) hoặc yêu cầu rút tiền.
+  /// Ví (nạp Điểm) hoặc yêu cầu đổi Điểm ra tiền.
   wallet('WALLET');
 
   const NotificationReference(this.apiValue);
@@ -53,7 +53,7 @@ enum NotificationCategory {
 
   // Phía Chủ sân
   ownerBooking('Đặt sân', forOwner: true),
-  ownerMoney('Tiền', forOwner: true),
+  ownerMoney('Điểm', forOwner: true),
   ownerFacility('Hồ sơ cơ sở', forOwner: true),
   ownerReview('Đánh giá', forOwner: true);
 

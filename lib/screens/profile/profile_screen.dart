@@ -309,7 +309,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'SportNexus Escrow Wallet',
+                  'Ví điểm',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
@@ -338,21 +338,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onPressed: () =>
                       _openWalletAction(AppRepositories.wallet.supportsTopUp, const TopUpWalletScreen()),
                   icon: const Icon(Icons.add, color: AppColors.primaryGreen),
-                  label: const Text('Nạp tiền', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
+                  label: const Text('Nạp Điểm', style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
               ),
-              // BE chỉ cho Chủ sân rút tiền: ví người chơi không có nút Rút tiền.
+              // BE chỉ cho Chủ sân đổi Điểm ra tiền: ví người chơi không có nút Đổi Điểm ra tiền.
               if (AppRepositories.wallet.supportsWithdrawal) ...[
                 const SizedBox(width: 16),
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => _openWalletAction(true, const WithdrawScreen()),
                     icon: const Icon(Icons.arrow_upward, color: Colors.white),
-                    label: const Text('Rút tiền', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    label: const Text('Đổi ra tiền', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Colors.white),
                       padding: const EdgeInsets.symmetric(vertical: 12),

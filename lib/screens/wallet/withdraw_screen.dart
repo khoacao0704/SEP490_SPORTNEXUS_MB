@@ -68,7 +68,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        // Câu lỗi của BE (vd. tài khoản chưa được phép rút tiền); lỗi khác thì báo chung.
+        // Câu lỗi của BE (vd. tài khoản chưa được phép đổi Điểm ra tiền); lỗi khác thì báo chung.
         _loadError = e is WalletException ? e.message : WalletStrings.loadError;
       });
     }
@@ -316,7 +316,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
             style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textMain),
             decoration: InputDecoration(
               hintText: '0',
-              suffixText: 'đ',
+              suffixText: 'Điểm',
               errorText: _amountError,
               errorMaxLines: 2,
               filled: true,

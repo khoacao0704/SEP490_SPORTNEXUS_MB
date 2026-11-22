@@ -45,7 +45,7 @@ class LfgPaymentScreen extends StatefulWidget {
   final LfgPaymentSummary summary;
   final int amount;
 
-  /// Nhãn số tiền (vd. "Tiền sân cần trả" khi host trả cả sân).
+  /// Nhãn số tiền (vd. "Giá sân cần trả" khi host trả cả sân).
   final String amountLabel;
   final DateTime expiresAt;
 
@@ -135,7 +135,7 @@ class _LfgPaymentScreenState extends State<LfgPaymentScreen> {
     setState(() => _isPaying = true);
     try {
       if (_method == _Method.vietQr) {
-        // Chuyển khoản đúng số tiền cọc vào ví rồi trừ ví (BE xác nhận chuyển khoản).
+        // Chuyển khoản đúng số Điểm cọc vào Ví điểm rồi trừ ví (BE xác nhận chuyển khoản).
         final order = await AppRepositories.lfgWallet.createTopUp(widget.amount);
         if (!mounted) return;
         final paid = await Navigator.push<bool>(

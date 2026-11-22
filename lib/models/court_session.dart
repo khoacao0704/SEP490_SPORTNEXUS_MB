@@ -119,7 +119,7 @@ class CourtSession {
 
   SessionPlayer get leader => players.first;
 
-  /// Phần còn lại (cọc 1/4) chủ sân tự thu; bấm check-out là xác nhận đã nhận đủ tiền sân.
+  /// Phần còn lại (cọc 1/4) chủ sân tự thu; bấm check-out là xác nhận đã nhận đủ giá sân.
   int get remainingToCollect => (totalPrice - paidViaApp).clamp(0, totalPrice);
 
   DateTime get checkInOpensAt => start.subtract(OwnerRules.checkInOpensBefore);
@@ -158,9 +158,19 @@ class CourtSession {
   /// Đã hết giờ chơi nhưng chủ sân chưa check-out.
   bool isOverdueCheckOut(DateTime now) => canCheckOut(now) && !now.isBefore(end);
 
+  /// Chủ sân hủy được đơn chưa hủy, chưa check-out (BE không chặn theo giờ).
+  bool get canOwnerCancel => cancelledAt == null && checkedOutAt == null;
+
+  /// Hủy lúc [now] là hủy dưới 48h: phạt 20% và trừ Fair Play.
+  bool isLateOwnerCancel(DateTime now) => OwnerCancelRules.isLate(start, now);
+
+  /// Điểm phạt dự kiến nếu Chủ sân hủy lúc [now] (số thật BE trả sau khi hủy).
+  int ownerCancelPenalty(DateTime now) => OwnerCancelRules.penaltyFor(totalPrice, late: isLateOwnerCancel(now));
+
   CourtSession copyWith({
     List<SessionPlayer>? players,
     DateTime? checkedOutAt,
+    DateTime? cancelledAt,
   }) =>
       CourtSession(
         id: id,
@@ -176,7 +186,7 @@ class CourtSession {
         players: players ?? this.players,
         assignedCourt: assignedCourt,
         checkedOutAt: checkedOutAt ?? this.checkedOutAt,
-        cancelledAt: cancelledAt,
+        cancelledAt: cancelledAt ?? this.cancelledAt,
       );
 
   factory CourtSession.fromJson(Map<String, dynamic> json) => CourtSession(
@@ -212,6 +222,26 @@ class CourtSession {
         'checkedOutAt': checkedOutAt?.toIso8601String(),
         'cancelledAt': cancelledAt?.toIso8601String(),
       };
+}
+
+/// Kết quả Chủ sân hủy đơn (POST /bookings/owner/{id}/cancel).
+class OwnerCancelResult {
+  /// Điểm phạt đã trừ vào Ví điểm Chủ sân.
+  final int penaltyAmount;
+
+  /// Điểm Fair Play bị trừ (0 nếu hủy từ 48h trở lên).
+  final int fairPlayPenalty;
+
+  /// Tiền hoàn cho khách.
+  final int refundAmount;
+  final bool lateCancel;
+
+  const OwnerCancelResult({
+    required this.penaltyAmount,
+    required this.fairPlayPenalty,
+    required this.refundAmount,
+    required this.lateCancel,
+  });
 }
 
 /// Kết quả tra mã QR: vé của người nào, thuộc lượt sân nào.

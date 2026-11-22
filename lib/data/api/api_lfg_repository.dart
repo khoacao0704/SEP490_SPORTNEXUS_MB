@@ -14,16 +14,16 @@ import 'api_facility_repository.dart';
 
 /// [LfgRepository] gọi Backend thật.
 ///
-/// - Host tạo kèo = đặt cả sân (trả 100% tiền sân, BE tạo luôn đơn đặt sân); người vào kèo trả `pricePerPerson`,
+/// - Host tạo kèo = đặt cả sân (trả 100% giá sân, BE tạo luôn đơn đặt sân); người vào kèo trả `pricePerPerson`,
 ///   tiền tạm giữ rồi chuyển cho host khi check-in / sau giờ chơi.
 /// - `totalSlots` / `remainingSlots` của BE KHÔNG tính host → app cộng thêm 1 chỗ của host.
 /// - Kèo tạo trên app luôn ghép lẻ (không chia phe), không cần duyệt; Team vs Team = 1 vs 1 giữa 2 đại diện.
 /// - Rời kèo: đã vào kèo thì BE bắt buộc lý do. Trước T−48h hoàn 100%; sau đó vẫn rời được tới giờ chơi nhưng
-///   không hoàn (tiền chuyển cho host), trong 24h cuối còn bị −10 Fair Play. Host không rời được, chỉ tự hủy kèo
-///   tới T−24h (`hostCancelUntil`; mọi người + host hoàn 100%, host −10 Fair Play).
-/// - Yêu cầu hủy kèo đã chốt: chỉ host gửi, chỉ trong khoảng T−24h tới T−1h (nhóm chốt theo BE 11/2026).
-///   Người tham gia bỏ phiếu; một người từ chối là bác.
-/// - BE chưa có: giữ chỗ khi Flash Claim (app đếm 10 phút trên máy, vào kèo + trừ tiền ở bước xác nhận),
+///   không hoàn (tiền chuyển cho host), trong 24h cuối còn bị −10 Fair Play. Host không rời được, chỉ hủy kèo
+///   (tới giờ chơi, chưa check-in). Trước `hostCancelUntil` (mặc định T−48h): mọi người + host hoàn 100%,
+///   host −10 Fair Play. Sau đó: host mất 50% giá sân chia đều bồi thường cho người đã vào, −20 Fair Play.
+/// - BE đã bỏ vote hủy kèo (/cancel-requests) từ 20/11/2026.
+/// - BE chưa có: giữ chỗ khi Flash Claim (app đếm 10 phút trên máy, vào kèo + trừ Điểm ở bước xác nhận),
 ///   chuyển quyền host, lọc tỉnh/quận cho bảng tin kèo.
 class ApiLfgRepository implements LfgRepository {
   static const String feedPath = '/api/v1/lfgs';
@@ -40,9 +40,6 @@ class ApiLfgRepository implements LfgRepository {
   static const String recommendedPath = '/api/v1/lfgs/recommended';
   /// Lý do cuối trong danh sách của BE: chọn thì người dùng tự nhập lý do.
   static const String otherReasonLabel = 'lý do khác';
-  static String cancelRequestsPath(String id) => '/api/v1/lfgs/$id/cancel-requests';
-  static String latestCancelRequestPath(String id) => '/api/v1/lfgs/$id/cancel-requests/latest';
-  static String votePath(String id, String requestId) => '/api/v1/lfgs/$id/cancel-requests/$requestId/vote';
   static String bookingTicketPath(String bookingId) => '/api/v1/bookings/$bookingId/qr-ticket';
 
   /// Trạng thái của mình trong kèo được giữ lại ở "Kèo của tôi" (rời / bị loại / từ chối thì bỏ).
@@ -68,13 +65,13 @@ class ApiLfgRepository implements LfgRepository {
   bool get supportsAreaFilter => false;
 
   @override
+  bool get supportsTeamMatch => true;
+
+  @override
   bool get hostCanLeave => false;
 
   @override
   bool get lateLeaveAllowed => true;
-
-  @override
-  bool get onlyHostRequestsCancel => true;
 
   @override
   bool get hostPaysCourt => true;
@@ -150,17 +147,7 @@ class ApiLfgRepository implements LfgRepository {
     final myId = await _myId();
     final match = matchFromApi(await _call(() => _api.get(cardPath(matchId))) as Map<String, dynamic>, myId: myId);
     if (match == null) throw const LfgException(LfgStrings.notFound);
-    // Yêu cầu hủy chỉ có ở kèo đã chốt mà mình ở trong; không tải được thì coi như không có.
-    final now = DateTime.now();
-    if (!match.isMember(myId) || match.status(now) != LfgStatus.confirmed || now.isBefore(match.leaveDeadline)) {
-      return match;
-    }
-    try {
-      final request = cancelRequestFromApi(await _api.get(latestCancelRequestPath(matchId)), match, myId: myId);
-      return request == null ? match : match.copyWith(cancelRequest: request);
-    } on ApiException {
-      return match;
-    }
+    return match;
   }
 
   /// Kèo mình tạo (my-cards) + kèo mình tham gia / được mời / đang chờ duyệt (joined); sắp diễn ra trước.
@@ -200,12 +187,13 @@ class ApiLfgRepository implements LfgRepository {
   }
 
   /// Vào kèo + tạm giữ tiền trong một lần gọi. Hết chỗ / Fair Play thấp / ví không đủ: BE trả câu tiếng Việt.
-  /// Kèo cần duyệt (tạo trên Web) thì chưa trừ tiền, trạng thái chờ chủ kèo duyệt.
+  /// Kèo cần duyệt (tạo trên Web) thì chưa trừ Điểm, trạng thái chờ chủ kèo duyệt.
   @override
-  Future<LfgMatch> confirmClaim(String claimId) async {
+  Future<LfgMatch> confirmClaim(String claimId, {String? teamId}) async {
     final matchId = _claims[claimId];
     if (matchId == null) throw const LfgException(LfgStrings.claimExpired);
-    await _call(() => _api.post(claimPath(matchId), body: const <String, dynamic>{}));
+    // Kèo đội: BE tự xếp đội nhận vào phe B, không cần gửi side.
+    await _call(() => _api.post(claimPath(matchId), body: {'challengerTeamId': ?teamId}));
     _claims.remove(claimId);
     return getMatch(matchId);
   }
@@ -215,7 +203,7 @@ class ApiLfgRepository implements LfgRepository {
 
   // ---------------- Tạo / rời / hủy ----------------
 
-  /// Ghép lẻ, không duyệt: cần thêm (số người − 1) người. Host trả cả tiền sân.
+  /// Ghép lẻ, không duyệt: cần thêm (số người − 1) người. Host trả cả giá sân.
   @override
   Future<LfgMatch> createMatch({
     required SlotHold hold,
@@ -223,6 +211,8 @@ class ApiLfgRepository implements LfgRepository {
     required LfgFormat format,
     String note = '',
     SkillLevel? skillLevel,
+    String? hostTeamId,
+    int? sideSize,
   }) async {
     final slots = [...hold.slots]..sort((a, b) => a.start.compareTo(b.start));
     if (slots.isEmpty || slots.length > maxSlotsPerMatch) throw const LfgException(LfgStrings.singleSlotOnly);
@@ -243,7 +233,9 @@ class ApiLfgRepository implements LfgRepository {
     final data = await _call(() => _api.post(feedPath, body: {
           'courtSlotId': slot.id,
           if (slots.length > 1) 'numberOfSlots': slots.length,
-          'slotsNeeded': format.totalSlots - 1,
+          // Kèo đội: BE tự tính số chỗ (2×sideSize − 1) và giá mỗi người (giá sân ÷ 2×sideSize).
+          if (hostTeamId == null) 'slotsNeeded': format.totalSlots - 1,
+          if (hostTeamId != null) ...{'hostTeamId': hostTeamId, 'sideSize': sideSize},
           'requireApproval': false,
           'skillLevelTag': ?skillLevel?.apiValue,
           if (text.isNotEmpty) 'description': text,
@@ -280,22 +272,6 @@ class ApiLfgRepository implements LfgRepository {
         else if (r is String)
           CancelReason(code: ++i, label: r, isCustom: r.trim().toLowerCase() == otherReasonLabel),
     ];
-  }
-
-  @override
-  Future<LfgMatch> requestCancel(String matchId, {String? reason}) async {
-    final note = reason?.trim();
-    await _call(() => _api.post(cancelRequestsPath(matchId), body: {if (note != null && note.isNotEmpty) 'reason': note}));
-    return getMatch(matchId);
-  }
-
-  @override
-  Future<LfgMatch> respondCancel(String matchId, {required bool approve}) async {
-    final latest = await _call(() => _api.get(latestCancelRequestPath(matchId)));
-    final requestId = latest is Map<String, dynamic> ? (latest['id'] ?? latest['requestId'])?.toString() : null;
-    if (requestId == null) throw const LfgException(LfgStrings.loadError);
-    await _call(() => _api.post(votePath(matchId, requestId), body: {'approve': approve}));
-    return getMatch(matchId);
   }
 
   @override
@@ -341,7 +317,9 @@ class ApiLfgRepository implements LfgRepository {
     final remaining = (json['remainingSlots'] as num?)?.toInt() ?? 0;
     final price = _money(json['pricePerPerson']);
     final sideSize = (json['sideSize'] as num?)?.toInt();
-    final format = sport == Sport.football || sport == Sport.basketball
+    final hostTeamId = json['hostTeamId']?.toString();
+    final challengerTeamId = json['challengerTeamId']?.toString();
+    final format = hostTeamId != null || sport == Sport.football || sport == Sport.basketball
         ? LfgFormat.teamVsTeam
         : players >= 4
             ? LfgFormat.doubles
@@ -358,6 +336,7 @@ class ApiLfgRepository implements LfgRepository {
       fairPlayScore: _money(json['hostFairPlayScore']),
       joinedAt: createdAt,
       isHost: true,
+      side: hostTeamId == null ? null : 'A',
     );
     final participants = (json['participants'] as List?)?.cast<Map<String, dynamic>>();
     final List<LfgMember> others;
@@ -371,6 +350,7 @@ class ApiLfgRepository implements LfgRepository {
               name: p['fullName'] as String? ?? '',
               fairPlayScore: _money(p['fairPlayScore']),
               joinedAt: _time(p['joinedAt']) ?? createdAt,
+              side: (p['side'] as String?)?.toUpperCase(),
             ),
       ];
       held = participants.where((p) => (p['status'] as String? ?? '').toUpperCase() == 'INVITED').length;
@@ -414,32 +394,11 @@ class ApiLfgRepository implements LfgRepository {
       bookingId: json['bookingId']?.toString(),
       skillLevel: SkillLevel.fromApi(json['skillLevelTag']),
       hostCancelUntilOverride: _time(json['hostCancelUntil']),
-    );
-  }
-
-  /// GET cancel-requests/latest → yêu cầu đang chờ (PENDING), còn lại `null`. Người gửi luôn là host.
-  /// Có danh sách phiếu (votes / approvals) thì lấy người đã đồng ý; không có thì chỉ biết phiếu của mình (myVote).
-  static LfgCancelRequest? cancelRequestFromApi(Object? data, LfgMatch match, {String? myId}) {
-    if (data is! Map<String, dynamic>) return null;
-    if ((data['status'] as String? ?? '').toUpperCase() != 'PENDING') return null;
-    final host = match.host;
-    final votes = (data['votes'] ?? data['approvals']) as List?;
-    final approvals = <String>{
-      host.userId,
-      if (votes != null)
-        for (final v in votes)
-          if (v is String)
-            v
-          else if (v is Map && v['approve'] == true && v['userId'] != null)
-            v['userId'].toString(),
-      if (votes == null && data['myVote'] == true && myId != null) myId,
-    };
-    return LfgCancelRequest(
-      requestedBy: data['requestedById']?.toString() ?? host.userId,
-      requestedByName: data['requestedByName'] as String? ?? host.name,
-      createdAt: _time(data['createdAt']) ?? DateTime.now(),
-      expiresAt: _time(data['expiresAt']),
-      approvals: approvals.toList(),
+      hostTeam: hostTeamId == null ? null : LfgTeamRef(id: hostTeamId, name: json['hostTeamName'] as String? ?? ''),
+      challengerTeam: challengerTeamId == null
+          ? null
+          : LfgTeamRef(id: challengerTeamId, name: json['challengerTeamName'] as String? ?? ''),
+      sideSize: sideSize,
     );
   }
 

@@ -8,12 +8,12 @@ import 'api_client.dart';
 /// [WalletRepository] gọi Backend thật (ví của tài khoản đang đăng nhập).
 ///
 /// - Số dư (GET /api/v1/wallet), lịch sử giao dịch (GET /api/v1/wallet/transactions).
-/// - Nạp tiền qua PayOS: tạo lệnh → hiện mã QR / trang thanh toán → hỏi trạng thái tới khi BE nhận tiền.
+/// - Nạp Điểm qua PayOS: tạo lệnh → hiện mã QR / trang thanh toán → hỏi trạng thái tới khi BE nhận tiền.
 ///   Link PayOS hết hạn theo `expiresAt` của BE (mặc định 15 phút); hết giờ app gọi hủy để đồng bộ với PayOS.
 ///   BE tự chuyển lệnh quá hạn sang EXPIRED (≈25 phút sau khi tạo).
-/// - Rút tiền: MỘT tài khoản ngân hàng (lưu = thay thế, không xóa), lệnh rút trừ tiền ngay, Admin duyệt / từ chối;
-///   tối thiểu 50.000đ, mỗi lúc một lệnh chờ, hủy được khi còn chờ (tiền trả lại ví).
-/// - BE chưa có: thanh toán bằng ví. Các luồng giải đấu chưa nối vẫn trừ tiền qua ví giả lập
+/// - Đổi Điểm ra tiền: MỘT tài khoản ngân hàng (lưu = thay thế, không xóa), lệnh rút trừ Điểm ngay, Admin duyệt / từ chối;
+///   tối thiểu 50.000đ, mỗi lúc một lệnh chờ, hủy được khi còn chờ (tiền trả lại Ví điểm).
+/// - BE chưa có: thanh toán bằng ví. Các luồng giải đấu chưa nối vẫn trừ Điểm qua ví giả lập
 ///   ([AppRepositories.paymentWallet]).
 class ApiWalletRepository implements WalletRepository {
   static const String walletPath = '/api/v1/wallet';
@@ -40,7 +40,7 @@ class ApiWalletRepository implements WalletRepository {
   /// Lượt tải ví đang chạy: số dư và tiền tạm giữ gọi cùng lúc thì dùng chung một request.
   Future<Map<String, dynamic>>? _walletRequest;
 
-  /// `false`: tắt rút tiền / tài khoản ngân hàng (UI báo "đang phát triển").
+  /// `false`: tắt đổi Điểm ra tiền / tài khoản ngân hàng (UI báo "đang phát triển").
   @override
   final bool supportsWithdrawal;
 
@@ -58,7 +58,7 @@ class ApiWalletRepository implements WalletRepository {
   @override
   Future<int> getFrozenBalance() async => _money((await _wallet())['frozenBalance']);
 
-  /// Tổng các lệnh rút PENDING. Tài khoản không được rút tiền (403) coi như 0.
+  /// Tổng các lệnh rút PENDING. Tài khoản không được đổi Điểm ra tiền (403) coi như 0.
   @override
   Future<int> getPendingWithdrawalAmount() async {
     if (!supportsWithdrawal) return 0;
@@ -102,7 +102,7 @@ class ApiWalletRepository implements WalletRepository {
     return transactionFromApi(data as Map<String, dynamic>);
   }
 
-  // ---------------- Nạp tiền (PayOS) ----------------
+  // ---------------- Nạp Điểm (PayOS) ----------------
 
   @override
   Future<TopUpOrder> createTopUp(int amount) async {
@@ -135,7 +135,7 @@ class ApiWalletRepository implements WalletRepository {
     }
   }
 
-  // ---------------- Tài khoản ngân hàng & rút tiền ----------------
+  // ---------------- Tài khoản ngân hàng & đổi Điểm ra tiền ----------------
 
   /// Chưa lưu tài khoản: BE trả 200 với các trường null → danh sách rỗng.
   @override
@@ -248,12 +248,12 @@ class ApiWalletRepository implements WalletRepository {
   }
 
   /// amount của BE không mang dấu; chiều tiền theo type (PAYOUT còn xét status):
-  /// - DEPOSIT: cộng (nạp tiền, nhận tiền kèo LFG / tiền bạn góp booking).
+  /// - DEPOSIT: cộng (nạp Điểm, nhận tiền kèo LFG / tiền bạn góp booking).
   /// - FREEZE: chuyển từ số dư khả dụng sang tạm giữ (vào kèo LFG, đóng phí giải) → trừ khỏi số dư khả dụng.
   /// - REFUND: cộng (hoàn kèo, hoàn phí giải, hoàn booking).
   /// - RELEASE: tiền tạm giữ giải ngân cho chủ kèo → khoản chi.
-  /// - PAYOUT: PRIZE_* là thưởng giải (cộng); còn lại là trả tiền (booking, góp tiền, chủ kèo bị trừ lại).
-  /// - WITHDRAW*: rút tiền về ngân hàng.
+  /// - PAYOUT: PRIZE_* là thưởng giải (cộng); còn lại là trả Điểm (booking, góp Điểm, chủ kèo bị trừ lại).
+  /// - WITHDRAW*: đổi Điểm ra tiền về ngân hàng.
   /// - Loại khác (vd. Admin cộng / trừ tay): theo dấu [balanceChange] của BE (âm → khoản chi), không có thì coi là tiền vào.
   static TransactionType typeFromApi(String type, [String status = '', num? balanceChange]) {
     final t = type.toUpperCase();

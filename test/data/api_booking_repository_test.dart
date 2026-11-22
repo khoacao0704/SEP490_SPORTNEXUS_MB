@@ -447,4 +447,87 @@ void main() {
     server.fail('GET', ApiBookingRepository.ticketPath('b1'), 400, 'Đơn chưa đủ tiền nên chưa có vé');
     await expectLater(repo.getTicketCode(booking), throwsA(isA<BookingException>()));
   });
+
+  group('gói cố định hằng tuần', () {
+    TimeSlot weekly(String id, int week) => TimeSlot(
+          id: id,
+          facilityId: 'f1',
+          sport: Sport.badminton,
+          courtName: 'Sân 2',
+          start: DateTime(2030, 1, 5 + 7 * week, 18),
+          end: DateTime(2030, 1, 5 + 7 * week, 19),
+          price: 100000,
+          isAvailable: true,
+        );
+
+    test('đặt gói: gửi isRecurring; giá từng buổi đã giảm, khớp đúng tổng BE trừ; chung mã gói', () async {
+      server.ok('POST', ApiBookingRepository.bookingsPath, {
+        'totalAmount': 270001.00,
+        'originalAmount': 300000.00,
+        'discountPercent': 10,
+        'discountType': 'BULK_BOOKING',
+        'bookings': [
+          for (var i = 0; i < 3; i++)
+            {
+              'bookingId': 'b$i',
+              'courtSlotId': 's$i',
+              'startTime': '2030-01-${(5 + 7 * i).toString().padLeft(2, '0')}T18:00:00+07:00',
+              'endTime': '2030-01-${(5 + 7 * i).toString().padLeft(2, '0')}T19:00:00+07:00',
+              'slotPrice': 100000.00,
+              'recurringGroupId': 'g-1',
+            },
+        ],
+      });
+
+      final bookings = await repo.createBooking(
+        hold: hold([weekly('s2', 2), weekly('s0', 0), weekly('s1', 1)]),
+        paymentType: BookingPaymentType.full,
+        facilityName: 'Hà Nội Badminton Center',
+        sportLabel: 'Cầu Lông',
+        location: '',
+        schedule: '',
+        recurring: true,
+      );
+
+      expect(server.requests.single.data, {
+        'courtSlotIds': ['s0', 's1', 's2'],
+        'isRecurring': true,
+      });
+      expect(bookings.map((b) => b.recurringGroupId).toSet(), {'g-1'});
+      expect(bookings.map((b) => b.amountPaid), [90000, 90000, 90001]);
+      expect(bookings.first.originalPrice, 100000);
+    });
+
+    test('đặt lẻ không gửi isRecurring; slotPrice đã khớp tổng thì giữ nguyên giá', () {
+      expect(ApiBookingRepository.paidPerSession([100000, 100000], percent: 0, paidTotal: 200000), [100000, 100000]);
+      expect(ApiBookingRepository.paidPerSession([90000, 90000], percent: 10, paidTotal: 180000), [90000, 90000]);
+      expect(ApiBookingRepository.paidPerSession([100000, 100000], percent: 10), [90000, 90000]);
+    });
+
+    test('lịch đặt và chi tiết: đọc mã gói; chi tiết có giá gốc', () async {
+      server.ok('GET', ApiBookingRepository.myBookingsPath, [
+        {..._summary('b1', '2030-01-05T06:00:00+07:00'), 'recurringGroupId': 'g-1'},
+        _summary('b9', '2030-01-06T06:00:00+07:00'),
+      ]);
+      final list = await repo.getMyBookings();
+      expect(list.firstWhere((b) => b.id == 'b1').recurringGroupId, 'g-1');
+      expect(list.firstWhere((b) => b.id == 'b9').isRecurring, isFalse);
+
+      final detail = ApiBookingRepository.bookingFromDetail({
+        'bookingId': 'b1',
+        'hostId': _me,
+        'bookingStatus': 'PAID',
+        'startTime': '2030-01-05T06:00:00+07:00',
+        'endTime': '2030-01-05T07:00:00+07:00',
+        'totalAmount': 90000.00,
+        'originalAmount': 100000.00,
+        'discountType': 'BULK_BOOKING',
+        'recurringGroupId': 'g-1',
+        'participants': const [],
+      }, _me);
+      expect(detail.recurringGroupId, 'g-1');
+      expect(detail.originalPrice, 100000);
+      expect(detail.totalPrice, 90000);
+    });
+  });
 }

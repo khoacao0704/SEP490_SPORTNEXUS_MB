@@ -28,7 +28,7 @@ import 'mock_wallet_repository.dart';
 /// - Chủ sân demo có Thiên Triều, Hoa Lư (đã duyệt), một hồ sơ chờ duyệt và một hồ sơ bị từ chối.
 /// - Lượt sân mẫu tạo theo giờ hiện tại (đủ các trạng thái). Tất cả chỉ lưu trong bộ nhớ.
 /// - Admin duyệt trên Web nên bản giả lập không tự duyệt: hồ sơ mới nộp nằm ở "Chờ duyệt".
-/// - Check-out giải ngân và tiền phạt vắng mặt cộng vào ví giả lập của Chủ sân ([wallet]).
+/// - Check-out giải ngân và Điểm phạt vắng mặt cộng vào Ví điểm giả lập của Chủ sân ([wallet]).
 /// - Chưa nối với phía Player (tìm sân / đặt sân): khi có BE, cả hai cùng đọc một nguồn.
 class MockOwnerRepository implements OwnerRepository {
   final Duration latency;
@@ -45,7 +45,7 @@ class MockOwnerRepository implements OwnerRepository {
   final MockWalletRepository wallet;
   List<RevenueItem>? _revenue;
 
-  /// Lượt vắng mặt đã ghi nhận tiền phạt.
+  /// Lượt vắng mặt đã ghi nhận Điểm phạt.
   final Set<String> _settledNoShows = {};
 
   /// billId -> thời điểm trả.
@@ -173,6 +173,24 @@ class MockOwnerRepository implements OwnerRepository {
       );
     }
     return updated;
+  }
+
+  /// Bản giả lập: đánh dấu hủy và trả Điểm phạt tính theo [OwnerCancelRules]; không trừ ví giả lập.
+  @override
+  Future<OwnerCancelResult> cancelBooking(String sessionId, {String? reason, bool lockSlot = false}) async {
+    await _delay();
+    final session = _find(sessionId, await _myFacilityIds());
+    final now = _now();
+    if (session.cancelledAt != null) throw const OwnerException(OwnerStrings.sessionCancelled);
+    if (session.checkedOutAt != null) throw const OwnerException(OwnerStrings.sessionCompleted);
+    final late = session.isLateOwnerCancel(now);
+    _replace(session.copyWith(cancelledAt: now));
+    return OwnerCancelResult(
+      penaltyAmount: session.ownerCancelPenalty(now),
+      fairPlayPenalty: late ? OwnerCancelRules.lateFairPlayPenalty : 0,
+      refundAmount: session.paidViaApp,
+      lateCancel: late,
+    );
   }
 
   // ---------------- Quản lý cơ sở & sân ----------------
@@ -424,7 +442,7 @@ class MockOwnerRepository implements OwnerRepository {
     return bill.copyWith(paidAt: now);
   }
 
-  /// Lệ phí giải đấu về ví Chủ sân khi giải kết thúc và tính vào doanh thu.
+  /// Lệ phí giải đấu về Ví điểm Chủ sân khi giải kết thúc và tính vào doanh thu.
   /// Chỉ bản giả lập giải đấu gọi; bản thật do BE tự làm.
   Future<void> recordTournamentPayout({
     required String tournamentId,
@@ -550,7 +568,7 @@ class MockOwnerRepository implements OwnerRepository {
         description: s.sportLabel,
       );
 
-  /// Vắng mặt: tiền đã trả qua app về chủ sân như tiền phạt (BE tự làm khi đánh vắng).
+  /// Vắng mặt: Điểm đã trả qua app về chủ sân như Điểm phạt (BE tự làm khi đánh vắng).
   Future<void> _settleNoShows(Set<String> facilityIds) async {
     final now = _now();
     for (final s in _all()) {
