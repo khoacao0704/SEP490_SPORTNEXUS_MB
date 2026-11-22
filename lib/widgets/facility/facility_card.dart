@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/strings/booking_strings.dart';
 import '../../core/strings/facility_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/geo_utils.dart';
@@ -73,12 +74,49 @@ class FacilityCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: FacilityImage(
-                  url: facility.imageUrls.isEmpty ? null : facility.imageUrls.first,
-                  width: 96,
-                  height: 96,
+              // Nhãn "-X% Đặt Cố Định" đè góc dưới ảnh (nhãn "Nổi bật" nằm cạnh tên nên không chồng nhau).
+              SizedBox(
+                width: 96,
+                height: 96,
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: FacilityImage(
+                        url: facility.imageUrls.isEmpty ? null : facility.imageUrls.first,
+                        width: 96,
+                        height: 96,
+                      ),
+                    ),
+                    if (facility.recurringDiscountPercent > 0)
+                      Positioned(
+                        left: 4,
+                        right: 4,
+                        bottom: 4,
+                        child: Align(
+                          alignment: Alignment.bottomLeft,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade600,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                BookingStrings.discountBadge(facility.recurringDiscountPercent),
+                                maxLines: 1,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(width: 12),

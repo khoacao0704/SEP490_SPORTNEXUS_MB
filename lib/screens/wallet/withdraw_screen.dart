@@ -7,7 +7,9 @@ import '../../core/utils/input_formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/wallet_repository.dart';
 import '../../models/bank_account.dart';
+import '../../models/identity_verification.dart';
 import '../../theme/app_colors.dart';
+import '../profile/identity_verification_screen.dart';
 import 'add_bank_account_screen.dart';
 
 /// Pop về `true` khi đã gửi lệnh rút.
@@ -15,7 +17,10 @@ class WithdrawScreen extends StatefulWidget {
   /// Ví dùng cho màn này; bỏ trống = ví người chơi. Chủ sân truyền ví của Chủ sân.
   final WalletRepository? wallet;
 
-  const WithdrawScreen({super.key, this.wallet});
+  /// Mức tối thiểu, phí, có cần eKYC không. Mặc định: luật Chủ sân; người chơi truyền [WithdrawalPolicy.player].
+  final WithdrawalPolicy policy;
+
+  const WithdrawScreen({super.key, this.wallet, this.policy = WithdrawalPolicy.owner});
 
   @override
   State<WithdrawScreen> createState() => _WithdrawScreenState();
@@ -34,6 +39,11 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   bool _isSubmitting = false;
   String? _loadError;
   String? _amountError;
+
+  /// Hồ sơ eKYC (chỉ tải khi [WithdrawalPolicy.requiresIdentity]); `null` = chưa gửi.
+  IdentityVerification? _identity;
+
+  WithdrawalPolicy get _policy => widget.policy;
 
   int get _amount => ThousandsInputFormatter.parse(_amountController.text);
 
@@ -57,8 +67,10 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
     try {
       final balance = await _wallet.getBalance();
       final accounts = await _wallet.getBankAccounts();
+      final identity = _policy.requiresIdentity ? await AppRepositories.identity.getMyVerification() : null;
       if (!mounted) return;
       setState(() {
+        _identity = identity;
         _balance = balance;
         _accounts = accounts;
         _selectedAccount ??= accounts.isEmpty ? null : accounts.first;
@@ -82,11 +94,25 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   String? _validateAmount() {
     final amount = _amount;
     if (amount <= 0) return WalletStrings.invalidAmount;
-    if (amount < WalletRules.minWithdrawal) {
-      return WalletStrings.belowMinWithdrawal(Formatters.vnd(WalletRules.minWithdrawal));
+    if (amount < _policy.minAmount) {
+      return WalletStrings.belowMinWithdrawal(Formatters.vnd(_policy.minAmount));
     }
-    if (amount + WalletRules.withdrawalFee > _balance) return WalletStrings.insufficientBalance;
+    if (amount + _policy.fee > _balance) return WalletStrings.insufficientBalance;
     return null;
+  }
+
+  /// Chưa eKYC (hoặc bị từ chối) → mở màn chụp CCCD; đang chờ duyệt → báo. `true` = được đổi.
+  Future<bool> _ensureIdentity() async {
+    if (!_policy.requiresIdentity) return true;
+    final identity = _identity;
+    if (identity?.isApproved ?? false) return true;
+    if (identity?.status == IdentityStatus.pending) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(WalletStrings.identityPending)));
+      return false;
+    }
+    await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const IdentityVerificationScreen()));
+    if (mounted) _load();
+    return false;
   }
 
   Future<void> _addAccount() async {
@@ -127,6 +153,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   }
 
   Future<void> _submit() async {
+    if (!await _ensureIdentity() || !mounted) return;
     final error = _validateAmount();
     setState(() => _amountError = error);
     final account = _selectedAccount;
@@ -207,6 +234,10 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (_policy.requiresIdentity && !(_identity?.isApproved ?? false)) ...[
+                  _buildIdentityBanner(),
+                  const SizedBox(height: 16),
+                ],
                 _buildBalance(),
                 const SizedBox(height: 16),
                 _buildAmountCard(),
@@ -241,6 +272,42 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildIdentityBanner() {
+    final pending = _identity?.status == IdentityStatus.pending;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: pending ? AppColors.tagOrangeBg : Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(pending ? Icons.hourglass_top : Icons.badge_outlined,
+              color: pending ? AppColors.tagOrangeText : Colors.red.shade700),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  pending ? WalletStrings.identityPending : WalletStrings.identityRequired,
+                  style: TextStyle(fontSize: 13, color: pending ? AppColors.tagOrangeText : Colors.red.shade700),
+                ),
+                if (!pending)
+                  TextButton(
+                    onPressed: _ensureIdentity,
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                    child: const Text(WalletStrings.verifyNow),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -302,7 +369,11 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   }
 
   Widget _buildAmountCard() {
-    final fee = WalletRules.withdrawalFee == 0 ? WalletStrings.free : Formatters.vnd(WalletRules.withdrawalFee);
+    final fee = _policy.fee == 0 ? WalletStrings.free : Formatters.vnd(_policy.fee);
+    // Người chơi: ghi đúng chữ thẻ 41, số tiền chuyển khoản thật nên dùng "đ".
+    final note = _policy.requiresIdentity
+        ? WalletStrings.playerWithdrawalNote(Formatters.bankVnd(_policy.minAmount), Formatters.bankVnd(_policy.fee))
+        : WalletStrings.minWithdrawalNote(Formatters.vnd(_policy.minAmount), fee);
     return _card(
       title: WalletStrings.withdrawAmountLabel,
       child: Column(
@@ -339,17 +410,21 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
               ),
               ActionChip(
                 label: const Text(WalletStrings.withdrawAll),
-                onPressed: () => _setAmount((_balance - WalletRules.withdrawalFee).clamp(0, _balance)),
+                onPressed: () => _setAmount((_balance - _policy.fee).clamp(0, _balance)),
                 backgroundColor: AppColors.lightGreen,
                 side: const BorderSide(color: AppColors.primaryGreen),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            WalletStrings.minWithdrawalNote(Formatters.vnd(WalletRules.minWithdrawal), fee),
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
+          Text(note, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          if (_policy.fee > 0 && _amount > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              WalletStrings.withdrawTotalDeduct(Formatters.vnd(_amount + _policy.fee)),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMain),
+            ),
+          ],
         ],
       ),
     );

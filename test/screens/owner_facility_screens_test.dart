@@ -13,6 +13,8 @@ import 'package:test1/screens/owner/facility_form_screen.dart';
 import 'package:test1/screens/owner/owner_facilities_screen.dart';
 import 'package:test1/screens/owner/owner_facility_detail_screen.dart';
 
+import '../helpers/layout_check.dart';
+
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -148,5 +150,81 @@ void main() {
     expect(find.text(OwnerFacilityStrings.noClosures), findsOneWidget);
     expect((await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu')).closures, isEmpty);
     expect(hoaLu.status, ApprovalStatus.approved);
+  });
+
+  group('giảm giá gói định kỳ', () {
+    Finder field() => find.widgetWithText(TextField, OwnerFacilityStrings.discountLabel);
+    Finder save() => find.widgetWithText(ElevatedButton, OwnerFacilityStrings.discountSave);
+    bool saveEnabled(WidgetTester tester) => tester.widget<ElevatedButton>(save()).onPressed != null;
+
+    Future<void> enter(WidgetTester tester, String text) async {
+      await tester.ensureVisible(field());
+      await tester.enterText(field(), text);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('chưa giảm: gợi ý 10%, nhập ngoài 0–50 bị chặn, lưu 15% rồi về 0 (không giảm)', (tester) async {
+      final hoaLu = await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu');
+      expect(hoaLu.recurringDiscountPercent, 0);
+      await pump(tester, OwnerFacilityDetailScreen(facility: hoaLu));
+
+      expect(find.text(OwnerFacilityStrings.discountCurrent(0)), findsOneWidget);
+      expect(tester.widget<TextField>(field()).controller!.text, '10');
+      expect(saveEnabled(tester), isTrue);
+
+      await enter(tester, '51');
+      expect(find.text(OwnerFacilityStrings.discountInvalid), findsOneWidget);
+      expect(saveEnabled(tester), isFalse);
+
+      await enter(tester, '15');
+      await tester.tap(save());
+      await tester.pumpAndSettle();
+      expect(find.text(OwnerFacilityStrings.discountCurrent(15)), findsOneWidget);
+      expect((await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu')).recurringDiscountPercent, 15);
+      expect(saveEnabled(tester), isFalse); // chưa đổi gì so với mức đang áp dụng
+
+      await enter(tester, '0');
+      await tester.tap(save());
+      await tester.pumpAndSettle();
+      expect(find.text(OwnerFacilityStrings.discountCurrent(0)), findsOneWidget);
+      expect((await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu')).recurringDiscountPercent, 0);
+    });
+
+    testWidgets('cơ sở bị từ chối: hỏi lại trước khi lưu; lưu xong chuyển về chờ duyệt', (tester) async {
+      final rejected = await AppRepositories.owner.getOwnerFacility('f-own-rejected');
+      await pump(tester, OwnerFacilityDetailScreen(facility: rejected));
+      await enter(tester, '20');
+
+      await tester.tap(save());
+      await tester.pumpAndSettle();
+      expect(find.text(OwnerFacilityStrings.discountRejectedTitle), findsOneWidget);
+      await tester.tap(find.text(OwnerFacilityStrings.cancel));
+      await tester.pumpAndSettle();
+      expect((await AppRepositories.owner.getOwnerFacility('f-own-rejected')).status, ApprovalStatus.rejected);
+
+      await tester.tap(save());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(OwnerFacilityStrings.discountRejectedConfirm));
+      await tester.pumpAndSettle();
+      final saved = await AppRepositories.owner.getOwnerFacility('f-own-rejected');
+      expect(saved.recurringDiscountPercent, 20);
+      expect(saved.status, ApprovalStatus.pending);
+      expect(find.text(OwnerFacilityStrings.pendingBanner), findsOneWidget);
+    });
+
+    testWidgets('bố cục ô giảm giá: nhiều cỡ máy + chữ phóng to không tràn', (tester) async {
+      final rejected = await AppRepositories.owner.getOwnerFacility('f-own-rejected');
+      final problems = await collectLayoutProblems(
+        tester,
+        'Chi tiết cơ sở (ô giảm giá)',
+        () => OwnerFacilityDetailScreen(facility: rejected),
+        // ListView chỉ dựng phần đang hiện: cuộn tới ô giảm giá để kiểm đúng chỗ.
+        interact: (tester) async {
+          await tester.scrollUntilVisible(field(), 200, scrollable: find.byType(Scrollable).first);
+          await tester.pump();
+        },
+      );
+      expect(problems, isEmpty, reason: problems.join('\n'));
+    });
   });
 }

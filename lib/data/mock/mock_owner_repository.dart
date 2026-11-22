@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/constants/booking_rules.dart';
 import '../../core/constants/owner_rules.dart';
 import '../../core/strings/owner_facility_strings.dart';
 import '../../core/strings/owner_finance_strings.dart';
@@ -271,6 +272,24 @@ class MockOwnerRepository implements OwnerRepository {
       }
     }
     return _save(mine, f.copyWith(operations: operations));
+  }
+
+  @override
+  Future<OwnerFacility> updateRecurringDiscount(String facilityId, int percent) async {
+    await _delay();
+    if (percent < 0 || percent > RecurringBookingRules.maxDiscountPercent) {
+      throw const OwnerException(OwnerFacilityStrings.discountOutOfRange);
+    }
+    final mine = await _mine();
+    final f = _facility(mine, facilityId);
+    // Như BE: cơ sở bị từ chối, sửa gì cũng chuyển về chờ duyệt lại.
+    return _save(
+      mine,
+      f.copyWith(
+        recurringDiscountPercent: percent,
+        status: f.status == ApprovalStatus.rejected ? ApprovalStatus.pending : null,
+      ),
+    );
   }
 
   @override

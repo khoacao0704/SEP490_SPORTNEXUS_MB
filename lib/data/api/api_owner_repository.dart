@@ -148,6 +148,7 @@ class ApiOwnerRepository implements OwnerRepository {
       rejectReason: json['rejectReason'] as String?,
       rating: rating,
       reviewCount: reviewCount,
+      recurringDiscountPercent: ((json['recurringDiscountPercent'] as num?) ?? 0).round().clamp(0, 100),
     );
   }
 
@@ -481,6 +482,18 @@ class ApiOwnerRepository implements OwnerRepository {
 
   @override
   Future<OwnerFacility> updateOperations(String facilityId, FacilityOperations operations) async => _todo();
+
+  /// PUT /facilities/{id} là cập nhật từng phần: chỉ gửi recurringDiscountPercent (không gửi isBulkDiscountEnabled,
+  /// không gửi amenityIds/imageUrls vì mảng rỗng = xoá hết). Đọc lại cơ sở để có trạng thái duyệt mới.
+  @override
+  Future<OwnerFacility> updateRecurringDiscount(String facilityId, int percent) async {
+    try {
+      await _api.put('/api/v1/facilities/$facilityId', body: {'recurringDiscountPercent': percent});
+    } on ApiException catch (e) {
+      throw OwnerException(e.message);
+    }
+    return getOwnerFacility(facilityId);
+  }
 
   @override
   Future<OwnerFacility> saveCourt(String facilityId, CourtConfig court) async => _todo();

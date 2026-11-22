@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:test1/core/strings/booking_strings.dart';
 import 'package:test1/models/booking.dart';
 import 'package:test1/models/recurring_plan.dart';
 import 'package:test1/models/sport.dart';
@@ -13,6 +14,18 @@ TimeSlot _slot(DateTime day, int hour, {String court = 'Sân 2', bool free = tru
       end: DateTime(day.year, day.month, day.day, hour + 1),
       price: price,
       isAvailable: free,
+    );
+
+/// Ca dài [hours] giờ bắt đầu lúc [hour].
+TimeSlot _long(DateTime day, int hour, int hours, {String court = 'Sân 2'}) => TimeSlot(
+      id: '$court|${day.toIso8601String()}|$hour+$hours',
+      facilityId: 'f1',
+      sport: Sport.badminton,
+      courtName: court,
+      start: DateTime(day.year, day.month, day.day, hour),
+      end: DateTime(day.year, day.month, day.day, hour + hours),
+      price: 200000,
+      isAvailable: true,
     );
 
 Booking _booking(String id, DateTime start, {String? group = 'G1', DateTime? cancelledAt, int price = 90000}) => Booking(
@@ -153,6 +166,63 @@ void main() {
         null,
       ]);
       expect(p.problems.map((s) => s.date), [DateTime(2026, 12, 1), DateTime(2026, 12, 8), DateTime(2026, 12, 15)]);
+    });
+
+    test('tuần có ca trùng giờ nhưng khác độ dài (60 → 120 phút) → "lệch độ dài ca", không phải "chưa mở lịch"', () async {
+      final p = await RecurringPlan.build(
+        pattern: [_slot(tue, 18)],
+        weekdays: {2},
+        weeks: 4,
+        now: now,
+        loadDay: (d) async {
+          // Tuần 3: chủ sân gộp thành ca 17:00 - 19:00.
+          if (d == DateTime(2026, 12, 8)) return [_long(d, 17, 2)];
+          // Tuần 4: chỉ có ca 20:00 - 21:00 (không đè giờ mẫu) → vẫn là chưa mở lịch.
+          if (d == DateTime(2026, 12, 15)) return [_slot(d, 20)];
+          return [_slot(d, 18)];
+        },
+      );
+      expect(p.isComplete, isFalse);
+      expect(p.sessions.map((s) => s.issue), [null, null, RecurringIssue.lengthMismatch, RecurringIssue.notOpen]);
+    });
+  });
+
+  group('kiểm gói trước khi trả (luật BE, chưa có API xem trước)', () {
+    List<TimeSlot> weekly(int weeks, {int hour = 18}) =>
+        [for (var i = 0; i < weeks; i++) _slot(DateTime(2026, 11, 24 + 7 * i), hour)];
+
+    test('4 tuần liên tiếp, cùng sân, cùng độ dài → hợp lệ', () {
+      expect(RecurringPlan.packageError(weekly(4)), isNull);
+      // 2 ca liền nhau mỗi ngày vẫn là 1 buổi.
+      expect(RecurringPlan.packageError([...weekly(4), ...weekly(4, hour: 19)]), isNull);
+    });
+
+    test('thiếu buổi / bỏ tuần / lệch độ dài / khác sân → nêu đúng lý do', () {
+      expect(RecurringPlan.packageError(weekly(3)), BookingStrings.packageTooFew);
+      final skipped = weekly(5)..removeAt(2);
+      expect(RecurringPlan.packageError(skipped), BookingStrings.packageWeekly);
+      final longer = weekly(4)..[3] = _long(DateTime(2026, 12, 15), 18, 2);
+      expect(RecurringPlan.packageError(longer), BookingStrings.packageSameLength);
+      final otherCourt = weekly(4)..[1] = _slot(DateTime(2026, 12, 1), 18, court: 'Sân 3');
+      expect(RecurringPlan.packageError(otherCourt), BookingStrings.packageSameCourt);
+    });
+
+    test('RecurringCheckout: gói sai luật hoặc có ngày kẹt → có lý do, đánh dấu đúng khung', () {
+      final ok = weekly(4);
+      final bad = weekly(4, hour: 8)..[3] = _long(DateTime(2026, 12, 15), 8, 2);
+      final checkout = RecurringCheckout(sessions: 8, discountPercent: 10, summary: '', packages: [ok, bad]);
+      expect(checkout.problems, [BookingStrings.packageSameLength]);
+      expect(checkout.badSlotIds, bad.map((s) => s.id).toSet());
+
+      expect(RecurringCheckout(sessions: 4, discountPercent: 10, summary: '', packages: [ok]).problems, isEmpty);
+      final withBadDay = RecurringCheckout(
+        sessions: 4,
+        discountPercent: 10,
+        summary: '',
+        packages: [ok],
+        days: [RecurringSession(date: tue, issue: RecurringIssue.lengthMismatch)],
+      );
+      expect(withBadDay.problems, [BookingStrings.recurringHasBadDay]);
     });
   });
 

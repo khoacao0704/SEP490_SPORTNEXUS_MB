@@ -21,6 +21,10 @@ class RecurringBookingRules {
   static const int maxSessions = 8;
 
   static const Duration interval = Duration(days: 7);
+
+  /// Chủ sân đặt % giảm trong khoảng 0–[maxDiscountPercent] (BE trả 400 nếu ngoài khoảng); gợi ý sẵn [suggestedDiscountPercent].
+  static const int maxDiscountPercent = 50;
+  static const int suggestedDiscountPercent = 10;
   static const Duration cancelBeforeFirst = Duration(hours: 48);
 
   /// Giá sau giảm [percent]% (làm tròn tới đồng); chỉ để hiển thị trước khi đặt, giá thật lấy từ BE.

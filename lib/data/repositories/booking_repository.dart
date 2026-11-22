@@ -1,4 +1,5 @@
 import '../../models/booking.dart';
+import '../../models/voucher.dart';
 import '../../models/time_slot.dart';
 
 /// Lỗi nghiệp vụ đặt sân; [message] sẵn sàng để hiển thị.
@@ -34,6 +35,7 @@ abstract class BookingRepository {
     required String schedule,
     bool recurring = false,
     int discountPercent = 0,
+    Voucher? voucher,
   });
 
   /// Lần đặt sân người dùng đã đặt hoặc góp Điểm: sắp diễn ra trước (gần nhất trước), đã qua sau.

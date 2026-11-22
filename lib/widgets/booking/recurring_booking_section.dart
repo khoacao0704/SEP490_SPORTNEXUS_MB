@@ -32,26 +32,31 @@ String describeCourtTimes(List<TimeSlot> slots) {
   return courts.map((c) => '$c ${ranges[c]}').join('; ');
 }
 
-/// Nhãn "Giảm X% khi đặt cố định hằng tuần" ở trang sân (chỉ hiện khi cơ sở có giảm).
-class RecurringDiscountBadge extends StatelessWidget {
+/// Banner "Cơ sở này giảm X% khi bạn đặt cố định hằng tuần..." ở trang sân (chỉ hiện khi cơ sở có giảm).
+class RecurringDiscountBanner extends StatelessWidget {
   final int percent;
 
-  const RecurringDiscountBadge({super.key, required this.percent});
+  const RecurringDiscountBanner({super.key, required this.percent});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: AppColors.tagOrangeBg, borderRadius: BorderRadius.circular(8)),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.red.shade200),
+      ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.event_repeat, size: 16, color: AppColors.tagOrangeText),
-          const SizedBox(width: 6),
-          Flexible(
+          Icon(Icons.local_fire_department, size: 20, color: Colors.red.shade600),
+          const SizedBox(width: 8),
+          Expanded(
             child: Text(
-              BookingStrings.discountBadge(percent),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
+              BookingStrings.discountBanner(percent),
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.red.shade800, height: 1.35),
             ),
           ),
         ],
@@ -108,7 +113,7 @@ class RecurringBookingSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Material (không phải Container có màu nền) để hiệu ứng bấm của SwitchListTile hiện được.
+    // Material (không phải Container có màu nền) để hiệu ứng bấm của CheckboxListTile hiện được.
     return Material(
       color: AppColors.white,
       clipBehavior: Clip.antiAlias,
@@ -119,10 +124,12 @@ class RecurringBookingSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SwitchListTile(
+          // Ô tick "Lặp lại vào giờ này mỗi tuần".
+          CheckboxListTile(
             value: enabled,
-            onChanged: available || enabled ? onToggle : null,
-            activeThumbColor: AppColors.primaryGreen,
+            onChanged: available || enabled ? (v) => onToggle(v ?? false) : null,
+            activeColor: AppColors.primaryGreen,
+            controlAffinity: ListTileControlAffinity.trailing,
             secondary: const Icon(Icons.event_repeat, color: AppColors.primaryGreen),
             title: const Text(
               BookingStrings.recurringToggle,
@@ -228,19 +235,37 @@ class RecurringBookingSection extends StatelessWidget {
         side: BorderSide(color: selected ? AppColors.primaryGreen : AppColors.cardBorder),
       );
 
-  Widget _sessionRow(RecurringSession s) {
+  Widget _sessionRow(RecurringSession s) => RecurringDayRow(session: s);
+
+  Widget _note(String text, Color color) => Text(text, style: TextStyle(fontSize: 12, color: color, height: 1.4));
+}
+
+/// Một ngày trong lịch lặp lại: ✔ xanh khi đặt được, ❌ đỏ kèm lý do khi kẹt.
+/// [invalidReason]: ngày này đặt được nhưng thuộc gói sai luật (màn Thanh toán kiểm lại) → vẫn đánh ❌.
+class RecurringDayRow extends StatelessWidget {
+  final RecurringSession session;
+  final String? invalidReason;
+
+  const RecurringDayRow({super.key, required this.session, this.invalidReason});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = session;
     final issue = switch (s.issue) {
-      RecurringIssue.taken => BookingStrings.recurringWeekTaken,
-      RecurringIssue.notOpen => BookingStrings.recurringWeekNotOpen,
-      null => null,
-    };
+          RecurringIssue.taken => BookingStrings.recurringWeekTaken,
+          RecurringIssue.notOpen => BookingStrings.recurringWeekNotOpen,
+          RecurringIssue.lengthMismatch => BookingStrings.recurringWeekLengthMismatch,
+          null => null,
+        } ??
+        invalidReason;
+    final ok = issue == null;
     final times = describeCourtTimes(s.slots);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(s.isOk ? Icons.check_circle : Icons.cancel, size: 16, color: s.isOk ? AppColors.primaryGreen : Colors.red),
+          Icon(ok ? Icons.check_circle : Icons.cancel, size: 16, color: ok ? AppColors.primaryGreen : Colors.red),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -262,6 +287,4 @@ class RecurringBookingSection extends StatelessWidget {
       ),
     );
   }
-
-  Widget _note(String text, Color color) => Text(text, style: TextStyle(fontSize: 12, color: color, height: 1.4));
 }
