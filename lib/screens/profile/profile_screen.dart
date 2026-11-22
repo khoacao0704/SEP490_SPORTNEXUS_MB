@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/main_drawer.dart';
 import '../../core/constants/fair_play_rules.dart';
+import '../../core/constants/wallet_rules.dart';
+import '../../core/strings/identity_strings.dart';
 import '../../core/strings/profile_strings.dart';
 import '../../core/strings/review_strings.dart';
 import '../../core/strings/team_strings.dart';
@@ -28,6 +30,7 @@ import '../wallet/transaction_history_screen.dart';
 import '../wallet/withdraw_screen.dart';
 import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
+import 'identity_verification_screen.dart';
 import 'player_survey_screen.dart';
 import 'top_up_wallet_screen.dart';
 
@@ -176,6 +179,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.groups_outlined,
               title: TeamStrings.myTeams,
               screen: const MyTeamsScreen(),
+            ),
+            _menuTile(
+              icon: Icons.badge_outlined,
+              title: IdentityStrings.menu,
+              screen: const IdentityVerificationScreen(),
             ),
             _menuTile(
               icon: Icons.lock_outline,
@@ -350,7 +358,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => _openWalletAction(true, const WithdrawScreen()),
+                    onPressed: () => _openWalletAction(true, const WithdrawScreen(policy: WithdrawalPolicy.player)),
                     icon: const Icon(Icons.arrow_upward, color: Colors.white),
                     label: const Text('Đổi ra tiền', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     style: OutlinedButton.styleFrom(

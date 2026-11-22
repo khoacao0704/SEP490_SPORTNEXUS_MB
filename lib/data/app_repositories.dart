@@ -5,6 +5,7 @@ import 'api/api_auth_repository.dart';
 import 'api/api_booking_repository.dart';
 import 'api/api_client.dart';
 import 'api/api_facility_repository.dart';
+import 'api/api_identity_repository.dart';
 import 'api/api_lfg_repository.dart';
 import 'api/api_notification_repository.dart';
 import 'api/api_player_tournament_repository.dart';
@@ -23,6 +24,7 @@ import 'mock/mock_ai_chat_repository.dart';
 import 'mock/mock_auth_repository.dart';
 import 'mock/mock_booking_repository.dart';
 import 'mock/mock_facility_repository.dart';
+import 'mock/mock_identity_repository.dart';
 import 'mock/mock_lfg_repository.dart';
 import 'mock/mock_notification_repository.dart';
 import 'mock/mock_owner_repository.dart';
@@ -39,6 +41,7 @@ import 'repositories/ai_chat_repository.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/booking_repository.dart';
 import 'repositories/facility_repository.dart';
+import 'repositories/identity_repository.dart';
 import 'repositories/lfg_repository.dart';
 import 'repositories/notification_repository.dart';
 import 'repositories/organizer_tournament_repository.dart';
@@ -84,6 +87,10 @@ class AppRepositories {
   /// Ví người chơi: số dư, lịch sử, nạp Điểm PayOS. KHÔNG đổi Điểm ra tiền (BE từ 07/11/2026 chỉ cho Chủ sân rút, Player 403).
   static WalletRepository wallet =
       ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api, supportsWithdrawal: false);
+
+  /// Xác minh danh tính eKYC (chụp CCCD + chân dung), dữ liệu thật; dùng chung Owner và Player.
+  static IdentityRepository identity =
+      ApiConfig.useMockAuth ? MockIdentityRepository() : ApiIdentityRepository(api: api);
 
   /// Mã giảm giá của người chơi (chỉ xem, dữ liệu thật).
   static VoucherRepository voucher = ApiConfig.useMockAuth ? MockVoucherRepository() : ApiVoucherRepository(api: api);

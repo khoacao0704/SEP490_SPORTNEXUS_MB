@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../data/app_repositories.dart';
+import '../../core/constants/voucher_rules.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/constants/booking_rules.dart';
 import '../../core/constants/split_payment_rules.dart';
 import '../../core/strings/booking_strings.dart';
@@ -13,9 +15,11 @@ import '../../data/repositories/wallet_repository.dart';
 import '../../models/booking.dart';
 import '../../models/recurring_plan.dart';
 import '../../models/time_slot.dart';
+import '../../models/voucher.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/booking/booking_ticket_qr.dart';
 import '../../widgets/booking/invite_by_phone.dart';
+import '../../widgets/booking/recurring_booking_section.dart';
 import '../main/main_navigation_screen.dart';
 import '../wallet/vietqr_payment_screen.dart';
 import 'split_booking_screen.dart';
@@ -36,9 +40,13 @@ class BookingCheckoutScreen extends StatefulWidget {
   /// Gói chỉ thanh toán 100%, không chia Điểm nhóm.
   final RecurringCheckout? recurring;
 
+  /// % giảm gói của cơ sở: dùng khi đặt thường mà các ca tình cờ thành gói (BE tự coi là gói và tự giảm).
+  final int packageDiscountPercent;
+
   const BookingCheckoutScreen({
     this.hold,
     this.recurring,
+    this.packageDiscountPercent = 0,
     super.key,
     required this.sport,
     required this.courtName,
@@ -80,18 +88,136 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     return prices.fold(0, (sum, p) => sum + SplitPaymentRules.inviteeShare(p, _people));
   }
 
-  /// Tổng sau giảm của gói (tạm tính; giá thật do BE tính khi đặt). Đặt lẻ: bằng [BookingCheckoutScreen.totalAmount].
-  int get _fullAmount {
-    final recurring = widget.recurring;
-    return recurring == null
-        ? widget.totalAmount
-        : RecurringBookingRules.discounted(widget.totalAmount, recurring.discountPercent);
+  /// Lý do lịch lặp lại không thành gói (app tự kiểm theo luật BE vì BE chưa có API xem trước). Rỗng = hợp lệ.
+  List<String> get _recurringProblems => widget.recurring?.problems ?? const [];
+
+  /// Gói sai luật: không hiện giảm giá, khóa thanh toán (BE sẽ từ chối).
+  bool get _recurringBlocked => _recurringProblems.isNotEmpty;
+
+  /// Đặt thường (không bật lặp lại) nhưng các ca tình cờ thành gói đúng luật BE (≥4 buổi sau khi gộp ca liền nhau,
+  /// cùng sân con, cùng độ dài, cách đúng 7 ngày): BE tự coi là gói → tự giảm %, không cho chia tiền.
+  late final bool _autoPackage = widget.recurring == null &&
+      widget.hold != null &&
+      RecurringPlan.packageError(widget.hold!.slots) == null;
+
+  /// Đơn là gói (chủ động bật lặp lại hoặc tình cờ thành gói): khóa chia tiền, chữ bill / nút riêng.
+  bool get _isPackage => widget.recurring != null || _autoPackage;
+
+  int get _discountPercent =>
+      widget.recurring?.discountPercent ?? (_autoPackage ? widget.packageDiscountPercent : 0);
+
+  /// Gói hợp lệ và cơ sở có giảm: hiện giá gốc gạch ngang + giá mới.
+  bool get _discountApplied => _isPackage && _discountPercent > 0 && !_recurringBlocked;
+
+  /// Tổng sau giảm của gói (tạm tính; giá thật do BE tính khi đặt). Đặt lẻ hoặc gói sai luật: giá gốc.
+  int get _fullAmount => !_isPackage || _recurringBlocked
+      ? widget.totalAmount
+      : RecurringBookingRules.discounted(widget.totalAmount, _discountPercent);
+
+  // ---------- Voucher (thẻ 43): 1 mã / đơn, chỉ đơn thường thành đúng 1 đơn, trả 100% ----------
+
+  /// Mã còn dùng của người chơi (`null` khi đang tải / tải lỗi).
+  List<Voucher>? _vouchers;
+  Voucher? _voucher;
+
+  /// Lý do không dùng được voucher cho đơn này (`null` = dùng được).
+  String? get _voucherBlockReason {
+    if (_isPackage) return BookingStrings.voucherNotForPackage;
+    if (!VoucherRules.formsSingleBooking(widget.hold?.slots ?? const [])) return BookingStrings.voucherSingleOnly;
+    if (_paymentTypeIndex == 2) return BookingStrings.voucherNotForSplit;
+    return null;
+  }
+
+  /// Số Điểm voucher giảm (tính trên giá sau giảm gói, như BE).
+  int get _voucherDiscount =>
+      _voucher == null || _voucherBlockReason != null ? 0 : VoucherRules.discount(_fullAmount, _voucher!.discountPercent);
+
+  Future<void> _loadVouchers() async {
+    try {
+      final now = DateTime.now();
+      final list = (await AppRepositories.voucher.getMyVouchers(status: VoucherStatus.active))
+          .where((v) => v.expiresAt.isAfter(now))
+          .toList()
+        ..sort((a, b) => b.discountPercent != a.discountPercent
+            ? b.discountPercent.compareTo(a.discountPercent)
+            : a.expiresAt.compareTo(b.expiresAt));
+      if (!mounted) return;
+      setState(() {
+        _vouchers = list;
+        if (_voucher != null && !list.any((v) => v.id == _voucher!.id)) _voucher = null;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _vouchers = const []);
+    }
+  }
+
+  Future<void> _pickVoucher() async {
+    final reason = _voucherBlockReason;
+    if (reason != null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(reason)));
+      return;
+    }
+    final vouchers = _vouchers ?? const [];
+    if (vouchers.isEmpty) return;
+    // Hàm trả `null` khi đóng sheet; chọn "Không dùng mã" trả chuỗi rỗng.
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheet) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(sheet).size.height * 0.7),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Text(
+                  BookingStrings.voucherSheetTitle,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain),
+                ),
+              ),
+              for (final v in vouchers)
+                ListTile(
+                  leading: const Icon(Icons.confirmation_number_outlined, color: AppColors.primaryGreen),
+                  title: Text(BookingStrings.voucherChosen(v.discountPercent),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text(
+                    '${BookingStrings.voucherExpires('${Formatters.dayMonth(v.expiresAt)}/${v.expiresAt.year}')} • '
+                    '-${Formatters.vnd(VoucherRules.discount(_fullAmount, v.discountPercent))}',
+                  ),
+                  trailing: Icon(
+                    v.id == _voucher?.id ? Icons.radio_button_checked : Icons.radio_button_off,
+                    color: AppColors.primaryGreen,
+                  ),
+                  onTap: () => Navigator.pop(sheet, v.id),
+                ),
+              ListTile(
+                leading: const Icon(Icons.block, color: AppColors.textSecondary),
+                title: const Text(BookingStrings.voucherDontUse),
+                trailing: Icon(
+                  _voucher == null ? Icons.radio_button_checked : Icons.radio_button_off,
+                  color: AppColors.primaryGreen,
+                ),
+                onTap: () => Navigator.pop(sheet, ''),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _voucher = vouchers.where((v) => v.id == picked).firstOrNull);
   }
 
   int get _payAmount {
     switch (_paymentTypeIndex) {
       case 0:
-        return _fullAmount;
+        return _fullAmount - _voucherDiscount;
       default:
         return _splitByInvite ? _inviteHostAmount : SplitPaymentRules.bookerAmount(widget.totalAmount, _splitParts);
     }
@@ -99,6 +225,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
 
   String get _payLabel => switch (_paymentTypeIndex) {
     0 when widget.recurring != null => BookingStrings.packageTitle(widget.recurring!.sessions),
+    0 when _autoPackage => BookingStrings.packageLabel,
     0 => 'Thanh toán 100% giá sân',
     _ => _splitByInvite ? SplitPaymentStrings.invitePay : SplitPaymentStrings.payNow(_splitParts),
   };
@@ -113,6 +240,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     _secondsRemaining = widget.initialSecondsRemaining;
     _startTimer();
     _loadWalletBalance();
+    if (widget.hold != null) _loadVouchers();
   }
 
   Future<void> _loadWalletBalance() async {
@@ -181,6 +309,13 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     if (_paymentTypeIndex == 2) return _splitByInvite ? _startInviteSplit() : _startSplit();
     final hold = widget.hold;
     if (hold == null) return;
+    // Kiểm lại ngay trước khi trừ Điểm (nút đã khóa, đây là chặn thêm).
+    if (_recurringBlocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(BookingStrings.recurringInvalid(_recurringProblems)), backgroundColor: Colors.red),
+      );
+      return;
+    }
     final payAmount = _payAmount;
 
     if (_selectedPaymentMethod == 0 && _walletBalance < payAmount) {
@@ -210,11 +345,17 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
           location: widget.location,
           schedule: widget.dateTime,
           recurring: recurring != null,
-          discountPercent: recurring?.discountPercent ?? 0,
+          discountPercent: _discountPercent,
+          voucher: _voucherDiscount > 0 ? _voucher : null,
         ));
         donePackages++;
       }
     } on BookingException catch (e) {
+      // Voucher bị BE từ chối (hết hạn / đã dùng…): bỏ mã đang chọn, tải lại danh sách để chọn mã khác.
+      if (_voucher != null) {
+        setState(() => _voucher = null);
+        _loadVouchers();
+      }
       donePackages == 0 ? _fail(e.message) : _partialFail(donePackages, packages.length, e.message);
       return;
     } on WalletException catch (e) {
@@ -248,7 +389,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              recurring != null
+              _isPackage
                   ? BookingStrings.packagesBooked(bookings.length, packages.length, paidTotal)
                   : 'Đã thanh toán ${_formatCurrency(paidTotal)} Điểm cho ${widget.courtName}. Vé QR Cá nhân đã sẵn sàng.',
               textAlign: TextAlign.center,
@@ -423,7 +564,17 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
         ..showSnackBar(SnackBar(content: Text(unavailable)));
       return;
     }
-    setState(() => _paymentTypeIndex = index);
+    // Chuyển sang chia tiền: BE không nhận voucher cho đơn chia tiền → bỏ mã đang chọn.
+    final dropVoucher = index == 2 && _voucher != null;
+    setState(() {
+      _paymentTypeIndex = index;
+      if (dropVoucher) _voucher = null;
+    });
+    if (dropVoucher) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text(BookingStrings.voucherRemovedForSplit)));
+    }
   }
 
   /// Lặp lại nhiều gói: một số gói đã đặt (đã trừ Điểm) rồi gói sau lỗi → báo rõ, đưa người dùng tới Lịch Đặt.
@@ -566,25 +717,64 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                     _buildSummaryRow(Icons.event_repeat, BookingStrings.packageLabel, BookingStrings.packageSummary(r.sessions, r.summary)),
                     const SizedBox(height: 10),
                   ],
+                  // Gói được giảm: gạch giá gốc, giá mới màu đỏ kèm "Đã áp dụng giảm X%".
                   _buildSummaryRow(
                     Icons.payments_outlined,
                     'Tổng giá sân gốc',
                     '${_formatCurrency(widget.totalAmount)} Điểm',
+                    valueStyle: _discountApplied
+                        ? const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            decoration: TextDecoration.lineThrough,
+                          )
+                        : null,
                   ),
-                  if (widget.recurring case final r? when r.discountPercent > 0) ...[
+                  if (_discountApplied) ...[
                     const SizedBox(height: 10),
                     _buildSummaryRow(
                       Icons.local_offer_outlined,
-                      BookingStrings.discountRow(r.discountPercent),
-                      '-${_formatCurrency(widget.totalAmount - _fullAmount)} Điểm',
+                      BookingStrings.discountRow(_discountPercent),
+                      '${_formatCurrency(_fullAmount)} Điểm',
+                      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red),
+                      valueStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red),
+                      iconColor: Colors.red,
+                    ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 24),
+                      child: Text(
+                        BookingStrings.monthlyPackageNote(_discountPercent),
+                        style: TextStyle(fontSize: 11, color: Colors.red.shade700, height: 1.4),
+                      ),
                     ),
                   ],
-                  if (widget.recurring != null) ...[
+                  if (_autoPackage) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      '${BookingStrings.autoPackageNote(_discountPercent)} ${BookingStrings.recurringCancelRule} '
+                      '${BookingStrings.recurringNoSplit} ${BookingStrings.estimatedNote}',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
+                    ),
+                  ],
+                  if (widget.recurring case final r?) ...[
+                    if (_recurringBlocked) ...[
+                      const SizedBox(height: 12),
+                      _buildRecurringWarning(),
+                    ],
+                    if (r.days.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildRecurringDays(r),
+                    ],
                     const SizedBox(height: 10),
                     const Text(
                       '${BookingStrings.recurringCancelRule} ${BookingStrings.recurringNoSplit} ${BookingStrings.estimatedNote}',
                       style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
                     ),
+                  ],
+                  if (widget.hold != null) ...[
+                    const Divider(height: 24, color: AppColors.divider),
+                    _buildVoucherSection(),
                   ],
                 ],
               ),
@@ -639,7 +829,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '${_formatCurrency(_fullAmount)} Điểm',
+                                  '${_formatCurrency(_fullAmount - _voucherDiscount)} Điểm',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: AppColors.primaryGreen,
@@ -653,7 +843,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                       ),
                     ],
                   ),
-                  if (widget.hold != null && widget.recurring == null) ...[
+                  if (widget.hold != null) ...[
                     const SizedBox(height: 10),
                     _buildSplitOption(),
                   ],
@@ -818,9 +1008,9 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'TỔNG THANH TOÁN KỲ NÀY',
-                          style: TextStyle(
+                        Text(
+                          _isPackage ? BookingStrings.packagePrepayTitle : 'TỔNG THANH TOÁN KỲ NÀY',
+                          style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF64748B),
@@ -855,10 +1045,12 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
               ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 48, minWidth: double.infinity),
                 child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _handleConfirmPayment,
+                  onPressed: _isLoading || _recurringBlocked ? null : _handleConfirmPayment,
                   icon: const Icon(Icons.check_circle_outline, size: 20),
                   label: Text(
-                    'Xác nhận thanh toán & lấy vé QR (${_formatCurrency(payAmount)} Điểm)',
+                    _isPackage
+                        ? BookingStrings.payNowPackage(payAmount)
+                        : 'Xác nhận thanh toán & lấy vé QR (${_formatCurrency(payAmount)} Điểm)',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
@@ -899,7 +1091,43 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
     );
   }
 
+  /// Gói: nút chia tiền làm mờ, bấm vào chỉ giải thích (BE trả 400 nếu gói gửi chia tiền).
+  Widget _buildLockedSplitOption() => GestureDetector(
+        onTap: () {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(const SnackBar(content: Text(BookingStrings.splitNotForPackage)));
+        },
+        child: Opacity(
+          opacity: 0.5,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.cardBorder),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.groups_outlined, size: 20, color: AppColors.textSecondary),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    SplitPaymentStrings.option,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ),
+                SizedBox(width: 8),
+                Icon(Icons.lock_outline, size: 16, color: AppColors.textSecondary),
+              ],
+            ),
+          ),
+        ),
+      );
+
   Widget _buildSplitOption() {
+    if (_isPackage) return _buildLockedSplitOption();
     final selected = _paymentTypeIndex == 2;
     return GestureDetector(
       onTap: () => _selectPaymentType(2),
@@ -1009,19 +1237,152 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
         ),
       ];
 
-  Widget _buildSummaryRow(IconData icon, String label, String value) {
+  /// Nút "Chọn Mã Giảm Giá" (mờ kèm lý do khi đơn không dùng được) + công thức Tổng tiền − Giảm giá = Thực thu.
+  Widget _buildVoucherSection() {
+    final blocked = _voucherBlockReason;
+    final vouchers = _vouchers;
+    final none = vouchers != null && vouchers.isEmpty;
+    final voucher = blocked == null ? _voucher : null;
+    final label = voucher != null
+        ? BookingStrings.voucherChosen(voucher.discountPercent)
+        : none && blocked == null
+            ? BookingStrings.voucherNone
+            : BookingStrings.voucherPick;
+    final enabled = blocked == null && !none && vouchers != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Opacity(
+          opacity: enabled || voucher != null ? 1 : 0.5,
+          child: Material(
+            color: voucher != null ? AppColors.lightGreen : Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: voucher != null ? AppColors.primaryGreen : AppColors.cardBorder),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              // Mờ vẫn bấm được để báo lý do; chưa có mã thì không làm gì.
+              onTap: none && blocked == null ? null : _pickVoucher,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.confirmation_number_outlined,
+                        size: 20, color: enabled || voucher != null ? AppColors.primaryGreen : AppColors.textSecondary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textMain),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(blocked != null ? Icons.lock_outline : Icons.chevron_right,
+                        size: 18, color: AppColors.textSecondary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (voucher != null) ...[
+          const SizedBox(height: 10),
+          _buildSummaryRow(Icons.receipt_outlined, BookingStrings.formulaTotal, '${_formatCurrency(_fullAmount)} Điểm'),
+          const SizedBox(height: 6),
+          _buildSummaryRow(
+            Icons.remove_circle_outline,
+            BookingStrings.formulaDiscount(voucher.discountPercent),
+            '-${_formatCurrency(_voucherDiscount)} Điểm',
+            valueStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red),
+          ),
+          const SizedBox(height: 6),
+          _buildSummaryRow(
+            Icons.payments_outlined,
+            BookingStrings.formulaPay,
+            '${_formatCurrency(_fullAmount - _voucherDiscount)} Điểm',
+            labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textMain),
+            valueStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primaryGreen),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Cảnh báo đỏ: lịch không thành gói → không giảm giá, không cho thanh toán.
+  Widget _buildRecurringWarning() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.red.shade300),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.error_outline, size: 18, color: Colors.red),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    BookingStrings.recurringInvalidTitle,
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.red),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    BookingStrings.recurringInvalid(_recurringProblems),
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade900, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  /// Từng ngày của gói: ✔ đặt được, ❌ bị kẹt / thuộc gói sai luật.
+  Widget _buildRecurringDays(RecurringCheckout r) {
+    final bad = r.badSlotIds;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          BookingStrings.recurringDaysTitle,
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMain),
+        ),
+        const SizedBox(height: 4),
+        for (final d in r.days)
+          RecurringDayRow(
+            session: d,
+            invalidReason: d.slots.any((s) => bad.contains(s.id)) ? BookingStrings.recurringWeekInvalid : null,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryRow(
+    IconData icon,
+    String label,
+    String value, {
+    TextStyle? labelStyle,
+    TextStyle? valueStyle,
+    Color iconColor = AppColors.textSecondary,
+  }) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: AppColors.textSecondary),
+        Icon(icon, size: 16, color: iconColor),
         const SizedBox(width: 8),
-        Expanded(child: Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+        Expanded(child: Text(label, style: labelStyle ?? const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
         const SizedBox(width: 8),
         Expanded(
           flex: 2,
           child: Text(
             value,
             textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMain),
+            style: valueStyle ?? const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMain),
           ),
         ),
       ],

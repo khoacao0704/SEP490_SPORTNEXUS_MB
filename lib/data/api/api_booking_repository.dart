@@ -4,6 +4,7 @@ import '../../core/strings/booking_strings.dart';
 import '../../core/strings/split_payment_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/booking.dart';
+import '../../models/voucher.dart';
 import '../../models/time_slot.dart';
 import '../repositories/booking_repository.dart';
 import '../session_store.dart';
@@ -68,6 +69,7 @@ class ApiBookingRepository implements BookingRepository {
     required String schedule,
     bool recurring = false,
     int discountPercent = 0,
+    Voucher? voucher,
   }) async {
     if (paymentType == BookingPaymentType.split) throw const BookingException(BookingStrings.useSplitFlow);
     final me = await SessionStore.readUser();
@@ -78,6 +80,8 @@ class ApiBookingRepository implements BookingRepository {
     final data = await _call(() => _api.post(bookingsPath, body: {
           'courtSlotIds': slots.map((s) => s.id).toList(),
           if (recurring) 'isRecurring': true,
+          // 1 mã / đơn, chỉ khi lần đặt tạo đúng 1 đơn (xem VoucherRules). Sai / hết hạn / đã dùng → 400 kèm câu báo.
+          'voucherId': ?voucher?.id,
         })) as Map<String, dynamic>;
 
     // Gói định kỳ: BE trả % giảm (discountPercent) và tổng đã trả (totalAmount) của cả lần đặt; mỗi buổi chỉ có
@@ -93,7 +97,11 @@ class ApiBookingRepository implements BookingRepository {
     final prices = paidPerSession(
       originals,
       percent: percent,
-      paidTotal: data['totalAmount'] == null ? null : _money(data['totalAmount']),
+      // Số khách thực trả (sau giảm gói + voucher): totalAmountPaid; bản cũ chỉ có totalAmount.
+      paidTotal: switch (data['totalAmountPaid'] ?? data['totalAmount']) {
+        null => null,
+        final v => _money(v),
+      },
     );
     final now = DateTime.now();
     final bookings = items.indexed.map((entry) {

@@ -3,9 +3,12 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/booking_rules.dart';
+import '../../core/constants/voucher_rules.dart';
 import '../../core/strings/booking_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/booking.dart';
+import '../../models/voucher.dart';
+import '../../models/recurring_plan.dart';
 import '../../models/split_payment.dart';
 import '../../models/time_slot.dart';
 import '../../models/wallet_transaction.dart';
@@ -49,6 +52,7 @@ class MockBookingRepository implements BookingRepository {
     required String schedule,
     bool recurring = false,
     int discountPercent = 0,
+    Voucher? voucher,
   }) async {
     await _delay();
     if (paymentType == BookingPaymentType.split) throw const BookingException(BookingStrings.useSplitFlow);
@@ -56,12 +60,22 @@ class MockBookingRepository implements BookingRepository {
     final now = _now();
     final slots = [...hold.slots]..sort((a, b) => a.start.compareTo(b.start));
     // Như BE: danh sách thành gói hợp lệ thì là gói (giảm giá); cờ [recurring] chỉ để báo lỗi khi không thành gói.
-    final packageError = _packageError(slots);
+    final packageError = RecurringPlan.packageError(slots);
     if (recurring && packageError != null) throw BookingException(BookingStrings.notAPackage(packageError));
     final isPackage = packageError == null;
     final percent = isPackage ? discountPercent : 0;
-    int priceOf(TimeSlot s) => RecurringBookingRules.discounted(s.price, percent);
-    final total = slots.fold(0, (sum, s) => sum + priceOf(s));
+    // Như BE: voucher chỉ cho lần đặt thành đúng 1 đơn (không gói, cùng sân, ca liền nhau); giảm trên giá sau gói.
+    if (voucher != null) {
+      if (isPackage || !VoucherRules.formsSingleBooking(slots)) throw const BookingException(BookingStrings.voucherSingleOnly);
+      if (voucher.status != VoucherStatus.active || !voucher.expiresAt.isAfter(now)) {
+        throw const BookingException(BookingStrings.voucherUnavailable);
+      }
+    }
+    final prices = [for (final s in slots) RecurringBookingRules.discounted(s.price, percent)];
+    final voucherOff = VoucherRules.discount(prices.fold(0, (a, b) => a + b), voucher?.discountPercent ?? 0);
+    if (voucherOff > 0) prices[prices.length - 1] -= voucherOff;
+    int priceOf(TimeSlot s) => prices[slots.indexOf(s)];
+    final total = prices.fold(0, (sum, p) => sum + p);
     final baseId = '${now.millisecondsSinceEpoch.toRadixString(36).toUpperCase()}${++_counter}';
     final groupId = isPackage ? 'PKG-$baseId' : null;
     String idFor(int i) => slots.length == 1 ? baseId : '$baseId-${i + 1}';
@@ -286,32 +300,6 @@ class MockBookingRepository implements BookingRepository {
       if (b.id == booking.id) result = cancelled;
     }
     return result ?? booking;
-  }
-
-  /// Lý do các khung không thành gói cố định (`null` = thành gói): ≥4 buổi, cùng sân con, cùng độ dài,
-  /// buổi sau cách buổi trước đúng 7 ngày. Các ca liền nhau trong cùng ngày tính là một buổi.
-  static String? _packageError(List<TimeSlot> sorted) {
-    final sessions = <List<TimeSlot>>[];
-    for (final s in sorted) {
-      final last = sessions.lastOrNull;
-      if (last != null && last.last.end == s.start && last.last.courtName == s.courtName) {
-        last.add(s);
-      } else {
-        sessions.add([s]);
-      }
-    }
-    if (sessions.length < RecurringBookingRules.minSessions) return BookingStrings.packageTooFew;
-    final first = sessions.first;
-    final length = first.last.end.difference(first.first.start);
-    for (var i = 1; i < sessions.length; i++) {
-      final s = sessions[i];
-      if (s.first.courtName != first.first.courtName) return BookingStrings.packageSameCourt;
-      if (s.last.end.difference(s.first.start) != length) return BookingStrings.packageSameLength;
-      if (s.first.start.difference(sessions[i - 1].first.start) != RecurringBookingRules.interval) {
-        return BookingStrings.packageWeekly;
-      }
-    }
-    return null;
   }
 
   // ---------------- Nội bộ ----------------

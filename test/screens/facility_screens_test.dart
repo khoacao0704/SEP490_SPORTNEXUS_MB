@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/services/location_service.dart';
+import 'package:test1/core/strings/booking_strings.dart';
 import 'package:test1/core/strings/facility_strings.dart';
 import 'package:test1/core/utils/formatters.dart';
 import 'package:test1/data/app_repositories.dart';
@@ -15,6 +16,8 @@ import 'package:test1/screens/booking/booking_checkout_screen.dart';
 import 'package:test1/screens/facility/facility_detail_screen.dart';
 import 'package:test1/screens/facility/facility_search_screen.dart';
 import 'package:test1/widgets/facility/facility_card.dart';
+
+import '../helpers/layout_check.dart';
 
 class _FakeLocationService extends LocationService {
   final LocationResult result;
@@ -115,6 +118,39 @@ void main() {
 
     await pumpScreen(tester, Scaffold(body: Column(children: [card(promoted), card(facility)])));
     expect(find.text(FacilityStrings.promoted), findsOneWidget);
+  });
+
+  testWidgets('Thẻ cơ sở: nhãn -X% Đặt Cố Định theo % của cơ sở, 0% thì ẩn; không tràn khi có cả nhãn Nổi bật', (tester) async {
+    final f = MockFacilityData.facilities.first;
+    Facility withPercent(int percent, {bool promoted = false}) => Facility(
+          id: '${f.id}-$percent',
+          name: f.name,
+          address: f.address,
+          city: f.city,
+          district: f.district,
+          location: f.location,
+          offerings: f.offerings,
+          rating: f.rating,
+          reviewCount: f.reviewCount,
+          imageUrls: const [],
+          openTime: f.openTime,
+          closeTime: f.closeTime,
+          phone: f.phone,
+          isPromoted: promoted,
+          recurringDiscountPercent: percent,
+        );
+    Widget card(Facility x) => FacilityCard(result: FacilitySearchResult(facility: x), onTap: () {});
+
+    await pumpScreen(tester, Scaffold(body: Column(children: [card(withPercent(15)), card(withPercent(0))])));
+    expect(find.text(BookingStrings.discountBadge(15)), findsOneWidget);
+    expect(find.textContaining('Đặt Cố Định'), findsOneWidget);
+
+    final problems = await collectLayoutProblems(
+      tester,
+      'Thẻ cơ sở có nhãn giảm + Nổi bật',
+      () => Scaffold(body: ListView(padding: const EdgeInsets.all(16), children: [card(withPercent(50, promoted: true))])),
+    );
+    expect(problems, isEmpty, reason: problems.join('\n'));
   });
 
   testWidgets('Tìm sân: có GPS ở Hà Nội thì tự chọn Hà Nội và hiện khoảng cách', (tester) async {

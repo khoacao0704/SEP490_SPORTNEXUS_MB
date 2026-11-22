@@ -256,6 +256,9 @@ class OwnerFacility {
   final double rating;
   final int reviewCount;
 
+  /// % giảm cho khách đặt gói cố định hằng tuần (0–50, 0 = không giảm; chủ sân chịu phần giảm).
+  final int recurringDiscountPercent;
+
   const OwnerFacility({
     required this.id,
     required this.status,
@@ -268,6 +271,7 @@ class OwnerFacility {
     this.change,
     this.rating = 0,
     this.reviewCount = 0,
+    this.recurringDiscountPercent = 0,
   });
 
   bool get isApproved => status == ApprovalStatus.approved;
@@ -309,6 +313,7 @@ class OwnerFacility {
         closeTime: formatMinutes(operations.closeMinutes),
         phone: operations.phone,
         description: operations.description,
+        recurringDiscountPercent: recurringDiscountPercent,
       );
 
   OwnerFacility copyWith({
@@ -322,6 +327,7 @@ class OwnerFacility {
     ProfileChange? change,
     bool clearRejectReason = false,
     bool clearChange = false,
+    int? recurringDiscountPercent,
   }) =>
       OwnerFacility(
         id: id,
@@ -335,5 +341,6 @@ class OwnerFacility {
         change: clearChange ? null : change ?? this.change,
         rating: rating,
         reviewCount: reviewCount,
+        recurringDiscountPercent: recurringDiscountPercent ?? this.recurringDiscountPercent,
       );
 }

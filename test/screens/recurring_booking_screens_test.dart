@@ -139,7 +139,8 @@ void main() {
 
   testWidgets('Chi tiết sân: lặp 2 thứ × 1 khung × 4 tuần = 8 lượt → tách 2 gói, thanh toán 1 lần', (tester) async {
     await pump(tester, FacilityDetailScreen(facility: thienTrieu, initialSport: Sport.badminton));
-    expect(find.text(BookingStrings.discountBadge(10)), findsOneWidget);
+    expect(find.widgetWithText(CheckboxListTile, BookingStrings.recurringToggle), findsOneWidget);
+    expect(find.text(BookingStrings.discountBanner(10)), findsOneWidget);
 
     final now = DateTime.now();
     final tomorrow = DateTime(now.year, now.month, now.day + 1);
@@ -151,9 +152,9 @@ void main() {
     final slots = (await tester.runAsync(() => freeOnAnyCourt(dates)))!;
     await pickSlot(tester, slots.first);
 
-    await tester.ensureVisible(find.byType(Switch));
+    await tester.ensureVisible(find.byType(Checkbox));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(Switch).hitTestable());
+    await tester.tap(find.byType(Checkbox).hitTestable());
     await tester.pumpAndSettle();
     // Mặc định lặp đúng thứ của ngày bắt đầu: 1 × 1 × 4 = 4 lượt.
     expect(find.text(BookingStrings.recurringCount(1, 1, 1, 4, 4)), findsOneWidget);
@@ -179,16 +180,137 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(BookingCheckoutScreen), findsOneWidget);
     expect(find.text(BookingStrings.discountRow(10)), findsOneWidget);
-    expect(find.text(SplitPaymentStrings.option), findsNothing);
-
-    await tester.tap(find.textContaining('Xác nhận thanh toán'));
-    await tester.pumpAndSettle();
+    expect(find.text(BookingStrings.monthlyPackageNote(10)), findsOneWidget);
+    // Chia tiền hiện mờ, bấm vào chỉ giải thích.
+    await tester.ensureVisible(find.text(SplitPaymentStrings.option));
+    await tester.tap(find.text(SplitPaymentStrings.option));
+    await tester.pump();
+    expect(find.text(BookingStrings.splitNotForPackage), findsOneWidget);
+    expect(find.text(SplitPaymentStrings.partsTitle), findsNothing);
     final paid = slots.fold(0, (sum, s) => sum + RecurringBookingRules.discounted(s.price, 10));
+    expect(find.text(BookingStrings.packagePrepayTitle), findsOneWidget);
+    expect(find.text(BookingStrings.payNowPackage(RecurringBookingRules.discounted(original, 10))), findsOneWidget);
+
+    await tester.tap(find.textContaining('Thanh toán ngay'));
+    await tester.pumpAndSettle();
     expect(find.text(BookingStrings.packagesBooked(8, 2, paid)), findsOneWidget);
 
     final mine = (await tester.runAsync(booking.getMyBookings))!.where((b) => b.isRecurring).toList();
     expect(mine, hasLength(8));
     expect(mine.map((b) => b.recurringGroupId).toSet(), hasLength(2)); // mỗi thứ một gói
+  });
+
+  Widget checkoutFor(SlotHold hold, {int percent = 10}) => BookingCheckoutScreen(
+        sport: 'Cầu Lông',
+        courtName: thienTrieu.name,
+        location: 'Q7',
+        dateTime: 'T2 • Sân 1',
+        totalAmount: hold.totalPrice,
+        hold: hold,
+        packageDiscountPercent: percent,
+      );
+
+  testWidgets('Thanh toán đặt thường: 4 tuần liên tiếp cùng sân, cùng giờ → tự thành gói: giảm %, khóa chia tiền', (tester) async {
+    final now = DateTime.now();
+    final weekly = (await tester.runAsync(() => weeklyFree(DateTime(now.year, now.month, now.day + 2), 'Sân 1')))!;
+    final hold = (await tester.runAsync(() => facility.holdSlots(weekly)))!;
+    await pump(tester, checkoutFor(hold));
+
+    final discounted = RecurringBookingRules.discounted(hold.totalPrice, 10);
+    expect(find.text(BookingStrings.discountRow(10)), findsOneWidget);
+    // Giá gốc bị gạch, giá mới màu đỏ cạnh dòng "Đã áp dụng giảm".
+    expect(tester.widget<Text>(find.text(Formatters.vnd(hold.totalPrice)).first).style?.decoration, TextDecoration.lineThrough);
+    final newPrice = find.descendant(
+      of: find.ancestor(of: find.text(BookingStrings.discountRow(10)), matching: find.byType(Row)).first,
+      matching: find.text(Formatters.vnd(discounted)),
+    );
+    expect(tester.widget<Text>(newPrice).style?.color, Colors.red);
+    expect(find.textContaining(BookingStrings.autoPackageNote(10)), findsOneWidget);
+    expect(find.text(BookingStrings.packagePrepayTitle), findsOneWidget);
+    expect(find.text(BookingStrings.payNowPackage(discounted)), findsOneWidget);
+
+    await tester.ensureVisible(find.text(SplitPaymentStrings.option));
+    await tester.tap(find.text(SplitPaymentStrings.option));
+    await tester.pump();
+    expect(find.text(BookingStrings.splitNotForPackage), findsOneWidget);
+    expect(find.text(BookingStrings.payNowPackage(discounted)), findsOneWidget); // vẫn là thanh toán 100%
+
+    await tester.tap(find.text(BookingStrings.payNowPackage(discounted)));
+    await tester.pumpAndSettle();
+    final mine = (await tester.runAsync(booking.getMyBookings))!.where((b) => b.isRecurring).toList();
+    expect(mine, hasLength(4));
+    expect(mine.fold(0, (sum, b) => sum + b.amountPaid), discounted);
+  });
+
+  testWidgets('Thanh toán đặt thường: 4 giờ liền trong 1 tối (1 buổi) → không phải gói, chia tiền bình thường', (tester) async {
+    final now = DateTime.now();
+    final day = DateTime(now.year, now.month, now.day + 2);
+    final slots = (await tester.runAsync(() => facility.getTimeSlots(thienTrieu.id, Sport.badminton, day)))!
+        .where((s) => s.courtName == 'Sân 1')
+        .toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+    final run = [
+      for (var i = 0; i + 3 < slots.length; i++)
+        if ([for (var k = 1; k < 4; k++) slots[i + k - 1].end == slots[i + k].start].every((x) => x)) slots.sublist(i, i + 4),
+    ].first;
+    final hold = (await tester.runAsync(() => facility.holdSlots(run)))!;
+    await pump(tester, checkoutFor(hold));
+
+    expect(find.text(BookingStrings.discountRow(10)), findsNothing);
+    expect(tester.widget<Text>(find.text(Formatters.vnd(hold.totalPrice)).first).style?.decoration, isNot(TextDecoration.lineThrough));
+    expect(find.text(BookingStrings.packagePrepayTitle), findsNothing);
+    expect(find.textContaining('Xác nhận thanh toán'), findsOneWidget);
+    await tester.ensureVisible(find.text(SplitPaymentStrings.option));
+    await tester.tap(find.text(SplitPaymentStrings.option));
+    await tester.pumpAndSettle();
+    expect(find.text(BookingStrings.splitNotForPackage), findsNothing);
+  });
+
+  testWidgets('Thanh toán: gói thiếu tuần / lệch độ dài ca → cảnh báo đỏ, không hiện giảm giá, không cho trả', (tester) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day + 3);
+    final weekly = (await tester.runAsync(() => weeklyFree(start, 'Sân 1')))!;
+    final hold = (await tester.runAsync(() => facility.holdSlots(weekly)))!;
+    final balance = (await tester.runAsync(wallet.getBalance))!;
+    final before = (await tester.runAsync(booking.getMyBookings))!.length;
+
+    await pump(
+      tester,
+      BookingCheckoutScreen(
+        sport: 'Cầu Lông',
+        courtName: thienTrieu.name,
+        location: 'Q7',
+        dateTime: 'T2 • Sân 1',
+        totalAmount: hold.totalPrice,
+        hold: hold,
+        recurring: RecurringCheckout(
+          sessions: 4,
+          discountPercent: 10,
+          summary: 'T2 • Sân 1',
+          // Tuần cuối bị gộp thành ca dài hơn: gói còn 3 buổi đúng luật.
+          packages: [hold.slots.sublist(0, 3)],
+          days: [
+            for (final s in hold.slots.take(3)) RecurringSession(date: s.start, slots: [s]),
+            RecurringSession(date: hold.slots[3].start, issue: RecurringIssue.lengthMismatch),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.text(BookingStrings.recurringInvalidTitle), findsOneWidget);
+    expect(find.textContaining(BookingStrings.recurringHasBadDay), findsOneWidget);
+    expect(find.textContaining(BookingStrings.packageTooFew), findsOneWidget);
+    expect(find.text(BookingStrings.recurringWeekLengthMismatch), findsOneWidget);
+    expect(find.text(BookingStrings.discountRow(10)), findsNothing);
+    // Giá hiện giá gốc (không giảm).
+    final pay = find.ancestor(of: find.textContaining('Thanh toán ngay'), matching: find.byType(ElevatedButton));
+    expect(find.textContaining(Formatters.vnd(hold.totalPrice).split(' ').first), findsWidgets);
+    expect(tester.widget<ElevatedButton>(pay).onPressed, isNull);
+
+    await tester.tap(find.textContaining('Thanh toán ngay'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect((await tester.runAsync(booking.getMyBookings))!.length, before);
+    expect((await tester.runAsync(wallet.getBalance))!, balance);
   });
 
   testWidgets('Chi tiết sân: bật thêm sân thứ 2 thì khóa đặt lặp lại; tắt về 1 sân thì mở lại; đổi ngày thì bỏ khung cũ', (tester) async {
@@ -197,9 +319,9 @@ void main() {
     final tomorrow = DateTime(now.year, now.month, now.day + 1);
     await tester.tap(find.text(Formatters.dayMonth(tomorrow)));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byType(Switch));
+    await tester.ensureVisible(find.byType(Checkbox));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(Switch).hitTestable());
+    await tester.tap(find.byType(Checkbox).hitTestable());
     await tester.pumpAndSettle();
 
     final day = (await tester.runAsync(() => facility.getTimeSlots(thienTrieu.id, Sport.badminton, tomorrow)))!;
@@ -211,7 +333,7 @@ void main() {
     await tapCourt(tester, 'Sân 2');
     expect(find.text(BookingStrings.recurringLockedMultiCourt), findsOneWidget);
     expect(find.text(BookingStrings.recurringOneCourtOnly), findsOneWidget);
-    var toggle = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    var toggle = tester.widget<CheckboxListTile>(find.byType(CheckboxListTile));
     expect(toggle.value, isFalse);
     expect(toggle.onChanged, isNull);
     expect(find.textContaining(FacilityStrings.selectedSlotCount(2)), findsOneWidget);
@@ -219,11 +341,11 @@ void main() {
     // Tắt Sân 2: về 1 sân → bỏ khung của Sân 2, mở khóa, bật lại được.
     await tapCourt(tester, 'Sân 2');
     expect(find.textContaining(FacilityStrings.selectedSlotCount(1)), findsOneWidget);
-    toggle = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    toggle = tester.widget<CheckboxListTile>(find.byType(CheckboxListTile));
     expect(toggle.onChanged, isNotNull);
-    await tester.ensureVisible(find.byType(Switch));
+    await tester.ensureVisible(find.byType(Checkbox));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(Switch).hitTestable());
+    await tester.tap(find.byType(Checkbox).hitTestable());
     await tester.pumpAndSettle();
     expect(find.text(BookingStrings.recurringCount(1, 1, 1, 4, 4)), findsOneWidget);
 
@@ -276,9 +398,9 @@ void main() {
 
   testWidgets('Chi tiết sân: bật đặt cố định khi chưa chọn buổi mẫu: nhắc cách chọn, nút đặt khóa', (tester) async {
     await pump(tester, FacilityDetailScreen(facility: thienTrieu, initialSport: Sport.badminton));
-    await tester.ensureVisible(find.byType(Switch));
+    await tester.ensureVisible(find.byType(Checkbox));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(Switch).hitTestable());
+    await tester.tap(find.byType(Checkbox).hitTestable());
     await tester.pumpAndSettle();
     // Chưa chọn khung nào: nhắc cách chọn buổi mẫu, nút đặt khóa.
     expect(find.text(BookingStrings.recurringPatternHint), findsOneWidget);
@@ -348,9 +470,9 @@ void main() {
         'Chi tiết sân (bật đặt cố định)',
         () => FacilityDetailScreen(facility: thienTrieu, initialSport: Sport.badminton),
         interact: (tester) async {
-          await tester.ensureVisible(find.byType(Switch));
+          await tester.ensureVisible(find.byType(Checkbox));
           await settleFrames(tester);
-          await tester.tap(find.byType(Switch).hitTestable());
+          await tester.tap(find.byType(Checkbox).hitTestable());
           await settleFrames(tester);
         },
       ),
@@ -362,7 +484,7 @@ void main() {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                const RecurringDiscountBadge(percent: 50),
+                const RecurringDiscountBanner(percent: 50),
                 const SizedBox(height: 8),
                 RecurringBookingSection(
                   enabled: true,
@@ -399,6 +521,44 @@ void main() {
             packages: [],
           ),
         ),
+      ),
+      ...await collectLayoutProblems(
+        tester,
+        'Thanh toán gói sai luật (cảnh báo đỏ)',
+        () => BookingCheckoutScreen(
+          sport: 'Bóng Đá • Sân 7 người',
+          courtName: 'Trung Tâm Thể Thao Phú Thọ Quận 11 • Sân số 12',
+          location: '1 Lữ Gia, Phường 15, Quận 11, TP. Hồ Chí Minh',
+          dateTime: 'T2, T3, T4, T5, T6, T7, CN • Sân số 12 • 08:00 - 10:00, 18:00 - 20:00',
+          totalAmount: 12500000,
+          recurring: RecurringCheckout(
+            sessions: 4,
+            discountPercent: 50,
+            summary: 'T2 • Sân 1 • 18:00 - 19:00',
+            packages: [weekly.sublist(0, 3)],
+            days: [
+              for (final s in weekly.take(3)) RecurringSession(date: s.start, slots: [s]),
+              RecurringSession(date: weekly[3].start, issue: RecurringIssue.lengthMismatch),
+            ],
+          ),
+        ),
+      ),
+      ...await collectLayoutProblems(
+        tester,
+        'Thanh toán đặt thường tự thành gói (chia tiền mờ)',
+        () => BookingCheckoutScreen(
+          sport: 'Bóng Đá • Sân 7 người',
+          courtName: 'Trung Tâm Thể Thao Phú Thọ Quận 11 • Sân số 12',
+          location: '1 Lữ Gia, Phường 15, Quận 11, TP. Hồ Chí Minh',
+          dateTime: 'T2 • Sân 1',
+          totalAmount: 12500000,
+          hold: hold,
+          packageDiscountPercent: 50,
+        ),
+        interact: (tester) async {
+          await tester.ensureVisible(find.text(SplitPaymentStrings.option));
+          await settleFrames(tester);
+        },
       ),
       ...await collectLayoutProblems(tester, 'Lịch đặt có gói', () => const MyBookingsScreen()),
       ...await collectLayoutProblems(

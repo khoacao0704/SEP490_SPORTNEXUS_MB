@@ -66,6 +66,9 @@ abstract class OwnerRepository {
   /// Giờ mở cửa, SĐT, mô tả, tiện ích, nội quy, ảnh sân: sửa tự do sau khi được duyệt.
   Future<OwnerFacility> updateOperations(String facilityId, FacilityOperations operations);
 
+  /// % giảm gói cố định hằng tuần (0–50, 0 = không giảm). Cơ sở đang bị từ chối: lưu xong BE tự chuyển về chờ duyệt lại.
+  Future<OwnerFacility> updateRecurringDiscount(String facilityId, int percent);
+
   /// Thêm loại sân mới hoặc cập nhật số sân con, giá & khung giờ (chỉ khi đã duyệt).
   Future<OwnerFacility> saveCourt(String facilityId, CourtConfig court);
 

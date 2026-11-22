@@ -9,6 +9,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/owner/closure_sheet.dart';
 import '../../widgets/owner/photo_picker.dart';
+import '../../widgets/owner/recurring_discount_editor.dart';
 import 'court_pricing_screen.dart';
 import 'facility_form_screen.dart';
 import 'operations_edit_screen.dart';
@@ -91,6 +92,11 @@ class _OwnerFacilityDetailScreenState extends State<OwnerFacilityDetailScreen> {
             _profileSection(f),
             _operationsSection(f),
             _courtsSection(f),
+            _section(
+              title: OwnerFacilityStrings.sectionDiscount,
+              hint: OwnerFacilityStrings.discountHint,
+              children: [RecurringDiscountEditor(facility: f, onSaved: _apply)],
+            ),
             if (f.isApproved) _closuresSection(f),
           ],
         ),

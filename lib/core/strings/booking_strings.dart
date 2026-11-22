@@ -47,8 +47,16 @@ class BookingStrings {
       refund > 0 ? 'Đã hủy đặt sân. Hoàn ${Formatters.vnd(refund)} vào Ví điểm.' : 'Đã hủy đặt sân.';
 
   // Gói cố định hằng tuần
-  static String discountBadge(int percent) => 'Giảm $percent% khi đặt cố định hằng tuần (từ 4 buổi)';
-  static const String recurringToggle = 'Đặt lặp lại hằng tuần';
+  static String discountBadge(int percent) => '🔥 -$percent% Đặt Cố Định';
+  static String discountBanner(int percent) =>
+      'Cơ sở này giảm $percent% khi bạn đặt cố định hằng tuần (cùng sân, cùng giờ, từ 4 tuần liên tiếp)!';
+  static const String splitNotForPackage = 'Tính năng chia tiền không áp dụng cho Gói đặt lịch định kỳ.';
+  static const String packagePrepayTitle = 'Tổng tiền cần thanh toán trả trước:';
+  static String payNowPackage(int amount) => 'Thanh toán ngay ${Formatters.vnd(amount)}';
+  static String autoPackageNote(int percent) =>
+      'Các ca bạn chọn cùng sân con, cùng giờ, từ 4 tuần liên tiếp nên hệ thống tính là gói cố định hằng tuần'
+      '${percent > 0 ? ' (giảm $percent%)' : ''}.';
+  static const String recurringToggle = 'Lặp lại vào giờ này mỗi tuần';
   static String recurringToggleHint(int percent) =>
       percent > 0 ? 'Cùng sân, cùng khung giờ mỗi tuần • giảm $percent%' : 'Cùng sân, cùng khung giờ mỗi tuần';
   static const String recurringPatternHint =
@@ -72,9 +80,32 @@ class BookingStrings {
   static const String recurringChecking = 'Đang kiểm tra các tuần sau...';
   static const String recurringWeekTaken = 'Đã có người đặt';
   static const String recurringWeekNotOpen = 'Sân chưa mở lịch';
+  static const String recurringWeekLengthMismatch = 'Lệch độ dài ca';
+  static const String recurringWeekInvalid = 'Sai luật gói';
+  static const String recurringHasBadDay = 'có buổi bị thiếu ca trống hoặc lệch độ dài ca.';
+  static const String recurringDaysTitle = 'Các buổi trong lịch';
+  static const String recurringInvalidTitle = 'Lịch này KHÔNG thành gói định kỳ';
+  static String recurringInvalid(List<String> reasons) =>
+      'Lý do: ${reasons.join(' ')} Lịch như vậy không được giảm giá và hệ thống sẽ từ chối. '
+      'Quay lại chọn giờ / thứ / số tuần khác.';
   static const String recurringIncomplete =
       'Lịch lặp lại phải đủ mọi tuần liên tiếp. Đổi giờ / thứ khác hoặc giảm số tuần để bỏ buổi bị kẹt.';
   static const String recurringNoSplit = 'Gói cố định không chia Điểm nhóm được.';
+  // Voucher ở Checkout (thẻ 43)
+  static const String voucherPick = 'Chọn Mã Giảm Giá';
+  static const String voucherNone = 'Chưa có mã giảm giá';
+  static const String voucherDontUse = 'Không dùng mã';
+  static String voucherChosen(int percent) => 'Mã giảm $percent%';
+  static String voucherExpires(String date) => 'HSD: $date';
+  static const String voucherSheetTitle = 'Mã giảm giá của bạn';
+  static const String voucherSingleOnly = 'Voucher chỉ dùng khi đặt 1 sân con, các ca liền nhau.';
+  static const String voucherNotForPackage = 'Voucher không áp dụng cho gói đặt lịch định kỳ.';
+  static const String voucherNotForSplit = 'Voucher không áp dụng cho đơn chia tiền.';
+  static const String voucherRemovedForSplit = 'Đã bỏ mã giảm giá: voucher không áp dụng cho đơn chia tiền.';
+  static const String voucherUnavailable = 'Voucher không còn khả dụng';
+  static const String formulaTotal = 'Tổng tiền';
+  static String formulaDiscount(int percent) => 'Giảm giá (voucher $percent%)';
+  static const String formulaPay = 'Thực thu';
   static const String recurringCancelRule =
       'Hủy là hủy cả gói, chỉ khi còn ít nhất 48 giờ trước buổi đầu; được hoàn 100%.';
   static String packageTitle(int sessions) => 'Gói cố định • $sessions buổi';
@@ -83,7 +114,8 @@ class BookingStrings {
       'Đã đặt lịch lặp lại $sessions lượt${packages > 1 ? ' ($packages gói)' : ''}, thanh toán ${Formatters.vnd(amount)}. '
       'Mỗi lượt có vé QR riêng trong Lịch Đặt.';
   static const String originalPrice = 'Giá gốc';
-  static String discountRow(int percent) => 'Giảm đặt cố định ($percent%)';
+  static String discountRow(int percent) => 'Đã áp dụng giảm $percent% Đặt lịch cố định';
+  static String monthlyPackageNote(int percent) => 'Giảm $percent% khi đặt gói tháng (cố định hằng tuần, 4–8 tuần).';
   static const String estimatedNote = 'Giá cuối cùng do hệ thống tính khi đặt.';
   static String packageBooked(int sessions, int amount) =>
       'Đã đặt gói $sessions buổi, thanh toán ${Formatters.vnd(amount)}. Mỗi buổi có vé QR riêng trong Lịch Đặt.';

@@ -385,12 +385,12 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
           sport: _sportLabel,
           courtName: _facility.name,
           location: _locationLabel,
-          dateTime: plan == null
-              ? describeSlotSchedule(hold.slots)
-              : '$summary\n${plan.sessions.map((s) => Formatters.dayMonth(s.date)).join(', ')}',
+          // Gói: các ngày liệt kê ở khối "Các buổi trong lịch" của màn Thanh toán.
+          dateTime: plan == null ? describeSlotSchedule(hold.slots) : summary,
           totalAmount: hold.totalPrice,
           initialSecondsRemaining: hold.secondsRemaining(DateTime.now()),
           hold: hold,
+          packageDiscountPercent: _facility.recurringDiscountPercent,
           recurring: plan == null
               ? null
               : RecurringCheckout(
@@ -399,6 +399,10 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                   summary: summary,
                   packages: [
                     for (final p in plan.packages) [for (final s in p) held[s.id] ?? s],
+                  ],
+                  days: [
+                    for (final d in plan.sessions)
+                      RecurringSession(date: d.date, slots: [for (final s in d.slots) held[s.id] ?? s], issue: d.issue),
                   ],
                 ),
         ),
@@ -617,7 +621,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
           ),
           if (_facility.recurringDiscountPercent > 0) ...[
             const SizedBox(height: 10),
-            RecurringDiscountBadge(percent: _facility.recurringDiscountPercent),
+            RecurringDiscountBanner(percent: _facility.recurringDiscountPercent),
           ],
         ],
       ),

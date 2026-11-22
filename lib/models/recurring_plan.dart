@@ -1,4 +1,5 @@
 import '../core/constants/booking_rules.dart';
+import '../core/strings/booking_strings.dart';
 import 'time_slot.dart';
 
 /// Lý do một buổi trong lịch lặp lại không đặt được.
@@ -8,6 +9,10 @@ enum RecurringIssue {
 
   /// Sân chưa mở lịch tới ngày đó (BE chỉ sinh khung giờ trước khoảng 35 ngày) hoặc ngày đó không có khung giờ này.
   notOpen,
+
+  /// Ngày đó có ca trùng giờ trên cùng sân con nhưng khác độ dài với ca mẫu (vd. mẫu 60 phút, tuần này đã gộp
+  /// thành ca 120 phút) → BE không nhận vào cùng gói.
+  lengthMismatch,
 }
 
 /// Một ngày trong lịch lặp lại: các khung cùng sân con, cùng giờ với các khung người chơi chọn ở ngày bắt đầu.
@@ -118,7 +123,8 @@ class RecurringPlan {
         final end = _at(date, base, s.end);
         final found = day.where((d) => d.courtName == s.courtName && d.start == start && d.end == end).firstOrNull;
         if (found == null) {
-          issue = RecurringIssue.notOpen;
+          final overlaps = day.any((d) => d.courtName == s.courtName && d.start.isBefore(end) && d.end.isAfter(start));
+          issue = overlaps ? RecurringIssue.lengthMismatch : RecurringIssue.notOpen;
           break;
         }
         if (!found.isBookable(now)) issue ??= RecurringIssue.taken;
@@ -129,6 +135,34 @@ class RecurringPlan {
           : RecurringSession(date: date, issue: issue));
     }
     return RecurringPlan(sessions, blockOf: blockOf);
+  }
+
+  /// Lý do các khung của MỘT gói không thành gói định kỳ theo luật BE (`null` = thành gói): ≥4 buổi, cùng sân con,
+  /// cùng độ dài, buổi sau cách buổi trước đúng 7 ngày. Các ca liền nhau cùng ngày, cùng sân tính là một buổi.
+  /// BE chưa có API xem trước → app tự kiểm; lỗi từ POST /bookings vẫn là lớp chặn cuối.
+  static String? packageError(List<TimeSlot> slots) {
+    final sorted = [...slots]..sort((a, b) => a.start.compareTo(b.start));
+    final sessions = <List<TimeSlot>>[];
+    for (final s in sorted) {
+      final last = sessions.lastOrNull;
+      if (last != null && last.last.end == s.start && last.last.courtName == s.courtName) {
+        last.add(s);
+      } else {
+        sessions.add([s]);
+      }
+    }
+    if (sessions.length < RecurringBookingRules.minSessions) return BookingStrings.packageTooFew;
+    final first = sessions.first;
+    final length = first.last.end.difference(first.first.start);
+    for (var i = 1; i < sessions.length; i++) {
+      final s = sessions[i];
+      if (s.first.courtName != first.first.courtName) return BookingStrings.packageSameCourt;
+      if (s.last.end.difference(s.first.start) != length) return BookingStrings.packageSameLength;
+      if (s.first.start.difference(sessions[i - 1].first.start) != RecurringBookingRules.interval) {
+        return BookingStrings.packageWeekly;
+      }
+    }
+    return null;
   }
 
   static DateTime _dayOf(DateTime t) => DateTime(t.year, t.month, t.day);
@@ -152,10 +186,27 @@ class RecurringCheckout {
   /// Các gói gửi BE lần lượt (xem [RecurringPlan.packages]).
   final List<List<TimeSlot>> packages;
 
+  /// Từng ngày của lịch (khung đã thay bằng bản mới nhất trong lượt giữ chỗ) để màn Thanh toán liệt kê ✔ / ❌.
+  final List<RecurringSession> days;
+
   const RecurringCheckout({
     required this.sessions,
     required this.discountPercent,
     required this.summary,
     required this.packages,
+    this.days = const [],
   });
+
+  /// Lý do (không trùng) khiến lịch không thành gói: có ngày không đặt được, hoặc một gói sai luật BE.
+  /// Rỗng = đủ điều kiện thành gói (được giảm giá).
+  List<String> get problems => {
+        if (days.any((d) => !d.isOk)) BookingStrings.recurringHasBadDay,
+        for (final p in packages) ?RecurringPlan.packageError(p),
+      }.toList();
+
+  /// Id các khung thuộc gói sai luật (để đánh ❌ đúng ngày).
+  Set<String> get badSlotIds => {
+        for (final p in packages)
+          if (RecurringPlan.packageError(p) != null) ...p.map((s) => s.id),
+      };
 }

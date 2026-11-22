@@ -101,8 +101,11 @@ void main() {
 
   testWidgets('màn thông báo người chơi không hiện nhóm của Chủ sân', (tester) async {
     await pump(tester, const NotificationsScreen());
+    // Màn người chơi lọc theo nhóm của BE (Đặt sân / Kèo LFG / Ví), không có nhóm nào của Chủ sân.
     expect(find.widgetWithText(ChoiceChip, NotificationCategory.ownerFacility.label), findsNothing);
-    expect(find.widgetWithText(ChoiceChip, NotificationCategory.booking.label), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, NotificationCategory.ownerMoney.label), findsNothing);
+    expect(find.widgetWithText(ChoiceChip, NotificationGroup.booking.label), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, NotificationGroup.lfg.label), findsOneWidget);
   });
 
   testWidgets('tab Tài khoản mở Đánh giá và Thông báo', (tester) async {

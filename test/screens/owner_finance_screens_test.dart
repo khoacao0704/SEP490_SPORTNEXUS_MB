@@ -44,6 +44,14 @@ void main() {
 
   testWidgets('Doanh thu & Ví: số dư, doanh thu tháng, phí tạm tính, biểu đồ', (tester) async {
     await pump(tester, const OwnerFinanceScreen());
+    // Màn mở ở tháng theo đồng hồ thật, dữ liệu giả lập cố định ở tháng 10/2026 → chuyển về đúng tháng đó trước.
+    final real = DateTime.now();
+    var months = (real.year * 12 + real.month) - (fixedNow.year * 12 + fixedNow.month);
+    for (; months != 0; months += months > 0 ? -1 : 1) {
+      await tester.tap(find.byIcon(months > 0 ? Icons.chevron_left : Icons.chevron_right));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text(OwnerFinanceStrings.monthLabel(DateTime(fixedNow.year, fixedNow.month))), findsOneWidget);
     expect(find.text(OwnerFinanceStrings.walletBalance), findsOneWidget);
     expect(find.text(OwnerFinanceStrings.totalRevenue), findsOneWidget);
     expect(find.text(OwnerFinanceStrings.atCourt), findsOneWidget);

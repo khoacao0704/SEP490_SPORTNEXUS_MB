@@ -31,6 +31,22 @@ class OwnerFacilityStrings {
   static const String requestChange = 'Yêu cầu đổi';
   static const String sectionOperations = 'Thông tin vận hành';
   static const String sectionCourts = 'Loại sân, giá & khung giờ';
+
+  // Giảm giá gói cố định hằng tuần
+  static const String sectionDiscount = 'Giảm giá gói định kỳ';
+  static const String discountHint =
+      'Khách đặt cố định hằng tuần (từ 4 buổi) được giảm theo % này, bạn chịu phần giảm. Nhập 0 = không giảm.';
+  static String discountCurrent(int percent) => percent > 0 ? 'Đang áp dụng: giảm $percent%' : 'Đang áp dụng: không giảm';
+  static const String discountLabel = 'Mức giảm (0–50)';
+  static const String discountOutOfRange = 'Mức giảm gói định kỳ phải từ 0 đến 50%.';
+  static const String discountInvalid = 'Nhập số nguyên từ 0 đến 50.';
+  static const String discountSave = 'Lưu';
+  static String discountSaved(int percent) =>
+      percent > 0 ? 'Đã lưu: giảm $percent% cho gói định kỳ.' : 'Đã lưu: không giảm cho gói định kỳ.';
+  static const String discountRejectedTitle = 'Cơ sở sẽ chờ duyệt lại';
+  static const String discountRejectedWarning =
+      'Cơ sở đang bị từ chối. Lưu bất kỳ thay đổi nào (kể cả mức giảm) sẽ chuyển hồ sơ về "Chờ Admin duyệt" lại.';
+  static const String discountRejectedConfirm = 'Vẫn lưu';
   static const String addCourtType = 'Thêm loại sân';
   static const String sectionClosures = 'Tạm đóng';
   static const String addClosure = 'Tạm đóng sân';
