@@ -65,5 +65,10 @@ class OwnerFinanceStrings {
       'Phí ${monthShort(m)}: ${Formatters.vnd(amount)}, hạn ${date(due)}. Quá hạn các cơ sở sẽ bị ẩn.';
   static const String withdrawBlockedTitle = 'Chưa đổi Điểm ra tiền được';
   static const String withdrawBlocked = 'Bạn đang nợ phí duy trì quá hạn. Hãy trả phí trước rồi đổi Điểm ra tiền.';
+
+  /// BE chặn rút khi chủ sân có bất kỳ cơ sở nào đang tạm ngưng (có thể phải hoàn tiền cho khách).
+  static String withdrawSuspended(List<String> names) =>
+      'Cơ sở ${names.join(', ')} đang tạm ngưng do có khiếu nại chờ Admin xử lý. '
+      'Bạn chưa đổi Điểm ra tiền được cho tới khi khiếu nại được giải quyết.';
   static const String close = 'Đóng';
 }

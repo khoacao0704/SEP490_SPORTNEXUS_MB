@@ -143,16 +143,25 @@ class _BookingsViewState extends State<_BookingsView> {
   /// Hủy đặt lẻ [b], hoặc cả gói [package] (BE hủy mọi buổi còn lại khi hủy một buổi của gói).
   Future<void> _cancel(Booking b, {BookingPackage? package}) async {
     final now = DateTime.now();
-    final refund = b.refundIfCancelled(now);
-    final free = b.refundsInFull(now);
-    final message = package != null
-        ? BookingStrings.confirmCancelPackage(package.active.length, package.refundIfCancelled)
-        : (free ? BookingStrings.confirmCancelFree(refund) : BookingStrings.confirmCancelLate(b.cancelFee(now))) +
-            (b.paymentType != BookingPaymentType.split
-                ? ''
-                : free
-                    ? BookingStrings.splitCancelFreeNote
-                    : BookingStrings.splitCancelLateNote);
+    final String message;
+    if (package != null) {
+      final refund = package.refundIfCancelled(now);
+      message = BookingStrings.confirmCancelPackage(
+            package.active.length,
+            package.cancelRefundPercent(now),
+            refund,
+            package.activePaid - refund,
+          ) +
+          (refund > 0 ? BookingStrings.voucherReturnedNote : '');
+    } else {
+      final percent = b.cancelRefundPercent(now);
+      final refund = b.refundIfCancelled(now);
+      message = (b.awaitingPayment
+              ? BookingStrings.confirmCancelAwaiting(refund)
+              : BookingStrings.confirmCancel(percent, refund, b.cancelFee(now))) +
+          (b.paymentType == BookingPaymentType.split ? BookingStrings.splitCancelNote(percent) : '') +
+          (refund > 0 ? BookingStrings.voucherReturnedNote : '');
+    }
     // Không tải được danh sách lý do thì vẫn cho hủy (BE dùng lý do mặc định).
     var reasons = const <CancelReason>[];
     try {
@@ -218,6 +227,8 @@ class _BookingsViewState extends State<_BookingsView> {
     if (ok != true || !mounted) return;
 
     setState(() => _cancellingId = b.id);
+    // Số hoàn của gói tính lúc bấm hủy (BE chỉ trả đơn của buổi được bấm).
+    final cancelledPackageRefund = package?.refundIfCancelled(DateTime.now()) ?? 0;
     try {
       final reason = picked;
       final cancelled = await AppRepositories.booking.cancelBooking(
@@ -229,7 +240,7 @@ class _BookingsViewState extends State<_BookingsView> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(package != null
-                ? BookingStrings.packageCancelled(package.refundIfCancelled)
+                ? BookingStrings.packageCancelled(cancelledPackageRefund)
                 : BookingStrings.cancelledMessage(cancelled.refunded)),
           ),
         );
@@ -387,7 +398,7 @@ class _BookingsViewState extends State<_BookingsView> {
             BookingStatus.cancelled => (BookingStrings.statusCancelled, const Color(0xFFFFEBEE), const Color(0xFFC62828)),
             BookingStatus.completed => (BookingStrings.statusCompleted, AppColors.divider, AppColors.textSecondary),
           };
-    final deadline = '${Formatters.time(b.freeCancelDeadline)} ${Formatters.weekdayDayMonth(b.freeCancelDeadline)}';
+    final tier = b.cancelTier(now);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -433,11 +444,13 @@ class _BookingsViewState extends State<_BookingsView> {
           if (!isBooker) _row('', BookingStrings.contributor, color: AppColors.textSecondary),
           if (status == BookingStatus.upcoming) ...[
             const SizedBox(height: 8),
-            // Đơn chờ góp hủy lúc nào cũng hoàn đủ nên không hiện mốc 24 giờ.
+            // Đơn chờ góp hủy lúc nào cũng hoàn đủ nên không hiện bậc hoàn.
             if (isBooker && !awaiting)
               Text(
-                b.isFreeCancel(now) ? BookingStrings.freeCancelUntil(deadline) : BookingStrings.lateCancelNote,
-                style: TextStyle(fontSize: 12, color: b.isFreeCancel(now) ? AppColors.textSecondary : Colors.red),
+                tier == null
+                    ? BookingStrings.lateCancelNote
+                    : BookingStrings.cancelTierUntil(_dateTime(tier.until), tier.percent),
+                style: TextStyle(fontSize: 12, color: _tierColor(tier?.percent ?? 0)),
               ),
             const SizedBox(height: 10),
             Row(
@@ -509,6 +522,7 @@ class _BookingsViewState extends State<_BookingsView> {
             : (BookingStrings.statusCompleted, AppColors.divider, AppColors.textSecondary);
     final refunded = p.sessions.fold(0, (sum, b) => sum + b.refunded);
     final deadline = p.cancelDeadline;
+    final tier = p.cancelTier(now);
     final cancelling = p.sessions.any((b) => b.id == _cancellingId);
     final canCancel = p.canCancel(now, _myId ?? '');
     final showCancelInfo = isBooker && !p.isCancelled && p.hasUpcoming(now);
@@ -557,10 +571,10 @@ class _BookingsViewState extends State<_BookingsView> {
           if (showCancelInfo && deadline != null) ...[
             const SizedBox(height: 8),
             Text(
-              canCancel
-                  ? BookingStrings.packageCancelUntil('${Formatters.time(deadline)} ${Formatters.weekdayDayMonth(deadline)}')
+              canCancel && tier != null
+                  ? BookingStrings.packageCancelUntil(_dateTime(tier.until), tier.percent)
                   : BookingStrings.packageCancelClosed,
-              style: TextStyle(fontSize: 12, color: canCancel ? AppColors.textSecondary : Colors.red),
+              style: TextStyle(fontSize: 12, color: canCancel ? _tierColor(tier?.percent ?? 0) : Colors.red),
             ),
           ],
           if (showCancelInfo && canCancel) ...[
@@ -626,6 +640,15 @@ class _BookingsViewState extends State<_BookingsView> {
       ),
     );
   }
+
+  static String _dateTime(DateTime t) => '${Formatters.time(t)} ${Formatters.weekdayDayMonth(t)}';
+
+  /// Hoàn đủ: chữ xám; hoàn một phần: cam; không hoàn: đỏ.
+  static Color _tierColor(int percent) => percent >= 100
+      ? AppColors.textSecondary
+      : percent > 0
+          ? AppColors.tagOrangeText
+          : Colors.red;
 
   Widget _row(String label, String value, {Color? color}) => Padding(
         padding: const EdgeInsets.only(top: 4),

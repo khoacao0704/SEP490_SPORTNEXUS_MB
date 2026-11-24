@@ -258,13 +258,18 @@ class MockBookingRepository implements BookingRepository {
     if (booking.isRecurring) return _cancelPackage(booking, me, now);
     if (!booking.canCancel(now, me.id)) throw const BookingException(BookingStrings.cannotCancel);
 
-    // Trước 24h (hoặc đơn chia Điểm còn chờ góp): hoàn đủ cho từng người đã trả. Còn lại không hoàn cho ai.
+    // Như BE: hoàn theo bậc (7 ngày 100%, 3 ngày 80%, 48 giờ 50%, dưới 48 giờ 0%; chờ góp luôn 100%),
+    // chia cho từng người theo tỷ lệ phần đã góp (người cuối nhận phần còn lại).
+    final total = booking.refundIfCancelled(now);
+    final paying = booking.payments.where((p) => p.amount > 0).toList();
+    final shares = BookingCancelPolicy.split(total, [for (final p in paying) p.amount]);
     var refunded = 0;
-    for (final p in booking.refundsInFull(now) ? booking.payments : const <BookingPayment>[]) {
-      if (p.amount <= 0) continue;
-      refunded += p.amount;
+    for (var i = 0; i < paying.length; i++) {
+      final p = paying[i];
+      if (shares[i] <= 0) continue;
+      refunded += shares[i];
       await _wallet.creditRefund(
-        amount: p.amount,
+        amount: shares[i],
         description: 'Hoàn Điểm hủy đặt sân ${booking.facilityName}${p.userId == me.id ? '' : ' • phần của ${p.name}'}',
         reference: booking.id,
       );
@@ -277,25 +282,28 @@ class MockBookingRepository implements BookingRepository {
     return cancelled;
   }
 
-  /// Như BE: hủy một buổi của gói = hủy mọi buổi chưa hủy, hoàn 100%; chỉ khi còn ≥48h trước buổi đầu còn lại.
+  /// Như BE: hủy một buổi của gói = hủy mọi buổi chưa hủy, hoàn theo bậc tới buổi đầu; chỉ khi còn ≥48h trước buổi đầu còn lại.
   Future<Booking> _cancelPackage(Booking booking, ({String id, String name}) me, DateTime now) async {
     final package = BookingPackage(
       booking.recurringGroupId!,
       (await _all()).where((b) => b.recurringGroupId == booking.recurringGroupId).toList(),
     );
     if (!package.canCancel(now, me.id)) throw const BookingException(BookingStrings.packageCancelTooLate);
+    // Bậc xét một lần theo buổi đầu còn hiệu lực, % áp cho từng buổi (mỗi buổi làm tròn riêng).
+    final percent = package.cancelRefundPercent(now);
     Booking? result;
     for (final b in package.active) {
-      if (b.amountPaid > 0) {
+      final refund = BookingCancelPolicy.refund(b.amountPaid, percent);
+      if (refund > 0) {
         await _wallet.creditRefund(
-          amount: b.amountPaid,
-          description: 'Hoàn Điểm hủy gói cố định ${b.facilityName}',
+          amount: refund,
+          description: 'Hoàn $percent% hủy gói cố định ${b.facilityName}',
           reference: b.id,
         );
       }
       final holdId = _holds.remove(b.id);
       if (holdId != null) await _facility.releaseHold(holdId);
-      final cancelled = b.copyWith(cancelledAt: now, refunded: b.amountPaid);
+      final cancelled = b.copyWith(cancelledAt: now, refunded: refund);
       await _save(cancelled);
       if (b.id == booking.id) result = cancelled;
     }

@@ -65,6 +65,12 @@ class FacilityStrings {
   static const String available = 'Còn trống';
   static const String full = 'Đã đặt';
   static const String passed = 'Đã qua';
+
+  /// Cơ sở bị hệ thống tạm ngưng (chủ sân quá hạn phản hồi khiếu nại): vẫn xem được nhưng không đặt được.
+  static const String suspendedSlot = 'Tạm ngưng';
+  static const String suspendedMessage = 'Sân đang tạm ngưng do có khiếu nại';
+  static const String suspendedBar = 'Tạm ngưng nhận đặt';
+  static const String suspendedNotice = 'Sân đang tạm ngưng do có khiếu nại, tạm thời chưa nhận đặt sân mới.';
   static const String today = 'Hôm nay';
   static const String openingHours = 'Giờ mở cửa';
   static const String amenities = 'Tiện ích';

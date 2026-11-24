@@ -21,6 +21,9 @@ class MockReviewRepository implements ReviewRepository {
   static String keyRated(String userId) => 'rated_players_$userId';
   static String keyFacilityReviews(String userId) => 'facility_reviews_$userId';
 
+  /// Sự kiện Fair Play phát sinh khi dùng app (vd. bùng kèo LFG), lưu theo từng tài khoản.
+  static String keyFairPlayEvents(String userId) => 'fair_play_events_$userId';
+
   final Duration latency;
   final DateTime Function() _now;
 
@@ -170,7 +173,8 @@ class MockReviewRepository implements ReviewRepository {
   @override
   Future<FairPlaySummary> getFairPlay({int page = 1}) async {
     await _delay();
-    final events = _fairPlayEventsFor(await _currentUserId());
+    final userId = await _currentUserId();
+    final events = [..._fairPlayEventsFor(userId), ...await _savedFairPlayEvents(userId)];
     var score = 0;
     final withScore = <FairPlayEvent>[];
     for (final e in events) {
@@ -194,6 +198,40 @@ class MockReviewRepository implements ReviewRepository {
       history: history.skip(start).take(size).toList(),
       hasMoreHistory: history.length > start + size,
     );
+  }
+
+  /// Cộng / trừ Fair Play cho [userId] (bản giả lập khác gọi, vd. LFG trừ 10 điểm khi bùng kèo; bản thật do BE làm).
+  Future<void> addFairPlayEvent(
+    String userId, {
+    required FairPlayEventType type,
+    required int delta,
+    required String reason,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = keyFairPlayEvents(userId);
+    final saved = prefs.getStringList(key) ?? [];
+    saved.add(jsonEncode({
+      'id': 'fp-app-${saved.length + 1}',
+      'type': type.name,
+      'delta': delta,
+      'reason': reason,
+      'createdAt': _now().toIso8601String(),
+    }));
+    await prefs.setStringList(key, saved);
+  }
+
+  Future<List<FairPlayEvent>> _savedFairPlayEvents(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(keyFairPlayEvents(userId)) ?? []).map((raw) {
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      return FairPlayEvent(
+        id: json['id'] as String,
+        type: FairPlayEventType.values.byName(json['type'] as String),
+        delta: (json['delta'] as num).toInt(),
+        reason: json['reason'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
+    }).toList();
   }
 
   // ---------------- Dữ liệu giả ----------------

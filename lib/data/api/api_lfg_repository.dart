@@ -19,7 +19,8 @@ import 'api_facility_repository.dart';
 /// - `totalSlots` / `remainingSlots` của BE KHÔNG tính host → app cộng thêm 1 chỗ của host.
 /// - Kèo tạo trên app luôn ghép lẻ (không chia phe), không cần duyệt; Team vs Team = 1 vs 1 giữa 2 đại diện.
 /// - Rời kèo: đã vào kèo thì BE bắt buộc lý do. Trước T−48h hoàn 100%; sau đó vẫn rời được tới giờ chơi nhưng
-///   không hoàn (tiền chuyển cho host), trong 24h cuối còn bị −10 Fair Play. Host không rời được, chỉ hủy kèo
+///   không hoàn: tiền tạm giữ của người rời chuyển thẳng vào Balance của host (2 giao dịch LFG_FORFEIT) và người rời
+///   bị −10 Fair Play (BE 24/11/2026: chỉ còn một mốc 48h, bỏ mốc 24h). Host không rời được, chỉ hủy kèo
 ///   (tới giờ chơi, chưa check-in). Trước `hostCancelUntil` (mặc định T−48h): mọi người + host hoàn 100%,
 ///   host −10 Fair Play. Sau đó: host mất 50% giá sân chia đều bồi thường cho người đã vào, −20 Fair Play.
 /// - BE đã bỏ vote hủy kèo (/cancel-requests) từ 20/11/2026.

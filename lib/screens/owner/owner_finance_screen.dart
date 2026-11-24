@@ -85,12 +85,18 @@ class _OwnerFinanceScreenState extends State<OwnerFinanceScreen> {
   }
 
   Future<void> _withdraw() async {
-    if (overdueBill(_bills, DateTime.now()) != null) {
+    final suspended = _facilities.where((f) => f.isSuspended).map((f) => f.name).toList();
+    final blocked = suspended.isNotEmpty
+        ? OwnerFinanceStrings.withdrawSuspended(suspended)
+        : overdueBill(_bills, DateTime.now()) != null
+            ? OwnerFinanceStrings.withdrawBlocked
+            : null;
+    if (blocked != null) {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text(OwnerFinanceStrings.withdrawBlockedTitle),
-          content: const Text(OwnerFinanceStrings.withdrawBlocked),
+          content: Text(blocked),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text(OwnerFinanceStrings.close)),
           ],

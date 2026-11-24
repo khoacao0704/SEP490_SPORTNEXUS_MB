@@ -70,6 +70,10 @@ class Facility {
   /// % giảm khi đặt gói cố định hằng tuần (chủ sân đặt, 0–50); 0 = đặt gói vẫn được nhưng không giảm.
   final int recurringDiscountPercent;
 
+  /// Hệ thống tự tạm ngưng cơ sở (chủ sân quá 48h chưa phản hồi khiếu nại), chờ Admin xử lý.
+  /// Vẫn hiện trong tìm kiếm / chi tiết nhưng không nhận đặt sân mới. Khác với khóa do Admin quyết định.
+  final bool isSuspended;
+
   const Facility({
     required this.id,
     required this.name,
@@ -91,6 +95,7 @@ class Facility {
     this.amenityIcons = const {},
     this.courtDetails = const {},
     this.recurringDiscountPercent = 0,
+    this.isSuspended = false,
   });
 
   /// Tọa độ của cơ sở chưa được chủ sân ghim vị trí.
@@ -140,5 +145,6 @@ class Facility {
         phone: json['phone'] as String,
         description: json['description'] as String? ?? '',
         recurringDiscountPercent: (json['recurringDiscountPercent'] as num?)?.toInt() ?? 0,
+        isSuspended: json['isSuspended'] == true,
       );
 }

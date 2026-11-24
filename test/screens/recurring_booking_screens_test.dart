@@ -408,7 +408,7 @@ void main() {
     expect(tester.widget<ElevatedButton>(bookButton).onPressed, isNull);
   });
 
-  testWidgets('Lịch đặt: các buổi gom thành một gói; hủy là hủy cả gói, hoàn 100%', (tester) async {
+  testWidgets('Lịch đặt: các buổi gom thành một gói; hủy là hủy cả gói, hoàn theo bậc tới buổi đầu', (tester) async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day + 5);
     final weekly = (await tester.runAsync(() => weeklyFree(start, 'Sân 1')))!;
@@ -434,13 +434,21 @@ void main() {
     await tester.ensureVisible(find.text(BookingStrings.cancelPackage));
     await tester.tap(find.text(BookingStrings.cancelPackage));
     await tester.pumpAndSettle();
-    expect(find.text(BookingStrings.confirmCancelPackage(4, paid)), findsOneWidget);
+    // Buổi đầu còn ~5 ngày → hoàn 80% từng buổi.
+    final percent = BookingCancelPolicy.refundPercent(created.first.start.difference(DateTime.now()));
+    expect(percent, 80);
+    final refund = created.fold(0, (sum, b) => sum + BookingCancelPolicy.refund(b.amountPaid, percent));
+    expect(
+      find.text(BookingStrings.confirmCancelPackage(4, percent, refund, paid - refund) +
+          BookingStrings.voucherReturnedNote),
+      findsOneWidget,
+    );
 
     await tester.tap(find.widgetWithText(ElevatedButton, BookingStrings.cancelPackage));
     await tester.pumpAndSettle();
-    expect(find.text(BookingStrings.packageCancelled(paid)), findsOneWidget);
+    expect(find.text(BookingStrings.packageCancelled(refund)), findsOneWidget);
     expect(find.text(BookingStrings.cancelPackage), findsNothing);
-    expect(find.text(BookingStrings.refunded(paid)), findsOneWidget);
+    expect(find.text(BookingStrings.refunded(refund)), findsOneWidget);
   });
   testWidgets('Bố cục gói cố định: nhiều cỡ máy + chữ phóng to không tràn', (tester) async {
     final now = DateTime.now();

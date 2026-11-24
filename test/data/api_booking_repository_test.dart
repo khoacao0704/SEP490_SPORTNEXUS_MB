@@ -281,7 +281,8 @@ void main() {
     });
     final b = await repo.getBooking('b1');
     final oneHourBefore = DateTime.parse('2030-01-05T05:00:00+07:00').toLocal();
-    expect(b.isFreeCancel(oneHourBefore), isFalse);
+    // Dưới 48 giờ nhưng đơn còn chờ góp → vẫn hoàn 100%.
+    expect(b.cancelRefundPercent(oneHourBefore), 100);
     expect(b.refundsInFull(oneHourBefore), isTrue);
     expect(b.cancelFee(oneHourBefore), 0);
   });

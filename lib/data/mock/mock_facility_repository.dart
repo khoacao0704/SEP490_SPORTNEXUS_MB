@@ -160,6 +160,17 @@ class MockFacilityRepository implements FacilityRepository {
     // Bỏ khung trùng, sắp theo giờ bắt đầu.
     final unique = {for (final s in slots) s.id: s}.values.toList()..sort((a, b) => a.start.compareTo(b.start));
 
+    // Cơ sở đang tạm ngưng (có khiếu nại quá hạn) thì không nhận đặt mới, từ bất kỳ lối nào.
+    for (final facilityId in {for (final s in unique) s.facilityId}) {
+      final Facility facility;
+      try {
+        facility = await getFacility(facilityId);
+      } on FacilityException {
+        continue;
+      }
+      if (facility.isSuspended) throw const FacilityException(FacilityStrings.suspendedMessage);
+    }
+
     // Kiểm tra hết rồi mới giữ: một khung lỗi thì không giữ khung nào.
     final fresh = <TimeSlot>[];
     for (final slot in unique) {

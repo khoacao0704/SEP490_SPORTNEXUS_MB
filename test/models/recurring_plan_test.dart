@@ -254,7 +254,7 @@ void main() {
       expect(items.last, same(single));
     });
 
-    test('hủy cả gói chỉ trước 48 giờ của buổi đầu còn lại; hoàn đủ các buổi chưa hủy', () {
+    test('hủy cả gói chỉ trước 48 giờ của buổi đầu còn lại; hoàn theo bậc tới buổi đầu, áp cho từng buổi chưa hủy', () {
       final package = BookingPackage('G1', [
         _booking('A1', DateTime(2026, 11, 22, 18), cancelledAt: DateTime(2026, 11, 18)), // chủ sân hủy lẻ
         _booking('A2', DateTime(2026, 11, 29, 18)),
@@ -264,7 +264,13 @@ void main() {
       expect(package.canCancel(now, 'u-me'), isTrue);
       expect(package.canCancel(DateTime(2026, 11, 27, 18), 'u-me'), isFalse);
       expect(package.canCancel(now, 'someone-else'), isFalse);
-      expect(package.refundIfCancelled, 180000);
+      // Bậc tính tới buổi đầu còn hiệu lực (A2, 29/11 18:00), % áp cho từng buổi chưa hủy (A2 + A3 = 180.000).
+      expect(package.refundIfCancelled(now), 180000); // còn hơn 10 ngày: 100%
+      expect(package.refundIfCancelled(DateTime(2026, 11, 22, 18)), 180000); // còn đúng 7 ngày: vẫn 100%
+      expect(package.cancelRefundPercent(DateTime(2026, 11, 25, 18)), 80); // còn 4 ngày
+      expect(package.refundIfCancelled(DateTime(2026, 11, 25, 18)), 144000);
+      expect(package.cancelRefundPercent(DateTime(2026, 11, 27, 6)), 50); // còn 2 ngày 12 giờ
+      expect(package.refundIfCancelled(DateTime(2026, 11, 27, 6)), 90000);
       expect(package.totalPaid, 270000);
     });
   });

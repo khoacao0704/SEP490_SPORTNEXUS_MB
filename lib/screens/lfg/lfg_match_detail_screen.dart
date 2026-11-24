@@ -76,27 +76,35 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     return ok == true;
   }
 
-  /// Trước T−48h: hoàn 100%. Sau đó (chỉ khi [LfgRepository.lateLeaveAllowed]): không hoàn, trong 24h cuối
-  /// còn bị trừ Fair Play.
+  /// Trước T−48h: hoàn 100%. Từ T−48h (chỉ khi [LfgRepository.lateLeaveAllowed]) là bùng kèo: không hoàn,
+  /// cọc chuyển cho chủ kèo, −10 Fair Play → popup cảnh báo đỏ.
   Future<void> _leave() async {
     final m = _match!;
-    final now = DateTime.now();
+    final late = m.isLateLeave(DateTime.now());
     final isHost = m.isHostedBy(_myId!);
     final others = m.members.where((x) => x.userId != _myId).toList()..sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
-    final message = now.isBefore(m.leaveDeadline)
-        ? LfgStrings.confirmLeaveMessage(m.depositPerSlot, isHost: isHost, nextHost: others.firstOrNull?.name)
-        : LfgStrings.confirmLateLeaveMessage(m.depositPerSlot, fairPlayPenalty: !now.isBefore(m.fairPlayPenaltyFrom));
     final alone = others.isEmpty;
-    final reason = await confirmLfgWithReason(
-      context,
-      title: alone ? LfgStrings.confirmCancelTitle : LfgStrings.confirmLeaveTitle,
-      message: message,
-      action: alone ? LfgStrings.cancelMatch : LfgStrings.leave,
-    );
+    final String? reason;
+    if (late) {
+      reason = await confirmLfgWithReason(
+        context,
+        title: LfgStrings.lateLeaveTitle,
+        warning: LfgStrings.lateLeaveWarning,
+        message: LfgStrings.confirmLateLeaveMessage(m.depositPerSlot),
+        action: LfgStrings.lateLeaveConfirm,
+      );
+    } else {
+      reason = await confirmLfgWithReason(
+        context,
+        title: alone ? LfgStrings.confirmCancelTitle : LfgStrings.confirmLeaveTitle,
+        message: LfgStrings.confirmLeaveMessage(m.depositPerSlot, isHost: isHost, nextHost: others.firstOrNull?.name),
+        action: alone ? LfgStrings.cancelMatch : LfgStrings.leave,
+      );
+    }
     if (reason == null) return;
     await _run(() async {
       final refund = await AppRepositories.lfg.leaveMatch(m.id, reason: reason);
-      _snack(LfgStrings.leftMessage(refund));
+      _snack(late && refund == 0 ? LfgStrings.lateLeftMessage : LfgStrings.leftMessage(refund));
     });
   }
 

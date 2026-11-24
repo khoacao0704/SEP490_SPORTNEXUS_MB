@@ -258,6 +258,13 @@ class ApiWalletRepository implements WalletRepository {
   static TransactionType typeFromApi(String type, [String status = '', num? balanceChange]) {
     final t = type.toUpperCase();
     if (t.startsWith('WITHDRAW')) return TransactionType.withdrawal;
+    // Bùng kèo (BE LfgEscrowHelper): status = LFG_FORFEIT, 2 dòng cùng referenceId là id kèo.
+    // Chủ kèo: type DEPOSIT, balanceChange = +amount → "Nhận tiền đền bù".
+    // Người rời: type RELEASE, balanceChange = 0 (chỉ FrozenBalance giảm) → "Tiền giữ chỗ chuyển cho chủ kèo",
+    // hiện không dấu vì đã trừ lúc vào kèo. Vẫn nhận nếu sau này BE đưa LFG_FORFEIT vào type.
+    if (t == 'LFG_FORFEIT' || status.toUpperCase() == 'LFG_FORFEIT') {
+      return balanceChange != null && balanceChange > 0 ? TransactionType.lfgForfeitIn : TransactionType.lfgForfeitOut;
+    }
     return switch (t) {
       'DEPOSIT' => TransactionType.deposit,
       'FREEZE' => TransactionType.hold,

@@ -44,7 +44,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('sân đã đặt: hủy trước 24 giờ được hoàn 100%', (tester) async {
+  testWidgets('sân đã đặt: còn 4 ngày hủy được hoàn 80%, báo rõ số mất', (tester) async {
     await pump(tester);
     expect(find.text('Sân Cầu Lông Thiên Triều'), findsOneWidget);
     expect(find.text(BookingStrings.lateCancelNote), findsOneWidget); // đặt mẫu còn ~12 giờ
@@ -53,20 +53,24 @@ void main() {
     // Đặt mẫu Thiên Triều (còn 4 ngày) nằm sau Hoa Lư (còn ~12 giờ).
     await tester.tap(find.text(BookingStrings.cancel).last);
     await tester.pumpAndSettle();
-    expect(find.text(BookingStrings.confirmCancelFree(168000)), findsOneWidget);
+    // 168.000 × 80% = 134.400 được hoàn, mất 33.600; có nhắc trả lại voucher.
+    expect(
+      find.text(BookingStrings.confirmCancel(80, 134400, 33600) + BookingStrings.voucherReturnedNote),
+      findsOneWidget,
+    );
 
     await tester.tap(find.widgetWithText(ElevatedButton, BookingStrings.cancel));
     await tester.pumpAndSettle();
-    expect(find.text(BookingStrings.cancelledMessage(168000)), findsOneWidget);
-    expect(find.text(BookingStrings.refunded(168000)), findsOneWidget);
+    expect(find.text(BookingStrings.cancelledMessage(134400)), findsOneWidget);
+    expect(find.text(BookingStrings.refunded(134400)), findsOneWidget);
     expect(find.text(BookingStrings.cancel), findsOneWidget);
   });
 
-  testWidgets('hủy trong 24 giờ: báo không được hoàn tiền', (tester) async {
+  testWidgets('hủy dưới 48 giờ: báo không được hoàn tiền', (tester) async {
     await pump(tester);
     await tester.tap(find.text(BookingStrings.cancel).first);
     await tester.pumpAndSettle();
-    expect(find.text(BookingStrings.confirmCancelLate(700000)), findsOneWidget);
+    expect(find.text(BookingStrings.confirmCancel(0, 0, 700000)), findsOneWidget);
   });
 
   testWidgets('vé QR: hộp thoại hiện mã QR, không lỗi bố cục (không trắng màn)', (tester) async {

@@ -70,13 +70,18 @@ IconData transactionIcon(TransactionType type) {
       return Icons.gavel_outlined;
     case TransactionType.listingFee:
       return Icons.receipt_long_outlined;
+    case TransactionType.lfgForfeitOut:
+      return Icons.person_remove_outlined;
+    case TransactionType.lfgForfeitIn:
+      return Icons.volunteer_activism_outlined;
   }
 }
 
 /// Số tiền có dấu; giao dịch không làm đổi số dư khả dụng (hết hạn, đã hủy, giải ngân tiền
-/// đã tạm giữ — đã trừ lúc tạm giữ) thì không có dấu.
+/// đã tạm giữ / tiền giữ chỗ chuyển cho chủ kèo khi bùng kèo — đã trừ lúc tạm giữ) thì không có dấu.
 String _amountText(WalletTransaction tx) {
-  final affectsBalance = (tx.status == TransactionStatus.success && tx.type != TransactionType.holdRelease) ||
+  final movesHeldMoney = tx.type == TransactionType.holdRelease || tx.type == TransactionType.lfgForfeitOut;
+  final affectsBalance = (tx.status == TransactionStatus.success && !movesHeldMoney) ||
       (tx.status == TransactionStatus.pending && tx.type == TransactionType.withdrawal);
   if (!affectsBalance) return Formatters.vnd(tx.amount);
   return '${tx.type.isCredit ? '+' : '-'}${Formatters.vnd(tx.amount)}';
