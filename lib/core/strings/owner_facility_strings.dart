@@ -14,6 +14,13 @@ class OwnerFacilityStrings {
   static const String statusRejected = 'Bị từ chối';
   static const String statusChangePending = 'Có thay đổi chờ duyệt';
   static const String statusClosedToday = 'Tạm đóng hôm nay';
+  static const String statusSuspended = 'Tạm ngưng nhận đặt';
+
+  /// Hệ thống tự tạm ngưng khi chủ sân quá 48h chưa phản hồi khiếu nại; chỉ Admin mở lại.
+  static const String suspendedBanner =
+      'Cơ sở đang bị tạm ngưng nhận đặt sân vì có khiếu nại quá 48 giờ chưa được phản hồi. '
+      'Người chơi vẫn thấy cơ sở nhưng không đặt sân mới được, và bạn tạm thời không đổi Điểm ra tiền được. '
+      'Cơ sở chỉ được mở lại sau khi Admin xử lý xong khiếu nại.';
   static const String needsPricing = 'Chưa cài giá & khung giờ';
   static String courtsSummary(int types, int courts) => '$types loại sân • $courts sân con';
 

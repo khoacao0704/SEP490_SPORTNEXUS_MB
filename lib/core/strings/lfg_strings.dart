@@ -99,10 +99,10 @@ class LfgStrings {
           'Host hủy dưới 48 giờ (hủy đơn phương): mọi người vẫn được hoàn 100%, host bị trừ 50% giá sân để bồi thường '
               'chia đều cho người đã vào kèo và bị trừ 20 điểm Fair Play.',
         ],
-        if (lateLeave) ...[
-          'Sau 48 giờ trước giờ chơi bạn vẫn tự rời được nhưng không được hoàn Điểm (chuyển cho host), chỗ không mở lại.',
-          'Rời trong 24 giờ trước giờ chơi còn bị trừ 10 điểm Fair Play.',
-        ] else
+        if (lateLeave)
+          'Từ 48 giờ trước giờ chơi trở đi bạn vẫn tự rời được nhưng không được hoàn Điểm (Điểm cọc chuyển cho chủ kèo '
+              'để đền bù), chỗ không mở lại và bạn bị trừ 10 điểm Fair Play.'
+        else
           'Sau 48 giờ trước giờ chơi: không tự rời được nữa.',
         'Vắng mặt hoặc trễ quá 15 phút sẽ mất Điểm và bị trừ 10 điểm Fair Play.',
       ].join('\n');
@@ -116,11 +116,18 @@ class LfgStrings {
   static const String keep = 'Không';
   static String leftMessage(int refund) =>
       refund > 0 ? 'Đã rời kèo. ${Formatters.vnd(refund)} đã được hoàn vào Ví điểm.' : 'Đã rời kèo.';
-  static String confirmLateLeaveMessage(int paid, {required bool fairPlayPenalty}) =>
-      'Kèo đã chốt nên bạn không được hoàn ${Formatters.vnd(paid)} (chuyển cho chủ kèo) và chỗ của bạn không mở lại.'
-      '${fairPlayPenalty ? ' Đã trong 24 giờ trước giờ chơi nên bạn còn bị trừ 10 điểm Fair Play.' : ''}';
-  static const String lateLeaveNote =
-      'Kèo đã chốt. Bạn vẫn rời được tới giờ chơi nhưng không được hoàn Điểm; trong 24 giờ trước giờ chơi còn bị trừ 10 điểm Fair Play.';
+  // Rời kèo sát giờ (từ 48 giờ trước giờ chơi trở xuống) = bùng kèo: không hoàn, cọc đền bù cho chủ kèo, −10 Fair Play.
+  static const String lateLeaveTitle = 'Cảnh báo rời kèo sát giờ';
+  static const String lateLeaveWarning =
+      'Bạn đang rời kèo sát giờ thi đấu. Bạn sẽ KHÔNG ĐƯỢC HOÀN ĐIỂM và bị trừ 10 điểm Fair Play.';
+  static String confirmLateLeaveMessage(int paid) =>
+      'Điểm cọc ${Formatters.vnd(paid)} của bạn sẽ chuyển cho chủ kèo để đền bù và chỗ của bạn không mở lại.';
+  static const String lateLeaveConfirm = 'Vẫn rời kèo';
+  static const String lateLeftMessage = 'Đã rời kèo. Điểm cọc đã chuyển cho chủ kèo và bạn bị trừ 10 điểm Fair Play.';
+  static const String lateLeaveNote = 'Kèo đã chốt (dưới 48 giờ trước giờ chơi). Bạn vẫn rời được tới giờ chơi nhưng '
+      'không được hoàn Điểm (chuyển cho chủ kèo) và bị trừ 10 điểm Fair Play.';
+  static String lateLeaveFairPlayReason(String sport, String facility) =>
+      'Rời kèo $sport • $facility trong 48 giờ trước giờ chơi';
   static const String reasonTitle = 'Lý do';
   static const String reasonHint = 'Nhập lý do';
 

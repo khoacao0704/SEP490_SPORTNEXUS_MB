@@ -4,6 +4,37 @@ import '../../core/utils/formatters.dart';
 import '../../models/time_slot.dart';
 import '../../theme/app_colors.dart';
 
+/// Khung báo cơ sở đang tạm ngưng (hệ thống tự bật khi chủ sân quá hạn phản hồi khiếu nại), đặt trên lưới ca.
+class SuspendedNotice extends StatelessWidget {
+  const SuspendedNotice({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.tagOrangeBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.pause_circle_outline, size: 18, color: AppColors.tagOrangeText),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              FacilityStrings.suspendedNotice,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.tagOrangeText, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Mô tả lịch của nhiều khung giờ, gom theo ngày, mỗi ngày một dòng:
 /// "Thứ 4, 15/10: Sân 2 18:00 - 19:00, Sân 1 20:00 - 21:00\nThứ 6, 17/10: Sân 3 07:00 - 08:00"
 String describeSlotSchedule(Iterable<TimeSlot> slots) {
@@ -250,12 +281,16 @@ class TimeSlotGrid extends StatelessWidget {
   final DateTime now;
   final ValueChanged<TimeSlot> onSelected;
 
+  /// Có giá trị khi cơ sở đang tạm ngưng: mọi ca trống bị xám, bấm vào thì gọi hàm này (báo lý do) thay vì chọn.
+  final VoidCallback? onSuspendedTap;
+
   const TimeSlotGrid({
     super.key,
     required this.slots,
     required this.selectedSlotIds,
     required this.now,
     required this.onSelected,
+    this.onSuspendedTap,
   });
 
   @override
@@ -282,11 +317,13 @@ class TimeSlotGrid extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         final slot = slots[index];
+        final suspended = onSuspendedTap;
         return _TimeSlotTile(
           slot: slot,
-          isSelected: selectedSlotIds.contains(slot.id),
+          isSelected: suspended == null && selectedSlotIds.contains(slot.id),
           isPassed: slot.hasStarted(now),
-          onTap: () => onSelected(slot),
+          isSuspended: suspended != null,
+          onTap: suspended ?? () => onSelected(slot),
         );
       },
     );
@@ -297,13 +334,24 @@ class _TimeSlotTile extends StatelessWidget {
   final TimeSlot slot;
   final bool isSelected;
   final bool isPassed;
+
+  /// Cơ sở tạm ngưng: ca còn trống cũng xám nhưng vẫn bấm được để báo lý do.
+  final bool isSuspended;
   final VoidCallback onTap;
 
-  const _TimeSlotTile({required this.slot, required this.isSelected, required this.isPassed, required this.onTap});
+  const _TimeSlotTile({
+    required this.slot,
+    required this.isSelected,
+    required this.isPassed,
+    required this.onTap,
+    this.isSuspended = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final disabled = isPassed || slot.isFull;
+    final taken = isPassed || slot.isFull;
+    final suspendedFree = isSuspended && !taken;
+    final disabled = taken || suspendedFree;
 
     final Color bg = isSelected
         ? AppColors.primaryGreen
@@ -325,7 +373,9 @@ class _TimeSlotTile extends StatelessWidget {
         ? FacilityStrings.passed
         : slot.isFull
             ? FacilityStrings.full
-            : FacilityStrings.available;
+            : suspendedFree
+                ? FacilityStrings.suspendedSlot
+                : FacilityStrings.available;
 
     final Color statusColor = isSelected
         ? Colors.white
@@ -334,7 +384,7 @@ class _TimeSlotTile extends StatelessWidget {
             : AppColors.primaryGreen;
 
     return GestureDetector(
-      onTap: disabled ? null : onTap,
+      onTap: taken ? null : onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
@@ -357,7 +407,7 @@ class _TimeSlotTile extends StatelessWidget {
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: mainText,
-                  decoration: disabled ? TextDecoration.lineThrough : null,
+                  decoration: taken ? TextDecoration.lineThrough : null,
                 ),
               ),
             ),

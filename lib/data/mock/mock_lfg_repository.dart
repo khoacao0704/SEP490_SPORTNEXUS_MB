@@ -10,6 +10,7 @@ import '../../models/booking.dart' show CancelReason;
 import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/lfg_match.dart';
+import '../../models/review.dart' show FairPlayEventType;
 import '../../models/sport.dart';
 import '../../models/time_slot.dart';
 import '../../models/wallet_transaction.dart';
@@ -43,14 +44,21 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
   final List<_Claim> _claims = [];
   int _counter = 0;
 
+  /// Ví riêng của từng người (demo nhiều tài khoản trên một máy / test). Bỏ trống: mọi người dùng chung [_wallet]
+  /// của máy, khi đó tiền đền bù bùng kèo không cộng cho chủ kèo (chủ kèo là người khác, không có ví trên máy).
+  final MockWalletRepository Function(String userId)? walletOf;
+
   MockLfgRepository({
     this.latency = const Duration(milliseconds: 400),
     DateTime Function()? now,
     MockWalletRepository? wallet,
     ReviewRepository? review,
+    this.walletOf,
   })  : _now = now ?? DateTime.now,
         _wallet = wallet ?? MockWalletRepository(latency: Duration.zero),
         _review = review ?? MockReviewRepository(latency: Duration.zero);
+
+  MockWalletRepository _walletFor(String userId) => walletOf?.call(userId) ?? _wallet;
 
   @override
   Future<List<LfgFeedItem>> getFeed(LfgFeedQuery query) async {
@@ -160,7 +168,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     }
 
     final amount = match.depositPerSlot;
-    await _pay(amount, TransactionType.flashClaim, 'Cọc Flash Claim ${match.sport.label} • ${match.facilityName}', match.id);
+    await _pay(me.id, amount, TransactionType.flashClaim, 'Cọc Flash Claim ${match.sport.label} • ${match.facilityName}', match.id);
     _claims.remove(claim);
 
     final updated = match.copyWith(
@@ -203,7 +211,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
 
     final deposit = LfgRules.depositPerSlot(slot.price, format.totalSlots);
     final id = 'lfg-u-${now.millisecondsSinceEpoch}-${++_counter}';
-    await _pay(deposit, TransactionType.lfgDeposit, 'Cọc tạo kèo ${slot.sport.label} • ${facility.name}', id);
+    await _pay(me.id, deposit, TransactionType.lfgDeposit, 'Cọc tạo kèo ${slot.sport.label} • ${facility.name}', id);
 
     final match = LfgMatch(
       id: id,
@@ -267,8 +275,9 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
   @override
   Future<String> getTicketCode(LfgMatch match, String userId) async => match.ticketCode(userId);
 
+  /// Giống BE: người tham gia vẫn rời được tới giờ chơi, nhưng từ T−48h là bùng kèo (không hoàn, đền bù cho host).
   @override
-  bool get lateLeaveAllowed => false;
+  bool get lateLeaveAllowed => true;
 
   /// Bản giả lập không hỏi lý do.
   @override
@@ -281,13 +290,17 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     final match = await _find(matchId, me.id);
     if (!match.isMember(me.id)) throw const LfgException(LfgStrings.notMember);
     _ensureNotEnded(match);
-    // Trước T−48h ai cũng rời được (kể cả kèo đã đủ người); sau đó không tự rời được.
-    if (!_now().isBefore(match.leaveDeadline)) throw const LfgException(LfgStrings.leaveTooLate);
+    // Trước T−48h ai cũng rời được (kể cả kèo đã đủ người), hoàn 100%.
+    // Từ T−48h tới giờ chơi: người tham gia vẫn rời được nhưng là bùng kèo; host không rời được nữa.
+    if (match.isLateLeave(_now())) {
+      if (match.isHostedBy(me.id) || !_now().isBefore(match.start)) throw const LfgException(LfgStrings.leaveTooLate);
+      return _forfeit(match, me.id);
+    }
 
     final payments = await _payments();
     final refund = payments[matchId]?.remove(me.id) ?? match.depositPerSlot;
     await _savePayments(payments);
-    await _wallet.creditRefund(
+    await _walletFor(me.id).creditRefund(
       amount: refund,
       description: 'Hoàn 100% cọc • rời kèo ${match.sport.label} • ${match.facilityName}',
       reference: matchId,
@@ -338,6 +351,40 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     return _withHeldSlots(updated, me?.id);
   }
 
+  /// Bùng kèo (BE LfgEscrowHelper.ForfeitToHostAsync): không hoàn, cọc của người rời chuyển thẳng cho host
+  /// (2 giao dịch: bên người rời đã trừ lúc vào kèo, bên host "nhận tiền đền bù"), người rời −10 Fair Play.
+  /// Chỗ không mở lại (giữ nguyên số chỗ, chỉ bỏ người rời khỏi danh sách). Trả về 0 (không hoàn).
+  Future<int> _forfeit(LfgMatch match, String userId) async {
+    final payments = await _payments();
+    final paid = payments[match.id]?.remove(userId) ?? match.depositPerSlot;
+    await _savePayments(payments);
+
+    final host = match.members.where((m) => m.isHost).firstOrNull;
+    if (host != null && walletOf != null && paid > 0) {
+      await walletOf!(host.userId).credit(
+        type: TransactionType.lfgForfeitIn,
+        amount: paid,
+        description: 'Nhận tiền đền bù • người chơi rời kèo ${match.sport.label} • ${match.facilityName} sát giờ',
+        reference: match.id,
+      );
+    }
+    final review = _review;
+    if (review is MockReviewRepository) {
+      await review.addFairPlayEvent(
+        userId,
+        type: FairPlayEventType.cancellation,
+        delta: -LfgRules.lateLeaveFairPlay,
+        reason: LfgStrings.lateLeaveFairPlayReason(match.sport.label, match.facilityName),
+      );
+    }
+    // Kèo đã chốt (đủ người lúc T−48h): giữ trạng thái chốt, chỗ của người bùng không mở lại.
+    await _saveMatch(match.copyWith(
+      members: match.members.where((m) => m.userId != userId).toList(),
+      slotsLeftOverride: 0,
+    ));
+    return 0;
+  }
+
   // ---------------- Nội bộ ----------------
 
   Future<void> _delay() => latency == Duration.zero ? Future.value() : Future.delayed(latency);
@@ -366,9 +413,9 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     }
   }
 
-  Future<void> _pay(int amount, TransactionType type, String description, String reference) async {
+  Future<void> _pay(String userId, int amount, TransactionType type, String description, String reference) async {
     try {
-      await _wallet.pay(amount: amount, type: type, description: description, reference: reference);
+      await _walletFor(userId).pay(amount: amount, type: type, description: description, reference: reference);
     } on WalletException catch (e) {
       throw LfgException(e.message);
     }
@@ -411,8 +458,8 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
 
     final payments = await _payments();
     final paid = payments.remove(match.id) ?? {};
-    for (final amount in paid.values) {
-      await _wallet.creditRefund(
+    for (final MapEntry(key: userId, value: amount) in paid.entries) {
+      await _walletFor(userId).creditRefund(
         amount: amount,
         description: 'Hoàn 100% cọc • kèo ${match.sport.label} • ${match.facilityName} không đủ người',
         reference: match.id,

@@ -165,19 +165,22 @@ class Booking {
 
   int get amountPaid =>payments.fold(0, (sum, p) => sum + p.amount);
 
-  /// Hủy trước mốc này được hoàn 100%.
-  DateTime get freeCancelDeadline => start.subtract(BookingRules.freeCancelBeforeStart);
+  /// % được hoàn nếu hủy lúc [now] (bậc [BookingCancelPolicy]); đơn chia Điểm còn chờ góp luôn 100%.
+  int cancelRefundPercent(DateTime now) =>
+      awaitingPayment ? 100 : BookingCancelPolicy.refundPercent(start.difference(now));
 
-  bool isFreeCancel(DateTime now) => now.isBefore(freeCancelDeadline);
+  /// Bậc hoàn đang áp và hạn của bậc đó (để nhắc "Hủy trước … được hoàn …%"); `null` khi chờ góp hoặc dưới 48 giờ.
+  ({DateTime until, int percent})? cancelTier(DateTime now) =>
+      awaitingPayment ? null : BookingCancelPolicy.currentTier(start, now);
 
-  /// Hủy lúc [now] được hoàn đủ: trước 24h, hoặc đơn chia Điểm còn chờ góp (lúc nào hủy cũng hoàn đủ phần đã góp).
-  bool refundsInFull(DateTime now) => awaitingPayment || isFreeCancel(now);
+  /// Hủy lúc [now] được hoàn đủ.
+  bool refundsInFull(DateTime now) => cancelRefundPercent(now) >= 100;
 
-  /// Số tiền bị mất nếu hủy lúc [now]: được hoàn đủ thì không mất, còn lại mất toàn bộ số đã trả.
-  int cancelFee(DateTime now) => refundsInFull(now) ? 0 : amountPaid;
+  /// Tổng tiền được hoàn nếu hủy lúc [now] (cả đơn: mọi người đã góp).
+  int refundIfCancelled(DateTime now) => BookingCancelPolicy.refund(amountPaid, cancelRefundPercent(now));
 
-  /// Tổng tiền được hoàn nếu hủy lúc [now].
-  int refundIfCancelled(DateTime now) => amountPaid - cancelFee(now);
+  /// Số tiền bị mất nếu hủy lúc [now].
+  int cancelFee(DateTime now) => amountPaid - refundIfCancelled(now);
 
   BookingStatus status(DateTime now) {
     if (cancelledAt != null) return BookingStatus.cancelled;
@@ -257,7 +260,8 @@ class Booking {
 }
 
 /// Gói cố định hằng tuần: các buổi cùng [groupId] (mỗi buổi một lượt đặt, vé QR riêng).
-/// Người đặt hủy là hủy cả gói (các buổi chưa hủy), chỉ khi còn ít nhất 48 giờ trước buổi đầu còn lại; hoàn 100%.
+/// Người đặt hủy là hủy cả gói (các buổi chưa hủy), chỉ khi còn ít nhất 48 giờ trước buổi đầu còn lại;
+/// hoàn theo bậc 100/80/50% tính tới buổi đầu đó.
 /// Chủ sân có thể hủy lẻ một buổi: buổi đó hiện "Đã hủy", các buổi khác giữ nguyên.
 class BookingPackage {
   final String groupId;
@@ -286,8 +290,26 @@ class BookingPackage {
     return deadline != null && first.bookerId == userId && now.isBefore(deadline) && active.every((b) => !b.isCheckedIn);
   }
 
-  /// Hủy gói được hoàn đủ số đã trả của các buổi chưa hủy.
-  int get refundIfCancelled => active.fold(0, (sum, b) => sum + b.amountPaid);
+  /// % hoàn nếu hủy gói lúc [now]: bậc xét một lần theo buổi đầu còn hiệu lực (BE CancelPackageAsync).
+  int cancelRefundPercent(DateTime now) {
+    final firstActive = active.firstOrNull;
+    return firstActive == null ? 0 : BookingCancelPolicy.refundPercent(firstActive.start.difference(now));
+  }
+
+  /// Bậc hoàn đang áp cho gói (tính tới buổi đầu còn hiệu lực).
+  ({DateTime until, int percent})? cancelTier(DateTime now) {
+    final firstActive = active.firstOrNull;
+    return firstActive == null ? null : BookingCancelPolicy.currentTier(firstActive.start, now);
+  }
+
+  /// Tổng hoàn khi hủy gói lúc [now]: % áp cho từng buổi chưa hủy (mỗi buổi làm tròn riêng như BE).
+  int refundIfCancelled(DateTime now) {
+    final percent = cancelRefundPercent(now);
+    return active.fold(0, (sum, b) => sum + BookingCancelPolicy.refund(b.amountPaid, percent));
+  }
+
+  /// Tổng đã trả của các buổi chưa hủy.
+  int get activePaid => active.fold(0, (sum, b) => sum + b.amountPaid);
 
   int get totalPaid => sessions.fold(0, (sum, b) => sum + b.amountPaid);
 

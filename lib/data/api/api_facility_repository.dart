@@ -255,6 +255,18 @@ class ApiFacilityRepository implements FacilityRepository {
     final now = DateTime.now();
     final unique = {for (final s in slots) s.id: s}.values.toList()..sort((a, b) => a.start.compareTo(b.start));
 
+    // Cơ sở đang tạm ngưng (có khiếu nại quá hạn) thì không nhận đặt mới, dù đặt từ chi tiết sân, Trợ lý AI hay tạo kèo.
+    // Không tải được chi tiết thì bỏ qua: BE vẫn chặn lúc tạo đơn.
+    for (final facilityId in {for (final s in unique) s.facilityId}) {
+      final Facility facility;
+      try {
+        facility = await getFacility(facilityId);
+      } on FacilityException {
+        continue;
+      }
+      if (facility.isSuspended) throw const FacilityException(FacilityStrings.suspendedMessage);
+    }
+
     // Khung giờ mới nhất theo từng (cơ sở, môn, ngày): mỗi ngày chỉ tải một lần.
     final latestByDay = <String, List<TimeSlot>>{};
     final fresh = <TimeSlot>[];
@@ -340,6 +352,7 @@ class ApiFacilityRepository implements FacilityRepository {
       phone: json['phone'] as String? ?? '',
       isPromoted: json['isPromoted'] == true,
       recurringDiscountPercent: _percent(json['recurringDiscountPercent']),
+      isSuspended: json['isSuspended'] == true,
     );
   }
 
@@ -393,6 +406,7 @@ class ApiFacilityRepository implements FacilityRepository {
       description: json['description'] as String? ?? '',
       courtDetails: details,
       recurringDiscountPercent: _percent(json['recurringDiscountPercent']),
+      isSuspended: json['isSuspended'] == true,
     );
   }
 

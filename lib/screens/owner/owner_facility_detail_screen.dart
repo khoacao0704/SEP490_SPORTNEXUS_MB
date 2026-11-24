@@ -127,6 +127,7 @@ class _OwnerFacilityDetailScreenState extends State<OwnerFacilityDetailScreen> {
   List<Widget> _banners(OwnerFacility f) {
     final change = f.change;
     return [
+      if (f.isApproved && f.isSuspended) _banner(OwnerFacilityStrings.suspendedBanner),
       if (f.status == ApprovalStatus.pending) _banner(OwnerFacilityStrings.pendingBanner, warning: false),
       if (f.status == ApprovalStatus.rejected) _banner(OwnerFacilityStrings.rejectedBanner(f.rejectReason ?? '')),
       if (change?.status == ApprovalStatus.pending) _banner(OwnerFacilityStrings.changePendingBanner, warning: false),

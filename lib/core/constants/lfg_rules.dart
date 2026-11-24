@@ -16,8 +16,9 @@ class LfgRules {
   static const int hostCancelFairPlay = 10;
   static const int hostLateCancelFairPlay = 20;
 
-  /// Rời kèo trong khoảng này trước giờ chơi bị trừ Fair Play.
-  static const Duration lateLeavePenaltyBeforeStart = Duration(hours: 24);
+  /// Rời kèo từ mốc chốt (T−48h, BE LockHours) trở đi = bùng kèo: không hoàn, cọc chuyển cho chủ kèo
+  /// (LFG_FORFEIT) và người rời bị trừ chừng này Fair Play. Trước đây mốc trừ Fair Play là 24h, nay chỉ còn 48h.
+  static const int lateLeaveFairPlay = 10;
 
   /// Chỉ được tạo kèo cho khung giờ bắt đầu trong vòng chừng này kể từ bây giờ.
   static const Duration maxCreateAhead = Duration(days: 5);

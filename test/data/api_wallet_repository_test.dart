@@ -133,6 +133,12 @@ void main() {
     expect(ApiWalletRepository.typeFromApi('ADJUST', 'SUCCESS', 20000).isCredit, isTrue);
     expect(ApiWalletRepository.typeFromApi('ADJUST').isCredit, isTrue);
     expect(ApiWalletRepository.typeFromApi('REFUND', 'SUCCESS', 0), TransactionType.refund);
+
+    // Bùng kèo LFG (đúng dữ liệu BE: status = LFG_FORFEIT): chủ kèo DEPOSIT +amount, người rời RELEASE 0.
+    expect(ApiWalletRepository.typeFromApi('DEPOSIT', 'LFG_FORFEIT', 40000), TransactionType.lfgForfeitIn);
+    expect(ApiWalletRepository.typeFromApi('RELEASE', 'LFG_FORFEIT', 0), TransactionType.lfgForfeitOut);
+    expect(ApiWalletRepository.typeFromApi('LFG_FORFEIT', 'SUCCESS', 40000), TransactionType.lfgForfeitIn);
+    expect(TransactionType.lfgForfeitIn.label, 'Nhận tiền đền bù');
   });
 
   test('trạng thái: NO_REFUND_* là không được hoàn, còn lại đều là thành công', () {

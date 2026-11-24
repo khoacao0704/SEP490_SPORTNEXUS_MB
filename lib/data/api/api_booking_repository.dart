@@ -21,7 +21,8 @@ import 'api_facility_repository.dart';
 ///   chia đều, người đặt chịu phần lẻ; hạn 30 phút (không quá giờ bắt đầu). BE chưa có mã/link chia sẻ nên luồng
 ///   chia mã của SplitPaymentRepository tắt ([supportsSplitPayment] = false, [supportsSplitInvite] = true).
 /// - Trạng thái đơn của BE: PENDING (chia Điểm chờ góp), PAID, CHECKED_IN, CANCELLED; "đã chơi xong" suy ra từ giờ kết thúc.
-/// - Hủy: chỉ người đặt. ≥24h trước giờ chơi hoàn 100%, <24h không hoàn; đơn chia Điểm còn chờ góp luôn hoàn đủ.
+/// - Hủy: chỉ người đặt. Hoàn theo bậc [BookingCancelPolicy] (7 ngày 100%, 3 ngày 80%, 48h 50%, <48h 0%; gói <48h
+///   không hủy được — PACKAGE_LOCKED_UNDER_48H); đơn chia Điểm còn chờ góp luôn hoàn đủ.
 ///   refundAmount BE trả là của CẢ đơn (mọi người đã góp), không phải riêng người đặt. Vé QR đổi mã mỗi 30 giây.
 /// - Người bị người đặt "trả thay" (pay-remaining) bị BE xóa mềm nhưng vẫn còn trong my-bookings và
 ///   participants với trạng thái chưa trả → app bỏ họ đi.

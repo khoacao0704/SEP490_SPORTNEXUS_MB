@@ -92,7 +92,7 @@ abstract class LfgRepository {
   bool get hostCanLeave;
 
   /// true: người tham gia (không phải host) vẫn tự rời được sau T−48h tới giờ chơi nhưng không được hoàn
-  /// (tiền chuyển cho host, chỗ không mở lại; trong 24h cuối còn bị trừ Fair Play) — cách BE làm.
+  /// (tiền chuyển cho host để đền bù, chỗ không mở lại, bị trừ 10 Fair Play) — cách BE làm.
   /// false: sau T−48h không tự rời được.
   bool get lateLeaveAllowed;
 

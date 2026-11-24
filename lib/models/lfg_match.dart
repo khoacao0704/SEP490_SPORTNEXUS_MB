@@ -251,8 +251,8 @@ class LfgMatch {
   /// mất [hostLateCancelLoss] (chia đều bồi thường cho người đã vào kèo) và bị trừ nặng Fair Play.
   DateTime get hostCancelDeadline => hostCancelUntilOverride ?? start.subtract(LfgRules.hostCancelBeforeStart);
 
-  /// Rời kèo từ mốc này bị trừ Fair Play.
-  DateTime get fairPlayPenaltyFrom => start.subtract(LfgRules.lateLeavePenaltyBeforeStart);
+  /// Rời lúc [now] là rời sát giờ (từ T−48h): không hoàn, cọc chuyển cho chủ kèo, bị trừ Fair Play.
+  bool isLateLeave(DateTime now) => !now.isBefore(leaveDeadline);
 
   /// Chủ kèo hủy được tới giờ chơi (BE còn chặn khi đã check-in).
   bool canHostCancel(DateTime now) => now.isBefore(start);
@@ -292,6 +292,7 @@ class LfgMatch {
     List<LfgMember>? members,
     int? heldSlots,
     LfgCancelReason? cancelReason,
+    int? slotsLeftOverride,
   }) =>
       LfgMatch(
         id: id,
@@ -313,7 +314,7 @@ class LfgMatch {
         note: note,
         cancelReason: cancelReason ?? this.cancelReason,
         totalSlotsOverride: totalSlotsOverride,
-        slotsLeftOverride: slotsLeftOverride,
+        slotsLeftOverride: slotsLeftOverride ?? this.slotsLeftOverride,
         pricePerPersonOverride: pricePerPersonOverride,
         formatLabelOverride: formatLabelOverride,
         myStatus: myStatus,
@@ -345,6 +346,7 @@ class LfgMatch {
         note: json['note'] as String? ?? '',
         cancelReason: json['cancelReason'] == null ? null : LfgCancelReason.fromApi(json['cancelReason'] as String),
         skillLevel: SkillLevel.fromApi(json['skillLevel']),
+        slotsLeftOverride: (json['slotsLeftOverride'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -367,6 +369,7 @@ class LfgMatch {
         'note': note,
         if (cancelReason != null) 'cancelReason': cancelReason!.apiValue,
         if (skillLevel != null) 'skillLevel': skillLevel!.apiValue,
+        if (slotsLeftOverride != null) 'slotsLeftOverride': slotsLeftOverride,
       };
 }
 

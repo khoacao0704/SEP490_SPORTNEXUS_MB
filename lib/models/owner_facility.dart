@@ -259,6 +259,10 @@ class OwnerFacility {
   /// % giảm cho khách đặt gói cố định hằng tuần (0–50, 0 = không giảm; chủ sân chịu phần giảm).
   final int recurringDiscountPercent;
 
+  /// Hệ thống tự tạm ngưng (quá 48h chưa phản hồi khiếu nại): người chơi không đặt sân mới được,
+  /// chủ sân không đổi Điểm ra tiền được; chỉ Admin xử lý xong khiếu nại mới mở lại.
+  final bool isSuspended;
+
   const OwnerFacility({
     required this.id,
     required this.status,
@@ -272,6 +276,7 @@ class OwnerFacility {
     this.rating = 0,
     this.reviewCount = 0,
     this.recurringDiscountPercent = 0,
+    this.isSuspended = false,
   });
 
   bool get isApproved => status == ApprovalStatus.approved;
@@ -314,6 +319,7 @@ class OwnerFacility {
         phone: operations.phone,
         description: operations.description,
         recurringDiscountPercent: recurringDiscountPercent,
+        isSuspended: isSuspended,
       );
 
   OwnerFacility copyWith({
@@ -328,6 +334,7 @@ class OwnerFacility {
     bool clearRejectReason = false,
     bool clearChange = false,
     int? recurringDiscountPercent,
+    bool? isSuspended,
   }) =>
       OwnerFacility(
         id: id,
@@ -342,5 +349,6 @@ class OwnerFacility {
         rating: rating,
         reviewCount: reviewCount,
         recurringDiscountPercent: recurringDiscountPercent ?? this.recurringDiscountPercent,
+        isSuspended: isSuspended ?? this.isSuspended,
       );
 }

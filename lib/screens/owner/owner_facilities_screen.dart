@@ -158,6 +158,8 @@ class _FacilityTile extends StatelessWidget {
     final bad = (fg: Colors.red.shade700, bg: Colors.red.shade50);
     return [
       switch (f.status) {
+        ApprovalStatus.approved when f.isSuspended =>
+          (label: OwnerFacilityStrings.statusSuspended, fg: bad.fg, bg: bad.bg),
         ApprovalStatus.approved => (
           label: OwnerFacilityStrings.statusApproved,
           fg: AppColors.tagGreenText,

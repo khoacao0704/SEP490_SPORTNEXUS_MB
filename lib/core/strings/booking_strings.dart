@@ -30,18 +30,39 @@ class BookingStrings {
   static const String splitUnavailable = 'Chia Điểm nhóm đang được phát triển.';
   static const String close = 'Đóng';
   static const String cancel = 'Hủy đặt sân';
-  static String freeCancelUntil(String t) => 'Hủy miễn phí trước $t';
-  static const String lateCancelNote = 'Đã trong 24 giờ trước giờ chơi: hủy sẽ không được hoàn Điểm';
+  /// Bậc hoàn đang áp: "Hủy trước 20:00 Thứ 4, 26/11: hoàn 80%".
+  static String cancelTierUntil(String t, int percent) => 'Hủy trước $t: hoàn $percent%';
+  static const String lateCancelNote = 'Dưới 48 giờ trước giờ chơi: hủy sẽ không được hoàn Điểm';
   static const String contributor = 'Bạn góp Điểm trong nhóm';
+
+  /// Luật hoàn khi hủy (BE BookingCancelPolicy), hiện ở chi tiết sân / thanh toán.
+  static const String cancelPolicy = 'Hủy đặt sân: từ 7 ngày trước giờ chơi hoàn 100%, từ 3 ngày hoàn 80%, '
+      'từ 48 giờ hoàn 50%, dưới 48 giờ không hoàn.';
 
   // Hủy
   static const String confirmCancelTitle = 'Hủy đặt sân?';
-  static String confirmCancelFree(int refund) =>
-      'Còn hơn 24 giờ trước giờ chơi nên được hoàn 100% (${Formatters.vnd(refund)}).';
-  static String confirmCancelLate(int lost) =>
-      'Đã trong vòng 24 giờ trước giờ chơi nên không được hoàn Điểm (mất ${Formatters.vnd(lost)}).';
-  static const String splitCancelFreeNote = ' Những người góp cũng được hoàn đủ phần của họ.';
-  static const String splitCancelLateNote = ' Điểm của những người đã góp cũng không được hoàn.';
+
+  /// Lời xác nhận hủy theo bậc: [percent] = 100 / 80 / 50 / 0.
+  static String confirmCancel(int percent, int refund, int lost) => switch (percent) {
+        >= 100 => 'Còn từ 7 ngày trước giờ chơi nên được hoàn 100% (${Formatters.vnd(refund)}).',
+        <= 0 => 'Dưới 48 giờ trước giờ chơi nên không được hoàn Điểm (mất ${Formatters.vnd(lost)}).',
+        _ => 'Còn ${percent == 80 ? 'từ 3 đến dưới 7 ngày' : 'từ 48 giờ đến dưới 3 ngày'} trước giờ chơi nên được '
+            'hoàn $percent% (${Formatters.vnd(refund)}), mất ${Formatters.vnd(lost)}.',
+      };
+
+  /// Đơn chia Điểm còn chờ góp: lúc nào hủy cũng hoàn đủ.
+  static String confirmCancelAwaiting(int refund) =>
+      'Đơn chia Điểm chưa đủ người góp nên được hoàn 100% (${Formatters.vnd(refund)}).';
+
+  /// Ghi chú cho đơn chia Điểm: mọi người cùng chịu một %.
+  static String splitCancelNote(int percent) => switch (percent) {
+        >= 100 => ' Những người góp cũng được hoàn đủ phần của họ.',
+        <= 0 => ' Điểm của những người đã góp cũng không được hoàn.',
+        _ => ' Những người đã góp cũng được hoàn $percent% phần của họ.',
+      };
+
+  /// Hủy có hoàn thì BE trả lại mã giảm giá đã dùng cho đơn.
+  static const String voucherReturnedNote = ' Mã giảm giá đã dùng cho đơn (nếu có) sẽ được trả lại.';
   static const String keep = 'Không';
   static String cancelledMessage(int refund) =>
       refund > 0 ? 'Đã hủy đặt sân. Hoàn ${Formatters.vnd(refund)} vào Ví điểm.' : 'Đã hủy đặt sân.';
@@ -92,7 +113,7 @@ class BookingStrings {
       'Lịch lặp lại phải đủ mọi tuần liên tiếp. Đổi giờ / thứ khác hoặc giảm số tuần để bỏ buổi bị kẹt.';
   static const String recurringNoSplit = 'Gói cố định không chia Điểm nhóm được.';
   // Voucher ở Checkout (thẻ 43)
-  static const String voucherPick = 'Chọn Mã Giảm Giá';
+  static const String voucherPick = 'Chọn Voucher';
   static const String voucherNone = 'Chưa có mã giảm giá';
   static const String voucherDontUse = 'Không dùng mã';
   static String voucherChosen(int percent) => 'Mã giảm $percent%';
@@ -104,10 +125,11 @@ class BookingStrings {
   static const String voucherRemovedForSplit = 'Đã bỏ mã giảm giá: voucher không áp dụng cho đơn chia tiền.';
   static const String voucherUnavailable = 'Voucher không còn khả dụng';
   static const String formulaTotal = 'Tổng tiền';
-  static String formulaDiscount(int percent) => 'Giảm giá (voucher $percent%)';
-  static const String formulaPay = 'Thực thu';
+  static String formulaDiscount(int percent) => 'Voucher giảm $percent%';
+  static const String formulaPay = 'Thực tế cần thanh toán';
   static const String recurringCancelRule =
-      'Hủy là hủy cả gói, chỉ khi còn ít nhất 48 giờ trước buổi đầu; được hoàn 100%.';
+      'Hủy là hủy cả gói, chỉ khi còn ít nhất 48 giờ trước buổi đầu. Hoàn theo thời gian còn lại tới buổi đầu: '
+      'từ 7 ngày 100%, từ 3 ngày 80%, từ 48 giờ 50%.';
   static String packageTitle(int sessions) => 'Gói cố định • $sessions buổi';
   static String packageSummary(int sessions, String weekdayTime) => '$sessions lượt • $weekdayTime hằng tuần';
   static String packagesBooked(int sessions, int packages, int amount) =>
@@ -121,11 +143,12 @@ class BookingStrings {
       'Đã đặt gói $sessions buổi, thanh toán ${Formatters.vnd(amount)}. Mỗi buổi có vé QR riêng trong Lịch Đặt.';
   static const String packageLabel = 'Gói cố định';
   static const String cancelPackage = 'Hủy cả gói';
-  static String packageCancelUntil(String t) => 'Hủy cả gói được hoàn 100% trước $t';
+  static String packageCancelUntil(String t, int percent) => 'Hủy cả gói trước $t: hoàn $percent%';
   static const String packageCancelClosed = 'Đã quá mốc 48 giờ trước buổi đầu: gói không hủy được nữa';
   static const String confirmCancelPackageTitle = 'Hủy cả gói?';
-  static String confirmCancelPackage(int sessions, int refund) =>
-      'Gói cố định không hủy lẻ được. Hủy sẽ hủy toàn bộ $sessions buổi còn lại và hoàn 100% (${Formatters.vnd(refund)}).';
+  static String confirmCancelPackage(int sessions, int percent, int refund, int lost) =>
+      'Gói cố định không hủy lẻ được. Hủy sẽ hủy toàn bộ $sessions buổi còn lại và hoàn $percent% '
+      '(${Formatters.vnd(refund)})${lost > 0 ? ', mất ${Formatters.vnd(lost)}' : ''}.';
   static String packageCancelled(int refund) =>
       refund > 0 ? 'Đã hủy cả gói. Hoàn ${Formatters.vnd(refund)} vào Ví điểm.' : 'Đã hủy cả gói.';
   static const String sessionCancelledByOwner = 'Đã hủy';

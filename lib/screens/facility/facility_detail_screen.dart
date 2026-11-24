@@ -113,6 +113,12 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
     final stillOffered = fresh.offeringFor(_sport, courtType: _courtType) != null;
     setState(() {
       _facility = fresh;
+      // Cơ sở đang tạm ngưng: bỏ các khung đã chọn (không đặt được nữa).
+      if (fresh.isSuspended) {
+        _selected.clear();
+        _recurring = false;
+        _plan = null;
+      }
       if (!stillOffered && fresh.sports.isNotEmpty) {
         _sport = fresh.offeringFor(_sport) != null ? _sport : fresh.sports.first;
         _courtType = fresh.offeringFor(_sport)!.courtType;
@@ -356,7 +362,17 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
   /// Dữ liệu BE không tách quận / thành phố: dùng địa chỉ đầy đủ.
   String get _locationLabel => _facility.city.isEmpty ? _facility.address : '${_facility.district}, ${_facility.city}';
 
+  /// Hệ thống tạm ngưng cơ sở (quá hạn phản hồi khiếu nại): vẫn xem được, các ca trống xám, không đặt được.
+  bool get _suspended => _facility.isSuspended;
+
+  void _showSuspended() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text(FacilityStrings.suspendedMessage)));
+  }
+
   Future<void> _handleBook() async {
+    if (_suspended) return _showSuspended();
     if (_selected.isEmpty || _courtsMismatch != null) return;
     final plan = _recurring ? _plan : null;
     if (_recurring && !_planReady) return;
@@ -455,24 +471,25 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                   title: FacilityStrings.chooseSlot,
                   child: _buildSlots(),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: RecurringBookingSection(
-                    enabled: _recurring,
-                    onToggle: _setRecurring,
-                    available: !_multiCourt,
-                    discountPercent: _facility.recurringDiscountPercent,
-                    patternValid: _patternValid,
-                    startDate: _startDate,
-                    slotsPerDay: _selected.length,
-                    weekdays: _weekdays,
-                    onWeekdayToggled: _toggleWeekday,
-                    weeks: _weeks,
-                    onWeeksChanged: _setWeeks,
-                    plan: _plan,
-                    planning: _planning,
+                if (!_suspended)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: RecurringBookingSection(
+                      enabled: _recurring,
+                      onToggle: _setRecurring,
+                      available: !_multiCourt,
+                      discountPercent: _facility.recurringDiscountPercent,
+                      patternValid: _patternValid,
+                      startDate: _startDate,
+                      slotsPerDay: _selected.length,
+                      weekdays: _weekdays,
+                      onWeekdayToggled: _toggleWeekday,
+                      weeks: _weeks,
+                      onWeeksChanged: _setWeeks,
+                      plan: _plan,
+                      planning: _planning,
+                    ),
                   ),
-                ),
                 _buildAboutSection(),
                 FacilityReviewsSection(facilityId: _facility.id, facilityName: _facility.name),
                 const SizedBox(height: 24),
@@ -746,6 +763,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_suspended) const SuspendedNotice(),
         if (courts.isNotEmpty) ...[
           const Text(
             FacilityStrings.chooseCourt,
@@ -802,6 +820,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
             },
             now: _now,
             onSelected: (tile) => _toggleSlots(grid.parts[tile.id] ?? [tile]),
+            onSuspendedTap: _suspended ? _showSuspended : null,
           );
         }),
       ],
@@ -964,7 +983,7 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
     final percent = _facility.recurringDiscountPercent;
     final total = plan == null ? _selectedTotal : RecurringBookingRules.discounted(plan.originalTotal, percent);
     final mismatch = _courtsMismatch;
-    final canBook = count > 0 && !_isHolding && mismatch == null && (!_recurring || _planReady);
+    final canBook = !_suspended && count > 0 && !_isHolding && mismatch == null && (!_recurring || _planReady);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
@@ -985,7 +1004,12 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    count == 0 ? FacilityStrings.selectSlotFirst : Formatters.vnd(total),
+                    // Thanh dưới hẹp: chỉ ghi ngắn, lý do đầy đủ nằm ở khung báo trên lưới ca.
+                    _suspended
+                        ? FacilityStrings.suspendedBar
+                        : count == 0
+                            ? FacilityStrings.selectSlotFirst
+                            : Formatters.vnd(total),
                     style: TextStyle(
                       fontSize: count == 0 ? 13 : 20,
                       fontWeight: FontWeight.bold,

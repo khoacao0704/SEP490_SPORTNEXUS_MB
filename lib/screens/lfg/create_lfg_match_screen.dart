@@ -106,6 +106,32 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
   bool _loadingFacilities = false;
   Facility? _facility;
 
+  /// Cơ sở đang tạm ngưng (có khiếu nại quá hạn): vẫn hiện để chọn xem, nhưng ca xám, không tạo kèo được.
+  final Set<String> _suspendedIds = {};
+
+  bool get _facilitySuspended => _suspendedIds.contains(_facility?.id);
+
+  void _showSuspended() => showLfgError(context, FacilityStrings.suspendedMessage);
+
+  /// Kết quả tìm kiếm có thể chưa kèm cờ tạm ngưng: đọc lại từ chi tiết cơ sở khi người dùng chọn sân.
+  Future<void> _refreshSuspension(String facilityId) async {
+    final Facility fresh;
+    try {
+      fresh = await AppRepositories.facility.getFacility(facilityId);
+    } catch (_) {
+      return; // giữ cờ đang có; bước giữ ca vẫn kiểm lại
+    }
+    if (!mounted) return;
+    setState(() {
+      if (fresh.isSuspended) {
+        _suspendedIds.add(facilityId);
+        if (_facility?.id == facilityId) _slot = null;
+      } else {
+        _suspendedIds.remove(facilityId);
+      }
+    });
+  }
+
   late final List<DateTime> _dates = _eligibleDates(DateTime.now());
   late DateTime _date = _dates.first;
   /// Khung giờ hợp lệ (trong cửa sổ tạo kèo) của mọi sân con trong ngày.
@@ -177,8 +203,10 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
       setState(() => _facilities = [facility!, ..._facilities]);
     }
     setState(() => _facility = facility);
-    await _loadSlots();
+    await Future.wait([_loadSlots(), _refreshSuspension(facility.id)]);
     if (!mounted) return;
+    // Sân AI / màn khác gợi ý đang tạm ngưng: vẫn mở sân đó nhưng không chọn sẵn ca.
+    if (_facilitySuspended) return _showSuspended();
     final slot = _slots.where((s) => s.id == preset.courtSlotId && s.isAvailable).firstOrNull;
     if (slot == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(LfgStrings.presetSlotUnavailable)));
@@ -236,6 +264,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             .map((r) => r.facility)
             .where((f) => f.offeringFor(_sport, courtType: _courtType) != null)
             .toList();
+        _suspendedIds.addAll(_facilities.where((f) => f.isSuspended).map((f) => f.id));
         _loadingFacilities = false;
       });
     } catch (_) {
@@ -312,6 +341,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
     final facility = _facility;
     final slot = _slot;
     if (facility == null || slot == null) return;
+    if (_facilitySuspended) return _showSuspended();
     final team = _team;
     if (_isTeamMatch && (team == null || teamIneligibleReason(team, _sport, _sideSize) != null)) {
       showLfgError(context, LfgStrings.teamRequired);
@@ -568,6 +598,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                 onSelected: (c) => setState(() => _court = c),
               ),
               const SizedBox(height: 12),
+              if (_facilitySuspended) const SuspendedNotice(),
               TimeSlotGrid(
                 slots: _slots.where((s) => s.courtName == _court).toList(),
                 selectedSlotIds: {for (final s in _chain) s.id},
@@ -576,6 +607,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                   _slot = s;
                   _slotCount = 1;
                 }),
+                onSuspendedTap: _facilitySuspended ? _showSuspended : null,
               ),
               if (slot != null && AppRepositories.lfg.maxSlotsPerMatch > 1) ...[
                 const SizedBox(height: 14),
@@ -637,6 +669,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                 onTap: () {
                   setState(() => _facility = f);
                   _loadSlots();
+                  _refreshSuspension(f.id);
                 },
                 child: Container(
                   padding: const EdgeInsets.all(12),
@@ -658,6 +691,15 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                               '${_area(f)} • ★ ${f.rating}',
                               style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                             ),
+                            if (_suspendedIds.contains(f.id))
+                              const Text(
+                                FacilityStrings.suspendedBar,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.tagOrangeText,
+                                ),
+                              ),
                           ],
                         ),
                       ),

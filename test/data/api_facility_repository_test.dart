@@ -260,6 +260,28 @@ void main() {
     expect(noData.imageUrls, isEmpty);
   });
 
+  test('cơ sở tạm ngưng (isSuspended) vẫn có trong kết quả tìm kiếm và chi tiết, kèm cờ tạm ngưng', () async {
+    server.ok(ApiFacilityRepository.searchPath, {
+      'page': 1, 'pageSize': 50, 'totalItems': 1, 'totalPages': 1,
+      'items': [_searchItem()..['isSuspended'] = true],
+    });
+    final results = await repo.searchFacilities(const FacilitySearchQuery(city: ''));
+    expect(results.single.facility.isSuspended, isTrue);
+
+    server.ok(ApiFacilityRepository.facilityPath('f1'), {
+      'id': 'f1',
+      'name': 'Sân ABC',
+      'address': '12 Lê Lợi',
+      'isSuspended': true,
+      'courts': [
+        {'id': 'c1', 'categoryId': _badmintonId, 'categoryName': 'Cầu lông', 'name': 'Sân 1', 'status': 'Active', 'defaultPrice': 120000},
+      ],
+    });
+    final f = await repo.getFacility('f1');
+    expect(f.isSuspended, isTrue);
+    expect(f.offeringFor(Sport.badminton)!.courtCount, 1);
+  });
+
   test('chi tiết: gom sân con đang hoạt động theo môn, giá từ = DefaultPrice thấp nhất', () async {
     server.ok(ApiFacilityRepository.facilityPath('f1'), {
       'id': 'f1',
@@ -294,6 +316,7 @@ void main() {
     expect(f.offeringFor(Sport.football)!.courtCount, 1);
     expect(f.sports, unorderedEquals([Sport.badminton, Sport.football, Sport.pickleball]));
     expect(f.description, 'Sân đẹp');
+    expect(f.isSuspended, isFalse); // BE không gửi cờ → coi như đang hoạt động
     expect(f.phone, '0909123456');
     expect(f.imageUrls, hasLength(2));
     expect(f.amenities, ['Wifi']);
@@ -502,7 +525,19 @@ void main() {
 
       expect(hold.slots.map((s) => s.id), ['s1', 's2']);
       expect(hold.expiresAt.difference(DateTime.now()).inMinutes, closeTo(10, 1));
-      expect(server.requests.length - before, 1);
+      // Lịch trống chỉ tải lại một lần (ngoài ra có một lần đọc chi tiết cơ sở để kiểm tạm ngưng).
+      final after = server.requests.skip(before).map((r) => r.path);
+      expect(after.where((p) => p == ApiFacilityRepository.availabilityPath('f1')), hasLength(1));
+      expect(after.where((p) => p == ApiFacilityRepository.facilityPath('f1')), hasLength(1));
+    });
+
+    test('cơ sở đang tạm ngưng: không giữ ca, báo "Sân đang tạm ngưng do có khiếu nại" (mọi lối đặt đều qua đây)', () async {
+      final all = await slots();
+      server.ok(ApiFacilityRepository.facilityPath('f1'), {'id': 'f1', 'name': 'Sân ABC', 'address': '', 'isSuspended': true});
+      await expectLater(
+        repo.holdSlots([all[0]]),
+        throwsA(isA<FacilityException>().having((e) => e.message, 'message', FacilityStrings.suspendedMessage)),
+      );
     });
 
     test('một khung vừa có người đặt thì không giữ khung nào, báo rõ khung đó', () async {

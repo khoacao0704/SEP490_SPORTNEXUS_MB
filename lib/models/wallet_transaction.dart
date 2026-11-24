@@ -14,6 +14,10 @@ enum TransactionType {
   walletPayment('WalletPayment', 'Thanh toán', isCredit: false),
   prize('Prize', 'Thưởng giải đấu', isCredit: true),
 
+  // Bùng kèo LFG (rời từ T−48h): BE ghi 2 giao dịch LFG_FORFEIT, một bên người rời, một bên chủ kèo.
+  lfgForfeitOut('LfgForfeitOut', 'Tiền giữ chỗ chuyển cho chủ kèo', isCredit: false),
+  lfgForfeitIn('LfgForfeitIn', 'Nhận tiền đền bù', isCredit: true),
+
   // Phía Chủ sân
   escrowRelease('EscrowRelease', 'Giải ngân Điểm đặt sân', isCredit: true),
   penaltyIncome('PenaltyIncome', 'Điểm phạt hủy / vắng mặt', isCredit: true),

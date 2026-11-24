@@ -41,10 +41,10 @@ abstract class BookingRepository {
   /// Lần đặt sân người dùng đã đặt hoặc góp Điểm: sắp diễn ra trước (gần nhất trước), đã qua sau.
   Future<List<Booking>> getMyBookings();
 
-  /// Người đặt hủy: trước 24 giờ hoàn 100% (chia Điểm nhóm: mỗi người được hoàn phần đã góp),
-  /// trong 24 giờ không hoàn cho ai.
+  /// Người đặt hủy: hoàn theo bậc [BookingCancelPolicy] (7 ngày 100%, 3 ngày 80%, 48 giờ 50%, dưới 48 giờ 0%);
+  /// chia Điểm nhóm: mọi người cùng một %, chia theo phần đã góp; còn chờ góp thì luôn hoàn đủ.
   /// Buổi thuộc gói cố định: hủy CẢ gói (các buổi chưa hủy), chỉ khi còn ít nhất 48 giờ trước buổi đầu còn lại,
-  /// hoàn 100%; quá mốc thì báo lỗi. Trả về buổi [bookingId] đã hủy.
+  /// hoàn theo bậc tới buổi đầu, áp cho từng buổi; quá mốc thì báo lỗi. Trả về buổi [bookingId] đã hủy.
   /// [reasonCode] lấy từ [getCancelReasons]; lý do tự nhập đi trong [reason]. Trả về lượt đặt đã hủy
   /// với [Booking.refunded] là số tiền thực được hoàn.
   Future<Booking> cancelBooking(String bookingId, {int? reasonCode, String? reason});

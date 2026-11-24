@@ -83,6 +83,7 @@ Future<String?> confirmLfgWithReason(
   required String title,
   required String message,
   required String action,
+  String? warning,
 }) async {
   // Không tải được danh sách lý do thì vẫn cho xác nhận (BE báo lỗi nếu bắt buộc).
   var reasons = const <CancelReason>[];
@@ -101,12 +102,37 @@ Future<String?> confirmLfgWithReason(
         final note = noteController.text.trim();
         final ready = reasons.isEmpty || (picked != null && (!picked!.isCustom || note.isNotEmpty));
         return AlertDialog(
-          title: Text(title),
+          title: warning == null
+              ? Text(title)
+              : Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(title, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                  ],
+                ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Cảnh báo đỏ (vd. rời kèo sát giờ: không hoàn + trừ Fair Play).
+                if (warning != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Text(
+                      warning,
+                      style: TextStyle(color: Colors.red.shade800, fontWeight: FontWeight.bold, height: 1.4),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Text(message),
                 if (reasons.isNotEmpty) ...[
                   const SizedBox(height: 12),

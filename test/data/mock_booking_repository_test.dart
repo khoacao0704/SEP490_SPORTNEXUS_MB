@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:test1/core/constants/booking_rules.dart';
 import 'package:test1/core/strings/booking_strings.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_booking_repository.dart';
@@ -77,8 +78,8 @@ void main() {
   test('có sẵn đặt mẫu: sắp diễn ra trước, đã qua sau', () async {
     final list = await repo.getMyBookings();
     expect(list.map((b) => b.id), ['DEMO2', 'DEMO1', 'DEMO3']);
-    expect(list.first.isFreeCancel(clock), isFalse); // còn ~12 giờ
-    expect(list[1].isFreeCancel(clock), isTrue); // còn 4 ngày
+    expect(list.first.cancelRefundPercent(clock), 0); // còn ~12 giờ
+    expect(list[1].cancelRefundPercent(clock), 80); // còn 4 ngày
     expect(list.last.status(clock), BookingStatus.completed);
   });
 
@@ -107,9 +108,9 @@ void main() {
     expect(mine.firstWhere((b) => b.id == bookings.last.id).status(clock), BookingStatus.upcoming);
   });
 
-  test('hủy trước 24 giờ: hoàn 100%, nhả khung giờ', () async {
-    final booking = await book(BookingPaymentType.full, daysAhead: 2);
-    expect(booking.isFreeCancel(clock), isTrue);
+  test('hủy từ 7 ngày: hoàn 100%, nhả khung giờ', () async {
+    final booking = await book(BookingPaymentType.full, daysAhead: 8);
+    expect(booking.cancelRefundPercent(clock), 100);
     final before = await wallet.getBalance();
 
     final cancelled = await repo.cancelBooking(booking.id);
@@ -120,9 +121,23 @@ void main() {
     expect(() => repo.cancelBooking(booking.id), error(BookingStrings.cannotCancel));
   });
 
-  test('hủy trong vòng 24 giờ: không được hoàn tiền', () async {
+  test('hủy còn 3–7 ngày hoàn 80%, còn 48 giờ – 3 ngày hoàn 50%', () async {
+    final four = await book(BookingPaymentType.full, daysAhead: 4);
+    final two = await book(BookingPaymentType.full, daysAhead: 3); // ca sớm nhất ngày +3: còn ~68 giờ
+    expect(four.cancelRefundPercent(clock), 80);
+    expect(two.cancelRefundPercent(clock), 50);
+    final before = await wallet.getBalance();
+
+    final a = await repo.cancelBooking(four.id);
+    final b = await repo.cancelBooking(two.id);
+    expect(a.refunded, BookingCancelPolicy.refund(four.totalPrice, 80));
+    expect(b.refunded, BookingCancelPolicy.refund(two.totalPrice, 50));
+    expect(await wallet.getBalance(), before + a.refunded + b.refunded);
+  });
+
+  test('hủy dưới 48 giờ: không được hoàn tiền', () async {
     final full = await book(BookingPaymentType.full, daysAhead: 0);
-    expect(full.isFreeCancel(clock), isFalse);
+    expect(full.cancelRefundPercent(clock), 0);
     final before = await wallet.getBalance();
     final cancelled = await repo.cancelBooking(full.id);
     expect(cancelled.status(clock), BookingStatus.cancelled);
@@ -135,7 +150,7 @@ void main() {
     expect((await repo.cancelBooking('DEMO2')).refunded, 0);
   });
 
-  test('chỉ người đặt được hủy; chia tiền hủy trong 24h thì không ai được hoàn', () async {
+  test('chỉ người đặt được hủy; chia tiền hủy dưới 48 giờ thì không ai được hoàn', () async {
     final split = MockSplitPaymentRepository(
       facility: facility,
       latency: Duration.zero,
@@ -247,8 +262,9 @@ void main() {
       await repo.cancelBooking(bookings[2].id);
       final mine = (await repo.getMyBookings()).where((b) => b.recurringGroupId == bookings.first.recurringGroupId);
       expect(mine.every((b) => b.cancelledAt != null), isTrue);
-      final paid = bookings.fold(0, (sum, b) => sum + b.amountPaid);
-      expect(await wallet.getBalance(), before + paid);
+      // Buổi đầu còn ~5 ngày → hoàn 80% cho từng buổi (mỗi buổi làm tròn riêng).
+      final refund = bookings.fold(0, (sum, b) => sum + BookingCancelPolicy.refund(b.amountPaid, 80));
+      expect(await wallet.getBalance(), before + refund);
     });
 
     test('còn dưới 48 giờ trước buổi đầu: không hủy được gói', () async {

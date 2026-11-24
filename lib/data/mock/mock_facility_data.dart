@@ -17,7 +17,7 @@ class MockFacilityData {
   static const List<String> _commonRules = [
     'Có mặt trước giờ chơi 10 phút để check-in bằng mã QR.',
     'Mang giày chuyên dụng, không mang giày đế đen vào sân.',
-    'Hủy trước 24 giờ được hoàn 100%. Hủy trong vòng 24 giờ không được hoàn Điểm.',
+    'Hủy từ 7 ngày trước giờ chơi hoàn 100%, từ 3 ngày hoàn 80%, từ 48 giờ hoàn 50%, dưới 48 giờ không hoàn Điểm.',
     'Không mang đồ ăn, nước có ga vào khu vực sân.',
   ];
 

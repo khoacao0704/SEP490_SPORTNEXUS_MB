@@ -149,6 +149,7 @@ class ApiOwnerRepository implements OwnerRepository {
       rating: rating,
       reviewCount: reviewCount,
       recurringDiscountPercent: ((json['recurringDiscountPercent'] as num?) ?? 0).round().clamp(0, 100),
+      isSuspended: json['isSuspended'] == true,
     );
   }
 

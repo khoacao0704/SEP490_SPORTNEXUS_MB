@@ -772,6 +772,14 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
                       style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
                     ),
                   ],
+                  // Đơn lẻ (không phải gói): luật hoàn khi hủy theo bậc thời gian.
+                  if (widget.hold != null && !_isPackage) ...[
+                    const SizedBox(height: 10),
+                    const Text(
+                      BookingStrings.cancelPolicy,
+                      style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
+                    ),
+                  ],
                   if (widget.hold != null) ...[
                     const Divider(height: 24, color: AppColors.divider),
                     _buildVoucherSection(),
@@ -1237,7 +1245,7 @@ class _BookingCheckoutScreenState extends State<BookingCheckoutScreen> {
         ),
       ];
 
-  /// Nút "Chọn Mã Giảm Giá" (mờ kèm lý do khi đơn không dùng được) + công thức Tổng tiền − Giảm giá = Thực thu.
+  /// Nút "Chọn Voucher" (mờ kèm lý do khi đơn không dùng được) + công thức Tổng tiền → Voucher giảm N% → Thực tế cần thanh toán.
   Widget _buildVoucherSection() {
     final blocked = _voucherBlockReason;
     final vouchers = _vouchers;
