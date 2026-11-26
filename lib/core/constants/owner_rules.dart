@@ -1,16 +1,7 @@
-/// Quy tắc check-in / check-out phía Chủ sân đã chốt.
-class OwnerRules {
-  OwnerRules._();
-
-  /// Mở check-in từ 30 phút trước giờ chơi.
-  static const Duration checkInOpensBefore = Duration(minutes: 30);
-
-  /// Quá 15 phút sau giờ chơi chưa check-in thì hệ thống (BE) tự đánh vắng mặt, trừ Fair Play.
-  static const Duration checkInClosesAfter = Duration(minutes: 15);
-}
-
-/// Chủ sân hủy đơn của khách (BE 20/11/2026, OwnerCancelBookingAsync). Hủy được mọi lúc khi đơn chưa hủy.
+/// Chủ sân hủy đơn của khách (BE 20/11/2026, OwnerCancelBookingAsync; Web ownerCancelPenalty.js).
 /// Khách luôn được hoàn 100% + voucher 10%. Điểm phạt trừ thẳng vào Ví điểm Chủ sân (ví có thể âm).
+/// Đơn khách vãng lai trả tại quầy: không phạt tiền, không trừ Fair Play.
+/// BE không có API xem trước tiền phạt nên app tự tính, số thật đọc từ kết quả hủy.
 class OwnerCancelRules {
   OwnerCancelRules._();
 
@@ -25,9 +16,14 @@ class OwnerCancelRules {
 
   static bool isLate(DateTime start, DateTime now) => now.isAfter(start.subtract(lateBefore));
 
-  /// round(Tổng tiền đơn × 10% / 20%), giống công thức BE.
-  static int penaltyFor(int totalAmount, {required bool late}) =>
-      (totalAmount * (late ? latePenaltyPercent : earlyPenaltyPercent) / 100).round();
+  static int percentFor({required bool late, bool walkIn = false}) =>
+      walkIn ? 0 : (late ? latePenaltyPercent : earlyPenaltyPercent);
+
+  static int fairPlayFor({required bool late, bool walkIn = false}) => walkIn || !late ? 0 : lateFairPlayPenalty;
+
+  /// round(Tổng tiền đơn × 10% / 20%), giống công thức BE; vãng lai = 0.
+  static int penaltyFor(int totalAmount, {required bool late, bool walkIn = false}) =>
+      (totalAmount * percentFor(late: late, walkIn: walkIn) / 100).round();
 }
 
 /// Phí duy trì bài đăng sân hàng tháng.

@@ -1,7 +1,9 @@
-import '../../models/court_session.dart';
+import '../../models/booking.dart' show CancelReason;
 import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/facility_review.dart';
+import '../../models/owner_booking.dart';
+import '../../models/owner_court.dart';
 import '../../models/owner_facility.dart';
 import '../../models/owner_finance.dart';
 import '../../models/sport.dart';
@@ -10,7 +12,10 @@ import '../../models/sport.dart';
 class OwnerException implements Exception {
   final String message;
 
-  const OwnerException(this.message);
+  /// BE chưa có API này (404 / 405): màn hiện "đang chờ hệ thống cập nhật" thay vì báo lỗi.
+  final bool unavailable;
+
+  const OwnerException(this.message, {this.unavailable = false});
 
   @override
   String toString() => 'OwnerException: $message';
@@ -20,30 +25,49 @@ abstract class OwnerRepository {
   /// Các cơ sở thuộc tài khoản Chủ sân đang đăng nhập.
   Future<List<Facility>> getMyFacilities();
 
-  /// Lượt sân bắt đầu trong ngày [day] (theo giờ máy), sắp theo giờ bắt đầu.
-  /// Bỏ trống [facilityId] thì lấy tất cả cơ sở.
-  Future<List<CourtSession>> getSessions({required DateTime day, String? facilityId});
+  // ---------------- Vận hành: đơn, lịch, check-in (giống Web) ----------------
 
-  Future<CourtSession> getSession(String sessionId);
-
-  /// Tra mã QR người chơi xuất trình. Lỗi nếu mã sai hoặc không thuộc cơ sở của Chủ sân.
-  Future<TicketLookup> lookupTicket(String code);
-
-  /// Submit a scanned QR code to the backend for check-in.
-  Future<void> scanQr({
+  /// GET /bookings/owner: lọc theo ngày ([date]) hoặc khoảng ngày, trạng thái, tên / SĐT khách.
+  Future<OwnerBookingPage> getBookings({
     required String facilityId,
-    required String qrCode,
+    DateTime? date,
+    DateTime? from,
+    DateTime? to,
+    String? status,
+    String? search,
+    int page = 1,
+    int pageSize = 15,
   });
 
-  /// Check-in một người vào đúng sân con người chơi đã chọn lúc đặt ([CourtSession.assignedCourt]).
-  Future<CourtSession> checkIn({required String sessionId, required String userId});
+  Future<OwnerBooking> getBooking(String bookingId);
 
-  /// Check-out cả lượt sân: xác nhận đã nhận đủ giá sân, giải ngân phần escrow cho Chủ sân.
-  Future<CourtSession> checkOut(String sessionId);
+  /// Lưới lịch một ngày: mọi sân con và ca của cơ sở.
+  Future<FacilityDaySchedule> getDaySchedule(String facilityId, DateTime date);
 
-  /// Chủ sân hủy đơn của khách (xem [OwnerCancelRules]). [reason] trống thì BE dùng lý do mặc định.
+  /// Nhận khách vãng lai tại quầy.
+  Future<void> createWalkIn(WalkInRequest request);
+
+  /// Check-in thủ công cả nhóm của đơn (khách quên vé QR).
+  Future<void> checkInBooking(String bookingId);
+
+  /// Kết thúc ca sớm: check-out mọi người chơi đang trong sân, không hoàn tiền phần còn lại.
+  Future<void> endBooking(String bookingId);
+
+  /// Khóa (bảo trì) hoặc mở lại một ca trống.
+  Future<void> setSlotLocked(String slotId, {required bool locked});
+
+  /// Đổi giá một ca trống (tối thiểu 1.000 Điểm).
+  Future<void> setSlotPrice(String slotId, int price);
+
+  /// Quét mã QR vé tại cơ sở: quét là check-in luôn.
+  Future<ScanResult> scanQr({required String facilityId, required String qrCode});
+
+  /// Lý do hủy đơn (dùng chung danh sách với người chơi, như Web).
+  Future<List<CancelReason>> getCancelReasons();
+
+  /// Chủ sân hủy đơn của khách (xem [OwnerCancelRules]).
   /// [lockSlot]: true thì ca sân chuyển sang Bảo trì, false thì mở lại cho người khác đặt.
-  Future<OwnerCancelResult> cancelBooking(String sessionId, {String? reason, bool lockSlot = false});
+  Future<OwnerCancelResult> cancelBooking(String bookingId, {int? reasonCode, String? reason, bool lockSlot = false});
 
   // ---------------- Quản lý cơ sở & sân ----------------
 
@@ -53,21 +77,80 @@ abstract class OwnerRepository {
 
   Future<OwnerFacility> getOwnerFacility(String facilityId);
 
-  Future<List<Map<String, dynamic>>> getAmenities();
-  /// Đăng cơ sở mới: đủ thông tin + giấy phép, chờ Admin duyệt.
-  Future<OwnerFacility> submitFacility(FacilitySubmission submission);
+  /// Danh mục tiện ích (master-data/amenities).
+  Future<List<FacilityAmenity>> getAmenities();
 
-  /// Sửa và nộp lại hồ sơ bị từ chối.
-  Future<OwnerFacility> resubmitFacility(String facilityId, FacilitySubmission submission);
+  /// Tỉnh / thành và phường / xã để chọn địa chỉ (lưu bằng mã).
+  Future<List<AreaOption>> getProvinces();
 
-  /// Cơ sở đã duyệt đổi tên / địa chỉ / giấy phép: chờ Admin duyệt lại, trong lúc chờ vẫn chạy thông tin cũ.
-  Future<OwnerFacility> requestProfileChange(String facilityId, FacilityProfile profile);
+  Future<List<AreaOption>> getWards(String provinceCode);
 
-  /// Giờ mở cửa, SĐT, mô tả, tiện ích, nội quy, ảnh sân: sửa tự do sau khi được duyệt.
-  Future<OwnerFacility> updateOperations(String facilityId, FacilityOperations operations);
+  // ---------------- Cơ sở của tôi (giống Web) ----------------
+
+  /// Tạo cơ sở mới: chờ Admin duyệt; thêm ảnh và sân ngay được.
+  Future<OwnerFacility> createFacility(FacilityInput input);
+
+  /// Lưu thông tin cơ sở (tiện ích, ảnh sửa riêng).
+  Future<OwnerFacility> updateFacility(String facilityId, FacilityInput input);
+
+  /// Đóng cơ sở: sân con và ca chưa đặt trong tương lai bị xóa; lịch sử đặt và đánh giá giữ lại.
+  Future<void> deleteFacility(String facilityId);
+
+  /// Tải ảnh (đường dẫn trong máy) lên cơ sở.
+  Future<void> uploadFacilityPhotos(String facilityId, List<String> filePaths);
+
+  Future<void> deleteFacilityPhoto(String facilityId, String photoId);
+
+  Future<void> setFacilityThumbnail(String facilityId, String photoId);
+
+  Future<void> updateFacilityAmenities(String facilityId, List<String> amenityIds);
 
   /// % giảm gói cố định hằng tuần (0–50, 0 = không giảm). Cơ sở đang bị từ chối: lưu xong BE tự chuyển về chờ duyệt lại.
   Future<OwnerFacility> updateRecurringDiscount(String facilityId, int percent);
+
+  // ---------------- Sân & giá, Ca sân (giống Web) ----------------
+
+  /// Môn thể thao để chọn khi thêm sân.
+  Future<List<SportCategory>> getSports();
+
+  Future<List<OwnerCourt>> getCourts(String facilityId);
+
+  /// Chi tiết sân: thêm số ca trống 7 ngày tới, khoảng giá sắp tới.
+  Future<OwnerCourt> getCourt(String facilityId, String courtId);
+
+  Future<void> createCourt(String facilityId, CourtInput input);
+
+  /// [previous] để gửi "" / 0 / clearIsIndoor khi xóa giá trị cũ (như Web).
+  Future<void> updateCourt(String facilityId, OwnerCourt previous, CourtInput input);
+
+  /// Xóa sân và các ca tương lai chưa có người đặt; trả số ca đã xóa.
+  Future<int> deleteCourt(String facilityId, String courtId);
+
+  /// Xóa ca trống từ ngày mai rồi sinh lại theo cấu hình mới của sân (ca có khách giữ nguyên).
+  Future<void> regenerateCourtSlots(String courtId);
+
+  /// Giờ mở / đóng cửa của cơ sở ("HH:mm").
+  Future<void> updateOpenHours(String facilityId, {required String openTime, required String closeTime});
+
+  /// Lịch 7 ngày (hoặc khoảng ngày bất kỳ).
+  Future<SlotsRange> getSlotsRange(String facilityId, {required DateTime from, required DateTime to});
+
+  /// Số ca khách đặt được hôm nay.
+  Future<FacilityAvailability> getAvailability(String facilityId, DateTime date);
+
+  /// Sinh ca hàng loạt; một sân thì gọi theo sân, nhiều sân / tất cả thì theo cơ sở.
+  Future<List<GenerateResultRow>> generateSlots(String facilityId, GenerateSlotsRequest request, {Map<String, String> courtNames});
+
+  Future<BulkSlotResult> bulkSlots(String facilityId, BulkSlotRequest request);
+
+  Future<void> deleteSlot(String slotId);
+
+  /// Đợt giá đặc biệt từ [from] trở đi. BE chưa có API thì ném [OwnerException.unavailable].
+  Future<List<PricePeriod>> getPricePeriods(String facilityId, {DateTime? from, DateTime? to});
+
+  Future<PricePeriodResult> savePricePeriod(String facilityId, PricePeriod period);
+
+  Future<void> deletePricePeriod(String facilityId, String periodId);
 
   /// Thêm loại sân mới hoặc cập nhật số sân con, giá & khung giờ (chỉ khi đã duyệt).
   Future<OwnerFacility> saveCourt(String facilityId, CourtConfig court);

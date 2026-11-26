@@ -33,10 +33,10 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
   bool _loading = true;
   String? _error;
 
-  /// Cơ sở đang chọn; `null` = tất cả.
+  /// Cơ sở đang quản lý (như Web: luôn một cơ sở; `null` khi chưa có cơ sở nào được duyệt).
   String? _facilityId;
 
-  /// Tăng sau mỗi lần check-in / check-out để các tab tải lại.
+  /// Tăng sau mỗi lần đơn / ca thay đổi để các tab tải lại.
   int _revision = 0;
 
   @override
@@ -55,6 +55,7 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
       if (mounted) {
         setState(() {
           _facilities = list;
+          _facilityId ??= list.firstOrNull?.id;
           _loading = false;
         });
       }
@@ -77,8 +78,8 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
       if (!mounted) return;
       setState(() {
         _facilities = list;
-        // Cơ sở đang chọn không còn trong danh sách thì quay về "Tất cả cơ sở".
-        if (!list.any((f) => f.id == _facilityId)) _facilityId = null;
+        // Cơ sở đang chọn không còn trong danh sách thì chọn cơ sở đầu tiên.
+        if (!list.any((f) => f.id == _facilityId)) _facilityId = list.firstOrNull?.id;
       });
     } catch (_) {}
   }
@@ -97,15 +98,11 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
         return;
       }
 
-      // If no facility was selected, use the first available facility.
-      final facilityId = _facilityId ?? _facilities.first.id;
-
+      final facility = _facilities.firstWhere((f) => f.id == _facilityId, orElse: () => _facilities.first);
       final changed = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
-          builder: (_) => OwnerScanScreen(
-            facilityId: facilityId,
-          ),
+          builder: (_) => OwnerScanScreen(facilityId: facility.id, facilityName: facility.name),
         ),
       );
 
@@ -142,6 +139,7 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
       facilities: _facilities,
       selectedId: _facilityId,
       onChanged: (id) => setState(() => _facilityId = id),
+      allowAll: false,
     );
 
     final pages = [

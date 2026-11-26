@@ -181,4 +181,96 @@ class OwnerFacilityStrings {
   static String closureBlocked(int n) =>
       'Đã có $n lượt đặt trong khoảng này nên không thể tạm đóng. Hãy chọn khoảng ngày khác.';
   static String closureRange(String from, String to) => from == to ? from : '$from - $to';
+
+  // ---------------- Cơ sở của tôi theo Web (đợt 3) ----------------
+  static const String createTitle = 'Tạo cơ sở mới';
+  static const String createHint =
+      'Cần hồ sơ xác minh chủ sân đã được duyệt. Cơ sở mới sẽ chờ Admin duyệt trước khi hiện với người chơi.';
+  static const String editTitle = 'Sửa thông tin';
+  static const String fName = 'Tên cơ sở *';
+  static const String fProvince = 'Tỉnh / thành phố *';
+  static const String fWard = 'Phường / xã *';
+  static const String fStreet = 'Số nhà, tên đường *';
+  static const String fPhone = 'Số điện thoại';
+  static const String fMap = 'Vị trí sân trên bản đồ';
+  static const String fMapHint = 'Bấm lên bản đồ hoặc kéo ghim để cắm cờ chọn đúng tọa độ sân.';
+  static const String fPickOnMap = 'Chọn trên bản đồ';
+  static const String fClearPin = 'Xóa ghim';
+  static const String fLat = 'Vĩ độ';
+  static const String fLng = 'Kinh độ';
+  static const String fOpen = 'Giờ mở cửa';
+  static const String fClose = 'Giờ đóng cửa';
+  static const String fDescription = 'Giới thiệu';
+  static const String fRules = 'Nội quy sân';
+  static const String fAutoSlots = 'Tự sinh ca hằng ngày theo giờ mở cửa';
+  static const String fDiscount = 'Giảm giá gói đặt định kỳ (%)';
+  static const String fDiscountHint =
+      'Từ 0 đến 50%, gợi ý 10%. Nhập 0 = không giảm. Áp dụng khi người chơi đặt cùng ca, cùng sân, cùng thứ từ 4 tuần '
+      'liên tiếp. Phần giảm do chủ sân chịu, phí nền tảng tính trên số tiền sau giảm.';
+  static const String fAmenities = 'Tiện ích';
+  static const String createSubmit = 'Tạo cơ sở';
+  static const String saveInfo = 'Lưu thông tin';
+  static const String created = 'Đã tạo cơ sở, đang chờ Admin duyệt. Bạn có thể thêm ảnh và sân ngay.';
+  static const String infoSaved = 'Đã lưu thông tin cơ sở.';
+  static const String errName = 'Vui lòng nhập tên cơ sở.';
+  static const String errAddress = 'Vui lòng chọn tỉnh / thành, phường / xã và nhập số nhà, tên đường.';
+  static const String errLatLng = 'Vui lòng chọn đầy đủ cả Vĩ độ và Kinh độ, hoặc xóa tọa độ.';
+  static const String errLatLngRange = 'Vĩ độ phải trong khoảng -90..90 và kinh độ trong khoảng -180..180.';
+  static const String errHours = 'Giờ đóng cửa phải sau giờ mở cửa.';
+  static const String errDiscount = 'Mức giảm gói định kỳ phải là số nguyên từ 0 đến 50 (%).';
+
+  // Chi tiết
+  static const String badgeApproved = 'Đã duyệt';
+  static const String badgePending = 'Chờ Admin duyệt';
+  static const String badgeRejected = 'Bị từ chối';
+  static const String badgeLocked = 'Bị khóa';
+  static String rejectReason(String r) => 'Lý do từ chối: $r';
+  static String lockReason(String r) => 'Lý do khóa: $r';
+  static const String infoHours = 'Giờ mở cửa';
+  static const String infoPhone = 'Điện thoại';
+  static const String infoArea = 'Khu vực';
+  static const String infoRating = 'Đánh giá';
+  static String ratingValue(double r, int n) => '${r.toStringAsFixed(1)} ★ ($n)';
+  static const String noRating = 'Chưa có';
+  static const String infoCourts = 'Sân con';
+  static String courtsValue(int n) => '$n sân';
+  static const String infoAutoSlots = 'Tự sinh ca';
+  static const String on = 'Bật';
+  static const String off = 'Tắt';
+  static const String infoDiscount = 'Giảm gói định kỳ';
+  static const String noDiscount = 'Không giảm';
+
+  // Ảnh
+  static const int maxPhotos = 10;
+  static const int maxPhotoBytes = 5 * 1024 * 1024;
+  static const String photosTitle = 'Ảnh cơ sở';
+  static String photosCount(int n) => '$n/$maxPhotos';
+  static const String addPhotos = 'Thêm ảnh';
+  static const String uploading = 'Đang tải…';
+  static const String noPhotos = 'Chưa có ảnh. Ảnh đầu tiên sẽ là ảnh đại diện.';
+  static const String thumbnail = 'Ảnh đại diện';
+  static const String setThumbnail = 'Đặt đại diện';
+  static String tooManyPhotos(int max) => 'Tối đa $max ảnh cho mỗi cơ sở.';
+  static const String photoTooBig = 'Mỗi ảnh tối đa 5MB.';
+  static String uploaded(int n) => 'Đã tải lên $n ảnh.';
+  static const String thumbnailSet = 'Đã đặt ảnh đại diện.';
+  static const String deletePhotoConfirm = 'Xóa ảnh này?';
+  static const String photoDeleted = 'Đã xóa ảnh.';
+
+  // Tiện ích
+  static const String amenitiesTitle = 'Tiện ích';
+  static const String undo = 'Hoàn tác';
+  static const String saveAmenities = 'Lưu tiện ích';
+  static const String amenitiesSaved = 'Đã cập nhật tiện ích.';
+  static const String amenitiesLoadError = 'Chưa tải được danh mục tiện ích.';
+
+  // Đóng cơ sở
+  static const String closeTitle = 'Đóng cơ sở';
+  static const String closeHint = 'Không đóng được khi còn đơn đặt sắp tới hoặc giải đấu chưa kết thúc.';
+  static const String closeButton = 'Đóng cơ sở này';
+  static String closeConfirm(String name) =>
+      'Đóng cơ sở "$name"? Sân con và các ca chưa đặt trong tương lai sẽ bị xóa. Lịch sử đặt sân và đánh giá vẫn được giữ.';
+  static const String closed = 'Đã đóng cơ sở.';
+  static String closeBlocked(int n) => 'Cơ sở còn $n đơn đặt sắp tới, chưa đóng được.';
+  static const String confirm = 'Đồng ý';
 }

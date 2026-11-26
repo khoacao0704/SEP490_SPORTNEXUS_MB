@@ -56,33 +56,6 @@ void main() {
     expect((await repo.getListingFees()).first.status(now), FeeStatus.due);
   });
 
-  test('check-out giải ngân phần tiền qua app vào ví Chủ sân và cộng doanh thu', () async {
-    final revenueBefore = (await repo.getMonthlyRevenue(now)).total; // ghi nhận tiền vắng mặt trước
-    final before = await wallet.getBalance();
-
-    await repo.checkOut('LFGOW1');
-
-    expect(await wallet.getBalance(), before + 160000);
-    final txs = await wallet.getTransactions();
-    final release = txs.singleWhere((t) => t.reference == 'LFGOW1');
-    expect(release.type, TransactionType.escrowRelease);
-    expect(release.amount, 160000);
-    expect((await repo.getMonthlyRevenue(now)).total, revenueBefore + 160000);
-  });
-
-  test('vắng mặt: tiền cọc đã trả về chủ sân như tiền phạt', () async {
-    final before = await wallet.getBalance();
-    final october = await repo.getMonthlyRevenue(now, facilityId: 'f-hcm-hoalu');
-    final noShow = october.items.where((i) => i.id == 'rv-noshow-OW1004').single;
-    expect(noShow.kind, RevenueKind.penalty);
-    expect(noShow.amount, 125000);
-    expect(await wallet.getBalance(), before + 125000);
-
-    // Ghi nhận một lần.
-    await repo.getMonthlyRevenue(now);
-    expect(await wallet.getBalance(), before + 125000);
-  });
-
   test('trả phí bằng ví: thiếu tiền báo lỗi, đủ thì trả xong và hết quá hạn', () async {
     final sep = (await repo.getListingFees()).first;
     await expectLater(repo.payListingFee(sep.id), throwsOwner(WalletStrings.insufficientBalance));
@@ -98,7 +71,13 @@ void main() {
   });
 
   test('ví Chủ sân tách riêng với ví người chơi', () async {
-    await repo.checkOut('LFGOW1');
+    await repo.recordTournamentPayout(
+      tournamentId: 't1',
+      tournamentName: 'Giải Mùa Thu',
+      facilityId: 'f-hcm-thientrieu',
+      facilityName: 'Sân Cầu Lông Thiên Triều',
+      amount: 500000,
+    );
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getInt(MockWalletRepository.keyBalance), isNull);
     expect(prefs.getInt('${MockOwnerRepository.ownerWalletPrefix}${MockWalletRepository.keyBalance}'), isNotNull);

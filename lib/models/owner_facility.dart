@@ -225,17 +225,111 @@ class FacilityOperations {
     this.rules = const [],
     this.images = const [],
   });
+
+  FacilityOperations copyWithImages(List<String> images) => FacilityOperations(
+        phone: phone,
+        openMinutes: openMinutes,
+        closeMinutes: closeMinutes,
+        description: description,
+        amenities: amenities,
+        rules: rules,
+        images: images,
+      );
+
+  FacilityOperations copyWithAmenities(List<String> amenities) => FacilityOperations(
+        phone: phone,
+        openMinutes: openMinutes,
+        closeMinutes: closeMinutes,
+        description: description,
+        amenities: amenities,
+        rules: rules,
+        images: images,
+      );
 }
 
-/// Hồ sơ đăng cơ sở mới (hoặc nộp lại sau khi bị từ chối). Giá & khung giờ cấu hình sau khi được duyệt.
-class FacilitySubmission {
-  final FacilityProfile profile;
-  final FacilityOperations operations;
+/// Một ảnh của cơ sở (imageItems của BE).
+class FacilityPhoto {
+  final String id;
+  final String url;
+  final bool isThumbnail;
 
-  /// Môn, loại sân, số sân con (chưa có giá).
-  final List<CourtConfig> courts;
+  const FacilityPhoto({required this.id, required this.url, this.isThumbnail = false});
+}
 
-  const FacilitySubmission({required this.profile, required this.operations, required this.courts});
+/// Tiện ích (master-data/amenities).
+class FacilityAmenity {
+  final String id;
+  final String name;
+
+  const FacilityAmenity({required this.id, required this.name});
+}
+
+/// Tỉnh / thành hoặc phường / xã (master-data/provinces, /provinces/{code}/wards).
+class AreaOption {
+  final String code;
+  final String name;
+
+  const AreaOption({required this.code, required this.name});
+}
+
+/// Dữ liệu tạo / sửa cơ sở (CreateFacilityRequest / UpdateFacilityRequest) như form của Web.
+/// Địa chỉ lưu 3 phần: số nhà + mã tỉnh + mã phường.
+class FacilityInput {
+  final String name;
+  final String streetAddress;
+  final String provinceCode;
+  final String wardCode;
+  final double? latitude;
+  final double? longitude;
+  final String? phone;
+  final String openTime;
+  final String closeTime;
+  final String? description;
+  final String? rules;
+  final bool autoGenerateSlots;
+  final int recurringDiscountPercent;
+
+  /// Chỉ khi tạo mới (sửa thì tiện ích lưu riêng).
+  final List<String> amenityIds;
+
+  const FacilityInput({
+    required this.name,
+    required this.streetAddress,
+    required this.provinceCode,
+    required this.wardCode,
+    this.latitude,
+    this.longitude,
+    this.phone,
+    this.openTime = '06:00',
+    this.closeTime = '22:00',
+    this.description,
+    this.rules,
+    this.autoGenerateSlots = true,
+    this.recurringDiscountPercent = 10,
+    this.amenityIds = const [],
+  });
+
+  Map<String, dynamic> toJson({required bool creating}) => {
+        'name': name,
+        'streetAddress': streetAddress,
+        'provinceCode': provinceCode,
+        'wardCode': wardCode,
+        'latitude': latitude,
+        'longitude': longitude,
+        'phone': phone,
+        'openTime': '$openTime:00',
+        'closeTime': '$closeTime:00',
+        'description': description,
+        'rules': rules,
+        'autoGenerateSlots': autoGenerateSlots,
+        // Gửi kèm cờ cũ isBulkDiscountEnabled (> 0% = bật) như Web.
+        'recurringDiscountPercent': recurringDiscountPercent,
+        'isBulkDiscountEnabled': recurringDiscountPercent > 0,
+        // Sửa: null để BE giữ nguyên trạng thái, tiện ích, ảnh (sửa riêng).
+        'amenityIds': creating ? amenityIds : null,
+        'imageUrls': creating ? const <String>[] : null,
+        if (!creating) 'status': null,
+      };
 }
 
 /// Cơ sở nhìn từ phía Chủ sân, gồm trạng thái duyệt.
@@ -263,6 +357,23 @@ class OwnerFacility {
   /// chủ sân không đổi Điểm ra tiền được; chỉ Admin xử lý xong khiếu nại mới mở lại.
   final bool isSuspended;
 
+  // ---- Trường theo BE / Web (đợt 3) ----
+
+  /// Số nhà, tên đường (streetAddress); địa chỉ đầy đủ ở [FacilityProfile.address].
+  final String? streetAddress;
+  final String? provinceCode;
+  final String? wardCode;
+  final bool autoGenerateSlots;
+
+  /// Admin khóa cơ sở.
+  final bool isLocked;
+  final String? lockedReason;
+  final List<FacilityPhoto> photos;
+  final List<FacilityAmenity> amenityItems;
+
+  /// Số sân con (null khi BE không trả).
+  final int? courtCount;
+
   const OwnerFacility({
     required this.id,
     required this.status,
@@ -277,6 +388,15 @@ class OwnerFacility {
     this.reviewCount = 0,
     this.recurringDiscountPercent = 0,
     this.isSuspended = false,
+    this.streetAddress,
+    this.provinceCode,
+    this.wardCode,
+    this.autoGenerateSlots = true,
+    this.isLocked = false,
+    this.lockedReason,
+    this.photos = const [],
+    this.amenityItems = const [],
+    this.courtCount,
   });
 
   bool get isApproved => status == ApprovalStatus.approved;
@@ -335,6 +455,8 @@ class OwnerFacility {
     bool clearChange = false,
     int? recurringDiscountPercent,
     bool? isSuspended,
+    List<FacilityPhoto>? photos,
+    List<FacilityAmenity>? amenityItems,
   }) =>
       OwnerFacility(
         id: id,
@@ -350,5 +472,14 @@ class OwnerFacility {
         reviewCount: reviewCount,
         recurringDiscountPercent: recurringDiscountPercent ?? this.recurringDiscountPercent,
         isSuspended: isSuspended ?? this.isSuspended,
+        streetAddress: streetAddress,
+        provinceCode: provinceCode,
+        wardCode: wardCode,
+        autoGenerateSlots: autoGenerateSlots,
+        isLocked: isLocked,
+        lockedReason: lockedReason,
+        photos: photos ?? this.photos,
+        amenityItems: amenityItems ?? this.amenityItems,
+        courtCount: courtCount,
       );
 }

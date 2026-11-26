@@ -19,7 +19,7 @@ import 'package:test1/data/session_store.dart';
 import 'package:test1/models/app_user.dart';
 import 'package:test1/models/user_role.dart';
 import 'package:test1/screens/lfg/lfg_match_detail_screen.dart';
-import 'package:test1/screens/owner/owner_session_detail_screen.dart';
+import 'package:test1/screens/owner/owner_booking_detail_screen.dart';
 
 /// Kịch bản hủy có phạt chạy qua repository API thật + màn hình thật, server giả trả JSON dạng BE.
 /// Mỗi route là một hàm nên trạng thái "server" đổi được sau khi bấm hủy.
@@ -98,31 +98,37 @@ Map<String, dynamic> _card({
   };
 }
 
-/// Lượt sân phía Chủ sân như /bookings/owner/{id} trả (dạng trường của BE, không phải JSON của app).
+/// Đơn phía Chủ sân như GET /bookings/owner/{id} trả (đúng tên trường Web đang đọc).
 Map<String, dynamic> _ownerBooking({
   required String id,
   required Duration startsIn,
   required int total,
-  String kind = 'Booking',
-  int players = 1,
-  bool cancelled = false,
+  String status = 'PAID',
+  bool walkIn = false,
+  bool lfg = false,
 }) {
   final start = DateTime.now().add(startsIn);
   return {
     'bookingId': id,
     'facilityId': 'f1',
-    'facilityName': 'Sân Cầu Lông Thiên Triều',
+    'bookingStatus': status,
     'startTime': start.toIso8601String(),
     'endTime': start.add(const Duration(hours: 1)).toIso8601String(),
-    'sportName': 'Badminton',
-    'type': kind,
-    'totalPrice': total,
-    'paidAmount': total,
+    'sportName': 'Cầu lông',
     'courtName': 'Sân 2',
+    'totalAmount': total,
+    'paidAmount': total,
+    'pendingAmount': 0,
+    'hostName': 'Nguyễn Văn Khách',
+    'hostPhone': '0912******',
+    'isWalkIn': walkIn,
+    'isNoShow': false,
     'participants': [
-      for (var i = 0; i < players; i++) {'userId': 'u$i', 'fullName': 'Khách $i', 'ticketCode': 'T$i'},
+      {'userId': 'u0', 'fullName': 'Nguyễn Văn Khách', 'isHost': true, 'amountContributed': total, 'paymentStatus': 'PAID'},
     ],
-    if (cancelled) 'cancelledAt': DateTime.now().toIso8601String(),
+    if (lfg) 'lfg': {'status': 'FILLED', 'totalSlots': 3, 'remainingSlots': 0, 'pricePerPerson': total ~/ 4, 'acceptedCount': 3},
+    if (status == 'CANCELLED')
+      'cancellation': {'cancelledAt': DateTime.now().toIso8601String(), 'reason': 'Sân hỏng đèn', 'refundAmount': total, 'penaltyAmount': 0},
   };
 }
 
@@ -258,98 +264,105 @@ void main() {
   });
 
   group('Chủ sân hủy đơn', () {
-    /// GET lượt sân trả [json]; POST cancel ghi nhận và trả số phạt BE (cố ý khác số dự kiến 1đ để chắc app đọc số thật).
-    void serveOwner(Map<String, dynamic> Function({bool cancelled}) json, {required int bePenalty, required int beFp}) {
-      var cancelled = false;
+    const reasons = [
+      {'code': 1, 'label': 'Thay đổi lịch trình / Bận việc đột xuất', 'isCustom': false},
+      {'code': 6, 'label': 'Khác (Tự nhập lý do)', 'isCustom': true},
+    ];
+
+    /// GET đơn trả [json]; POST cancel ghi nhận và trả số phạt BE (cố ý lệch 1 Điểm để chắc app đọc số thật).
+    void serveOwner(Map<String, dynamic> Function({String status}) json, {required int bePenalty, required int beFp}) {
+      var status = json()['bookingStatus'] as String;
       final id = json()['bookingId'] as String;
-      server.on('GET', '/api/v1/bookings/owner/$id', (_) => json(cancelled: cancelled));
+      server.on('GET', ApiOwnerRepository.bookingPath(id), (_) => json(status: status));
+      server.on('GET', ApiOwnerRepository.cancelReasonsPath, (_) => reasons);
       server.on('POST', ApiOwnerRepository.cancelBookingPath(id), (_) {
-        cancelled = true;
-        return {
-          'bookingId': id,
-          'status': 'Cancelled',
-          'lateCancel': beFp > 0,
-          'ownerPenaltyAmount': bePenalty,
-          'ownerFairPlayPenalty': beFp,
-          'refundAmount': 300000,
-          'vouchersIssued': 1,
-        };
+        status = 'CANCELLED';
+        return {'bookingId': id, 'ownerPenaltyAmount': bePenalty, 'ownerFairPlayPenalty': beFp, 'refundAmount': 300000};
+      });
+      server.on('POST', ApiOwnerRepository.endPath(id), (_) {
+        status = 'COMPLETED';
+        return null;
       });
     }
 
-    Future<void> openOwner(WidgetTester tester, String id) async {
-      final session = await tester.runAsync(() => AppRepositories.owner.getSession(id));
-      await pump(tester, OwnerSessionDetailScreen(session: session!));
+    Future<void> openOwner(WidgetTester tester, String id, {bool tapCancel = true}) async {
+      await pump(tester, OwnerBookingDetailScreen(bookingId: id));
+      if (!tapCancel) return;
       await tester.tap(find.text(OwnerStrings.cancelBooking));
       await tester.pumpAndSettle();
     }
 
-    testWidgets('đơn thường, dưới 48h: phạt 20% (60.000đ) + −10 FP; gửi lý do + khóa ca; hiện số BE trả',
-        (tester) async {
-      serveOwner(({bool cancelled = false}) =>
-          _ownerBooking(id: 'b1', startsIn: const Duration(hours: 10), total: 300000, cancelled: cancelled),
+    testWidgets('dưới 48h: phạt 20% + −10 FP; gửi mã + chữ lý do + khóa ca; hiện số BE trả', (tester) async {
+      serveOwner(({String status = 'PAID'}) =>
+          _ownerBooking(id: 'b1', startsIn: const Duration(hours: 10), total: 300000, status: status),
           bePenalty: 60001, beFp: 10);
       await openOwner(tester, 'b1');
 
-      expect(find.text(OwnerStrings.cancelLateWarning), findsOneWidget);
-      expect(find.text('−${Formatters.vnd(60000)}'), findsOneWidget);
+      expect(find.text(OwnerStrings.cancelPenaltyValue(20)), findsOneWidget);
       expect(find.text(OwnerStrings.cancelFairPlay(10)), findsOneWidget);
+      expect(find.text(OwnerStrings.cancelWarning(20, fairPlay: 10, walkIn: false)), findsOneWidget);
 
-      await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'Sân hỏng đèn');
       await tester.tap(find.text(OwnerStrings.cancelLockSlot));
-      await tester.tap(find.text(OwnerStrings.cancelConfirm));
+      await tester.tap(find.text(OwnerStrings.cancelConfirmPenalty));
       await tester.pumpAndSettle();
 
       final post = server.posts(ApiOwnerRepository.cancelBookingPath('b1')).single;
-      expect(post.data, {'reason': 'Sân hỏng đèn', 'lockSlotAfterCancel': true});
-      expect(find.text('Đã hủy đơn. Bạn bị phạt ${Formatters.vnd(60001)} và trừ 10 điểm Fair Play.'), findsOneWidget);
-      expect(find.text(OwnerStrings.statusCancelled), findsOneWidget);
+      expect(post.data, {
+        'cancelReasonId': 1,
+        'reason': 'Thay đổi lịch trình / Bận việc đột xuất',
+        'lockSlotAfterCancel': true,
+      });
+      expect(
+        find.text('Đã hủy đơn. Người đặt được hoàn 100% và nhận voucher 10%. '
+            'Tiền phạt đã trừ vào ví: ${Formatters.vnd(60001)}. Trừ 10 điểm Fair Play.'),
+        findsOneWidget,
+      );
+      expect(find.text(OwnerStrings.bookingBadge('CANCELLED')), findsOneWidget);
       expect(find.text(OwnerStrings.cancelBooking), findsNothing);
     });
 
-    testWidgets('đơn thường, còn hơn 48h: phạt 10% (30.000đ), không trừ FP, không khóa ca', (tester) async {
-      serveOwner(({bool cancelled = false}) =>
-          _ownerBooking(id: 'b2', startsIn: const Duration(days: 3), total: 300000, cancelled: cancelled),
+    testWidgets('còn hơn 48h: phạt 10%, không trừ FP; lý do "Khác" bắt buộc tự nhập', (tester) async {
+      serveOwner(({String status = 'PAID'}) =>
+          _ownerBooking(id: 'b2', startsIn: const Duration(days: 3), total: 300000, status: status),
           bePenalty: 30000, beFp: 0);
       await openOwner(tester, 'b2');
 
-      expect(find.text(OwnerStrings.cancelEarlyWarning), findsOneWidget);
-      expect(find.text('−${Formatters.vnd(30000)}'), findsOneWidget);
-      expect(find.text(OwnerStrings.cancelFairPlayLabel), findsNothing);
+      expect(find.text(OwnerStrings.cancelPenaltyValue(10)), findsOneWidget);
+      expect(find.text(OwnerStrings.cancelFairPlay(0)), findsOneWidget);
+      expect(find.text(OwnerStrings.cancelWarning(10, fairPlay: 0, walkIn: false)), findsOneWidget);
 
-      await tester.tap(find.text(OwnerStrings.cancelConfirm));
+      await tester.tap(find.text(reasons.first['label'] as String));
       await tester.pumpAndSettle();
-      expect(server.posts(ApiOwnerRepository.cancelBookingPath('b2')).single.data, {'lockSlotAfterCancel': false});
-      expect(find.text('Đã hủy đơn. Bạn bị phạt ${Formatters.vnd(30000)}.'), findsOneWidget);
+      await tester.tap(find.text(reasons.last['label'] as String).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(OwnerStrings.cancelConfirmPenalty));
+      await tester.pumpAndSettle();
+      expect(find.text(OwnerStrings.cancelReasonRequired), findsOneWidget);
+      expect(server.posts(ApiOwnerRepository.cancelBookingPath('b2')), isEmpty);
+
+      await tester.enterText(find.widgetWithText(TextField, OwnerStrings.cancelReasonHint), 'Mất điện cả khu');
+      await tester.tap(find.text(OwnerStrings.cancelConfirmPenalty));
+      await tester.pumpAndSettle();
+      expect(server.posts(ApiOwnerRepository.cancelBookingPath('b2')).single.data,
+          {'cancelReasonId': 6, 'reason': 'Mất điện cả khu', 'lockSlotAfterCancel': false});
+      expect(find.textContaining('Tiền phạt đã trừ vào ví: ${Formatters.vnd(30000)}.'), findsOneWidget);
     });
 
-    testWidgets('lượt sân kèo LFG ĐỦ NGƯỜI, dưới 48h: có ghi chú mọi người trong kèo được hoàn', (tester) async {
-      serveOwner(({bool cancelled = false}) => _ownerBooking(
-          id: 'b3', startsIn: const Duration(hours: 3), total: 400000, kind: 'Lfg', players: 4, cancelled: cancelled),
-          bePenalty: 80000, beFp: 10);
+    testWidgets('đơn khách vãng lai: không phạt, nút "Xác nhận hủy đơn"', (tester) async {
+      serveOwner(({String status = 'PAID'}) =>
+          _ownerBooking(id: 'b3', startsIn: const Duration(hours: 3), total: 200000, status: status, walkIn: true),
+          bePenalty: 0, beFp: 0);
       await openOwner(tester, 'b3');
-
-      expect(find.text(OwnerStrings.cancelLfgNote), findsOneWidget);
-      expect(find.text('−${Formatters.vnd(80000)}'), findsOneWidget);
+      expect(find.text(OwnerStrings.cancelWarning(0, fairPlay: 0, walkIn: true)), findsOneWidget);
+      expect(find.text(OwnerStrings.cancelConfirmPenalty), findsNothing);
       await tester.tap(find.text(OwnerStrings.cancelConfirm));
       await tester.pumpAndSettle();
-      expect(find.text(OwnerStrings.statusCancelled), findsOneWidget);
+      expect(find.text('Đã hủy đơn. Người đặt được hoàn 100% và nhận voucher 10%.'), findsOneWidget);
     });
 
-    testWidgets('lượt sân kèo LFG CHƯA ĐỦ NGƯỜI (chỉ host), còn hơn 48h: phạt 10%', (tester) async {
-      serveOwner(({bool cancelled = false}) => _ownerBooking(
-          id: 'b4', startsIn: const Duration(days: 4), total: 200000, kind: 'Lfg', cancelled: cancelled),
-          bePenalty: 20000, beFp: 0);
-      await openOwner(tester, 'b4');
-
-      expect(find.text(OwnerStrings.cancelEarlyWarning), findsOneWidget);
-      expect(find.text(OwnerStrings.cancelLfgNote), findsOneWidget);
-      expect(find.text('−${Formatters.vnd(20000)}'), findsOneWidget);
-    });
-
-    testWidgets('BE báo đơn đã hủy (400): hiện câu của BE, Quay lại thì không gọi BE', (tester) async {
-      serveOwner(({bool cancelled = false}) =>
-          _ownerBooking(id: 'b5', startsIn: const Duration(hours: 10), total: 300000, cancelled: cancelled),
+    testWidgets('BE từ chối (400): hiện câu của BE trong popup; Quay lại thì không gọi BE', (tester) async {
+      serveOwner(({String status = 'PAID'}) =>
+          _ownerBooking(id: 'b5', startsIn: const Duration(hours: 10), total: 300000, status: status),
           bePenalty: 0, beFp: 0);
       await openOwner(tester, 'b5');
       await tester.tap(find.text(OwnerStrings.cancelBack));
@@ -359,18 +372,35 @@ void main() {
       server.failures['POST ${ApiOwnerRepository.cancelBookingPath('b5')}'] = (400, 'Đơn đã bị hủy trước đó.');
       await tester.tap(find.text(OwnerStrings.cancelBooking));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(OwnerStrings.cancelConfirm));
+      await tester.tap(find.text(OwnerStrings.cancelConfirmPenalty));
       await tester.pumpAndSettle();
       expect(find.text('Đơn đã bị hủy trước đó.'), findsOneWidget);
     });
 
-    testWidgets('đơn đã hủy: không còn nút Hủy đơn', (tester) async {
-      serveOwner(({bool cancelled = false}) =>
-          _ownerBooking(id: 'b6', startsIn: const Duration(hours: 10), total: 300000, cancelled: true),
+    testWidgets('đơn đã hủy: không còn nút Hủy đơn, hiện lý do và số hoàn', (tester) async {
+      serveOwner(({String status = 'CANCELLED'}) =>
+          _ownerBooking(id: 'b6', startsIn: const Duration(hours: 10), total: 300000, status: status),
           bePenalty: 0, beFp: 0);
-      final session = await tester.runAsync(() => AppRepositories.owner.getSession('b6'));
-      await pump(tester, OwnerSessionDetailScreen(session: session!));
+      await openOwner(tester, 'b6', tapCancel: false);
       expect(find.text(OwnerStrings.cancelBooking), findsNothing);
+      expect(find.textContaining('Sân hỏng đèn'), findsOneWidget);
+    });
+
+    testWidgets('đã check-in, ca chưa hết: Kết thúc ca sớm gọi /end, không còn nút Hủy đơn', (tester) async {
+      serveOwner(({String status = 'CHECKED_IN'}) =>
+          _ownerBooking(id: 'b7', startsIn: const Duration(minutes: -20), total: 300000, status: status, lfg: true),
+          bePenalty: 0, beFp: 0);
+      await openOwner(tester, 'b7', tapCancel: false);
+      expect(find.text(OwnerStrings.cancelBooking), findsNothing);
+      expect(find.text(OwnerStrings.lfgBadge), findsOneWidget);
+      await tester.tap(find.text(OwnerStrings.endEarly));
+      await tester.pumpAndSettle();
+      expect(find.text(OwnerStrings.endEarlyBody), findsOneWidget);
+      await tester.tap(find.text(OwnerStrings.endEarlyConfirm));
+      await tester.pumpAndSettle();
+      expect(server.posts(ApiOwnerRepository.endPath('b7')), hasLength(1));
+      expect(find.text(OwnerStrings.endEarlyDone), findsOneWidget);
+      expect(find.text(OwnerStrings.endEarly), findsNothing);
     });
   });
 }

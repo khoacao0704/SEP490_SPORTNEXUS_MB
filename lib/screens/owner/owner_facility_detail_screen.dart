@@ -1,21 +1,25 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../core/strings/owner_facility_strings.dart';
+import '../../core/strings/owner_slot_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
-import '../../data/repositories/owner_repository.dart';
 import '../../models/owner_facility.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/owner/closure_sheet.dart';
+import '../../widgets/owner/owner_badges.dart';
+import '../../widgets/owner/owner_cancel_dialog.dart';
 import '../../widgets/owner/photo_picker.dart';
-import '../../widgets/owner/recurring_discount_editor.dart';
-import 'court_pricing_screen.dart';
+import '../../widgets/owner/slot_pickers.dart';
 import 'facility_form_screen.dart';
-import 'operations_edit_screen.dart';
+import 'owner_courts_screen.dart';
+import 'owner_slots_screen.dart';
 
-/// Quản lý một cơ sở. Chưa duyệt: chỉ xem (bị từ chối thì sửa & nộp lại).
-/// Đã duyệt: yêu cầu đổi tên/địa chỉ/giấy phép, sửa vận hành, cài giá & khung giờ, tạm đóng.
+/// Chi tiết một cơ sở (FacilityDetail của Web): trạng thái duyệt / khóa, thông tin (Sửa thông tin),
+/// Sân & giá, Ca sân, ảnh (thêm / ảnh đại diện / xóa), tiện ích, đóng cơ sở.
+/// Mobile giữ thêm: banner tạm ngưng do khiếu nại và lịch tạm đóng (ngày nghỉ).
 /// Pop trả về `true` nếu đã có thay đổi.
 class OwnerFacilityDetailScreen extends StatefulWidget {
   final OwnerFacility facility;
@@ -29,6 +33,31 @@ class OwnerFacilityDetailScreen extends StatefulWidget {
 class _OwnerFacilityDetailScreenState extends State<OwnerFacilityDetailScreen> {
   late OwnerFacility _f = widget.facility;
   bool _changed = false;
+  String _busy = '';
+  List<FacilityAmenity> _catalog = const [];
+  bool _catalogFailed = false;
+
+  /// Tiện ích đang chỉnh (null = chưa sửa, theo dữ liệu cơ sở).
+  Set<String>? _amenityDraft;
+
+  @override
+  void initState() {
+    super.initState();
+    AppRepositories.owner.getAmenities().then((a) {
+      if (mounted) setState(() => _catalog = a);
+    }).catchError((_) {
+      if (mounted) setState(() => _catalogFailed = true);
+    });
+  }
+
+  Future<T?> _push<T>(Widget screen) => Navigator.push<T>(context, MaterialPageRoute(builder: (_) => screen));
+
+  Future<void> _reload() async {
+    try {
+      final f = await AppRepositories.owner.getOwnerFacility(_f.id);
+      if (mounted) setState(() => _f = f);
+    } catch (_) {}
+  }
 
   void _apply(OwnerFacility? updated) {
     if (updated == null || !mounted) return;
@@ -38,31 +67,93 @@ class _OwnerFacilityDetailScreenState extends State<OwnerFacilityDetailScreen> {
     });
   }
 
-  Future<T?> _push<T>(Widget screen) => Navigator.push<T>(context, MaterialPageRoute(builder: (_) => screen));
-
-  Future<void> _removeClosure(FacilityClosure c) async {
+  /// Chạy thao tác, báo kết quả, tải lại cơ sở (run của Web).
+  Future<bool> _run(String key, Future<void> Function() action, String? message) async {
+    setState(() => _busy = key);
     try {
-      _apply(await AppRepositories.owner.removeClosure(_f.id, c.id));
+      await action();
+      _changed = true;
+      if (mounted && message != null) showOwnerSnack(context, message);
+      await _reload();
+      return true;
+    } catch (e) {
+      if (mounted) showOwnerSnack(context, ownerErrorMessage(e), error: true);
+      return false;
+    } finally {
+      if (mounted) setState(() => _busy = '');
+    }
+  }
+
+  Set<String> get _currentAmenities {
+    final draft = _amenityDraft;
+    if (draft != null) return draft;
+    final ids = {for (final a in _f.amenityItems) if (a.id.isNotEmpty) a.id};
+    if (ids.isNotEmpty) return ids;
+    // Dữ liệu chỉ có tên tiện ích: đối chiếu theo tên với danh mục.
+    final names = _f.operations.amenities.toSet();
+    return {for (final a in _catalog) if (names.contains(a.name)) a.id};
+  }
+
+  List<FacilityPhoto> get _photos => _f.photos.isNotEmpty
+      ? _f.photos
+      : [
+          for (var i = 0; i < _f.operations.images.length; i++)
+            FacilityPhoto(id: '', url: _f.operations.images[i], isThumbnail: i == 0),
+        ];
+
+  Future<void> _addPhotos() async {
+    final left = OwnerFacilityStrings.maxPhotos - _photos.length;
+    if (left <= 0) {
+      showOwnerSnack(context, OwnerFacilityStrings.tooManyPhotos(OwnerFacilityStrings.maxPhotos), error: true);
+      return;
+    }
+    final paths = (await pickPhotoPaths(context)).take(left).toList();
+    if (paths.isEmpty || !mounted) return;
+    final tooBig = paths.any((p) {
+      final file = File(p);
+      return file.existsSync() && file.lengthSync() > OwnerFacilityStrings.maxPhotoBytes;
+    });
+    if (tooBig) {
+      showOwnerSnack(context, OwnerFacilityStrings.photoTooBig, error: true);
+      return;
+    }
+    await _run('upload', () => AppRepositories.owner.uploadFacilityPhotos(_f.id, paths), OwnerFacilityStrings.uploaded(paths.length));
+  }
+
+  Future<void> _deletePhoto(FacilityPhoto p) async {
+    if (!await confirmOwner(context, OwnerFacilityStrings.deletePhotoConfirm)) return;
+    await _run('del-${p.id}', () => AppRepositories.owner.deleteFacilityPhoto(_f.id, p.id), OwnerFacilityStrings.photoDeleted);
+  }
+
+  Future<void> _saveAmenities() async {
+    final ids = _currentAmenities.toList();
+    if (await _run('amenities', () => AppRepositories.owner.updateFacilityAmenities(_f.id, ids), OwnerFacilityStrings.amenitiesSaved)) {
+      if (mounted) setState(() => _amenityDraft = null);
+    }
+  }
+
+  Future<void> _close() async {
+    if (!await confirmOwner(context, OwnerFacilityStrings.closeConfirm(_f.profile.name))) return;
+    setState(() => _busy = 'delete');
+    try {
+      await AppRepositories.owner.deleteFacility(_f.id);
+      if (!mounted) return;
+      showOwnerSnack(context, OwnerFacilityStrings.closed);
+      Navigator.pop(context, true);
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(OwnerFacilityStrings.closureRemoved)));
-      }
-    } on OwnerException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+        showOwnerSnack(context, ownerErrorMessage(e), error: true);
+        setState(() => _busy = '');
       }
     }
   }
 
-  Future<void> _unlock(CourtConfig c) async {
+  Future<void> _removeClosure(FacilityClosure c) async {
     try {
-      _apply(await AppRepositories.owner.unlockCourt(_f.id, c.sport, c.courtType));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(OwnerFacilityStrings.unlocked)));
-      }
-    } on OwnerException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
-      }
+      _apply(await AppRepositories.owner.removeClosure(_f.id, c.id));
+      if (mounted) showOwnerSnack(context, OwnerFacilityStrings.closureRemoved);
+    } catch (e) {
+      if (mounted) showOwnerSnack(context, ownerErrorMessage(e), error: true);
     }
   }
 
@@ -80,348 +171,332 @@ class _OwnerFacilityDetailScreenState extends State<OwnerFacilityDetailScreen> {
           backgroundColor: AppColors.white,
           elevation: 0.5,
           iconTheme: const IconThemeData(color: AppColors.textMain),
-          title: Text(
-            f.profile.name,
-            style: const TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 18),
+          title: Text(f.profile.name,
+              style: const TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 18)),
+        ),
+        body: RefreshIndicator(
+          onRefresh: _reload,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (f.isApproved && f.isSuspended) _banner(OwnerFacilityStrings.suspendedBanner),
+              _infoCard(f),
+              _courtsAndSlots(f),
+              _photosCard(),
+              _amenitiesCard(),
+              if (f.isApproved) _closuresSection(f),
+              _closeCard(),
+            ],
           ),
         ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            ..._banners(f),
-            _profileSection(f),
-            _operationsSection(f),
-            _courtsSection(f),
-            _section(
-              title: OwnerFacilityStrings.sectionDiscount,
-              hint: OwnerFacilityStrings.discountHint,
-              children: [RecurringDiscountEditor(facility: f, onSaved: _apply)],
-            ),
-            if (f.isApproved) _closuresSection(f),
-          ],
-        ),
-        bottomNavigationBar: f.status == ApprovalStatus.rejected
-            ? SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: ElevatedButton.icon(
-                    onPressed: () async => _apply(
-                      await _push<OwnerFacility>(FacilityFormScreen(mode: FacilityFormMode.resubmit, facility: f)),
-                    ),
-                    icon: const Icon(Icons.edit),
-                    label: const Text(OwnerFacilityStrings.resubmit),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryGreen,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              )
-            : null,
       ),
     );
   }
 
-  List<Widget> _banners(OwnerFacility f) {
-    final change = f.change;
-    return [
-      if (f.isApproved && f.isSuspended) _banner(OwnerFacilityStrings.suspendedBanner),
-      if (f.status == ApprovalStatus.pending) _banner(OwnerFacilityStrings.pendingBanner, warning: false),
-      if (f.status == ApprovalStatus.rejected) _banner(OwnerFacilityStrings.rejectedBanner(f.rejectReason ?? '')),
-      if (change?.status == ApprovalStatus.pending) _banner(OwnerFacilityStrings.changePendingBanner, warning: false),
-      if (change?.status == ApprovalStatus.rejected)
-        _banner(OwnerFacilityStrings.changeRejectedBanner(change?.rejectReason ?? '')),
-    ];
-  }
-
-  Widget _banner(String text, {bool warning = true}) => Container(
-    margin: const EdgeInsets.only(bottom: 12),
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: warning ? Colors.red.shade50 : AppColors.tagOrangeBg,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          warning ? Icons.error_outline : Icons.hourglass_top,
-          size: 18,
-          color: warning ? Colors.red.shade700 : AppColors.tagOrangeText,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(fontSize: 13, color: warning ? Colors.red.shade700 : AppColors.tagOrangeText),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _section({required String title, String? hint, Widget? action, required List<Widget> children}) => Container(
-    margin: const EdgeInsets.only(bottom: 12),
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: AppColors.cardBorder),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+  Widget _banner(String text) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textMain),
-              ),
-            ),
-            ?action,
+            Icon(Icons.error_outline, size: 18, color: Colors.red.shade700),
+            const SizedBox(width: 8),
+            Expanded(child: Text(text, style: TextStyle(fontSize: 13, color: Colors.red.shade700))),
           ],
         ),
-        if (hint != null) Text(hint, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-        const SizedBox(height: 8),
-        ...children,
-      ],
-    ),
-  );
+      );
 
-  Widget _actionButton(String label, VoidCallback? onPressed, {IconData icon = Icons.edit_outlined}) => TextButton.icon(
-    onPressed: onPressed,
-    icon: Icon(icon, size: 18),
-    label: Text(label),
-    style: TextButton.styleFrom(foregroundColor: AppColors.primaryGreen, visualDensity: VisualDensity.compact),
-  );
+  Widget _card({required List<Widget> children, Color? border}) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: border ?? AppColors.cardBorder),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+      );
+
+  Widget _infoCard(OwnerFacility f) {
+    final approval = switch (f.status) {
+      ApprovalStatus.approved => (OwnerFacilityStrings.badgeApproved, BadgeTone.green),
+      ApprovalStatus.pending => (OwnerFacilityStrings.badgePending, BadgeTone.amber),
+      ApprovalStatus.rejected => (OwnerFacilityStrings.badgeRejected, BadgeTone.red),
+    };
+    final o = f.operations;
+    final courts = f.courtCount ?? f.courts.fold<int>(0, (s, c) => s + c.courtCount);
+    return _card(children: [
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OwnerBadge(approval.$1, tone: approval.$2),
+          if (f.isLocked) const OwnerBadge(OwnerFacilityStrings.badgeLocked, tone: BadgeTone.red),
+        ],
+      ),
+      const SizedBox(height: 6),
+      Text(f.profile.address, style: const TextStyle(color: AppColors.textSecondary)),
+      if (f.status == ApprovalStatus.rejected && (f.rejectReason ?? '').isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _alert(OwnerFacilityStrings.rejectReason(f.rejectReason!)),
+      ],
+      if (f.isLocked && (f.lockedReason ?? '').isNotEmpty) ...[
+        const SizedBox(height: 8),
+        _alert(OwnerFacilityStrings.lockReason(f.lockedReason!)),
+      ],
+      const SizedBox(height: 10),
+      _row(OwnerFacilityStrings.infoHours, '${formatMinutes(o.openMinutes)} – ${formatMinutes(o.closeMinutes)}'),
+      _row(OwnerFacilityStrings.infoPhone, o.phone.isEmpty ? '—' : o.phone),
+      _row(OwnerFacilityStrings.infoArea, [f.profile.ward, f.profile.city].where((s) => s.isNotEmpty && s != '—').join(', ')),
+      _row(
+        OwnerFacilityStrings.infoRating,
+        f.rating > 0 ? OwnerFacilityStrings.ratingValue(f.rating, f.reviewCount) : OwnerFacilityStrings.noRating,
+      ),
+      _row(OwnerFacilityStrings.infoCourts, OwnerFacilityStrings.courtsValue(courts)),
+      _row(OwnerFacilityStrings.infoAutoSlots, f.autoGenerateSlots ? OwnerFacilityStrings.on : OwnerFacilityStrings.off),
+      _row(
+        OwnerFacilityStrings.infoDiscount,
+        f.recurringDiscountPercent > 0 ? '${f.recurringDiscountPercent}%' : OwnerFacilityStrings.noDiscount,
+      ),
+      const SizedBox(height: 8),
+      Align(
+        alignment: Alignment.centerRight,
+        child: OutlinedButton.icon(
+          onPressed: () async {
+            final updated = await _push<OwnerFacility>(FacilityFormScreen(facility: _f));
+            _apply(updated);
+          },
+          icon: const Icon(Icons.edit, size: 18),
+          label: const Text(OwnerFacilityStrings.editTitle),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _alert(String text) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: BadgeTone.red.background, borderRadius: BorderRadius.circular(8)),
+        child: Text(text, style: TextStyle(color: BadgeTone.red.foreground, fontSize: 13)),
+      );
 
   Widget _row(String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(label, style: const TextStyle(color: AppColors.textSecondary)),
-        ),
-        Expanded(
-          child: Text(value, style: const TextStyle(color: AppColors.textMain)),
-        ),
-      ],
-    ),
-  );
-
-  Widget _profileSection(OwnerFacility f) => _section(
-    title: OwnerFacilityStrings.sectionProfile,
-    hint: f.isApproved ? OwnerFacilityStrings.sectionProfileHint : null,
-    action: f.isApproved
-        ? _actionButton(
-            OwnerFacilityStrings.requestChange,
-            f.hasPendingChange
-                ? null
-                : () async => _apply(
-                    await _push<OwnerFacility>(FacilityFormScreen(mode: FacilityFormMode.change, facility: f)),
-                  ),
-          )
-        : null,
-    children: [
-      _row(OwnerFacilityStrings.name, f.profile.name),
-      _row(OwnerFacilityStrings.address, f.profile.fullAddress),
-      _row(OwnerFacilityStrings.licenseNumber, f.profile.licenseNumber),
-      const SizedBox(height: 6),
-      SizedBox(
-        height: 64,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final img in f.profile.licenseImages)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ClipRRect(borderRadius: BorderRadius.circular(8), child: OwnerImage(img, width: 64, height: 64)),
+            Expanded(child: Text(label, style: const TextStyle(color: AppColors.textSecondary))),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(value.isEmpty ? '—' : value,
+                  textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      );
+
+  /// "Sân & giá" và "Ca sân" như menu Cơ sở & sân của Web.
+  Widget _courtsAndSlots(OwnerFacility f) => _card(children: [
+        _entry(Icons.sports_tennis, OwnerSlotStrings.courtsEntry, OwnerSlotStrings.courtsEntryHint, () async {
+          await _push<void>(OwnerCourtsScreen(facility: f));
+          await _reload();
+        }),
+        const Divider(height: 1),
+        _entry(Icons.event_repeat, OwnerSlotStrings.slotsEntry, OwnerSlotStrings.slotsEntryHint,
+            () => _push<void>(OwnerSlotsScreen(facilityId: f.id, facilityName: f.profile.name))),
+      ]);
+
+  Widget _entry(IconData icon, String title, String hint, VoidCallback onTap) => Material(
+        color: Colors.transparent,
+        child: ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(icon, color: AppColors.primaryGreen),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(hint, style: const TextStyle(fontSize: 12)),
+          trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+          onTap: onTap,
+        ),
+      );
+
+  Widget _photosCard() {
+    final photos = _photos;
+    return _card(children: [
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          Text('${OwnerFacilityStrings.photosTitle} ${OwnerFacilityStrings.photosCount(photos.length)}',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          OutlinedButton.icon(
+            onPressed: _busy.isEmpty && photos.length < OwnerFacilityStrings.maxPhotos ? _addPhotos : null,
+            icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+            label: Text(_busy == 'upload' ? OwnerFacilityStrings.uploading : OwnerFacilityStrings.addPhotos),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      if (photos.isEmpty)
+        const Text(OwnerFacilityStrings.noPhotos, style: TextStyle(color: AppColors.textSecondary))
+      else
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final p in photos)
+              SizedBox(
+                width: 140,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(borderRadius: BorderRadius.circular(8), child: OwnerImage(p.url, width: 140, height: 90)),
+                    if (p.isThumbnail) const OwnerBadge(OwnerFacilityStrings.thumbnail, tone: BadgeTone.green),
+                    if (p.id.isNotEmpty)
+                      Wrap(
+                        spacing: 4,
+                        children: [
+                          if (!p.isThumbnail)
+                            TextButton(
+                              onPressed: _busy.isEmpty
+                                  ? () => _run('thumb-${p.id}', () => AppRepositories.owner.setFacilityThumbnail(_f.id, p.id),
+                                      OwnerFacilityStrings.thumbnailSet)
+                                  : null,
+                              child: const Text(OwnerFacilityStrings.setThumbnail),
+                            ),
+                          IconButton(
+                            tooltip: OwnerFacilityStrings.deletePhotoConfirm,
+                            onPressed: _busy.isEmpty ? () => _deletePhoto(p) : null,
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
               ),
           ],
         ),
-      ),
-    ],
-  );
-
-  Widget _operationsSection(OwnerFacility f) {
-    final o = f.operations;
-    return _section(
-      title: OwnerFacilityStrings.sectionOperations,
-      action: f.isApproved
-          ? _actionButton(
-              OwnerFacilityStrings.edit,
-              () async => _apply(await _push<OwnerFacility>(OperationsEditScreen(facility: f))),
-            )
-          : null,
-      children: [
-        _row(OwnerFacilityStrings.phone, o.phone),
-        _row(
-          OwnerFacilityStrings.openTime,
-          OwnerFacilityStrings.openHours(formatMinutes(o.openMinutes), formatMinutes(o.closeMinutes)),
-        ),
-        if (o.amenities.isNotEmpty) _row(OwnerFacilityStrings.amenities, o.amenities.join(' • ')),
-        if (o.images.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          SizedBox(
-            height: 64,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final img in o.images)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: OwnerImage(img, width: 96, height: 64),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
+    ]);
   }
 
-  Widget _courtsSection(OwnerFacility f) => _section(
-    title: OwnerFacilityStrings.sectionCourts,
-    hint: f.isApproved ? null : OwnerFacilityStrings.lockedUntilApproved,
-    action: f.isApproved
-        ? _actionButton(
-            OwnerFacilityStrings.addCourtType,
-            () async => _apply(await _push<OwnerFacility>(CourtPricingScreen(facility: f))),
-            icon: Icons.add,
-          )
-        : null,
-    children: [
-      for (final c in f.courts)
-        InkWell(
-          onTap: f.isApproved && !c.isLocked
-              ? () async => _apply(await _push<OwnerFacility>(CourtPricingScreen(facility: f, court: c)))
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+  Widget _amenitiesCard() {
+    final current = _currentAmenities;
+    return _card(children: [
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          const Text(OwnerFacilityStrings.amenitiesTitle, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          Wrap(
+            spacing: 6,
+            children: [
+              if (_amenityDraft != null)
+                TextButton(onPressed: () => setState(() => _amenityDraft = null), child: const Text(OwnerFacilityStrings.undo)),
+              ElevatedButton(
+                onPressed: _amenityDraft == null || _busy == 'amenities' ? null : _saveAmenities,
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white),
+                child: const Text(OwnerFacilityStrings.saveAmenities),
+              ),
+            ],
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      if (_catalog.isEmpty)
+        Text(
+          _catalogFailed ? OwnerFacilityStrings.amenitiesLoadError : OwnerFacilityStrings.uploading,
+          style: const TextStyle(color: AppColors.textSecondary),
+        )
+      else
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final a in _catalog)
+              FilterChip(
+                label: Text(a.name),
+                selected: current.contains(a.id),
+                onSelected: (on) => setState(() {
+                  final next = {...current};
+                  on ? next.add(a.id) : next.remove(a.id);
+                  _amenityDraft = next;
+                }),
+              ),
+          ],
+        ),
+    ]);
+  }
+
+  Widget _closuresSection(OwnerFacility f) {
+    final active = f.activeClosures(DateTime.now());
+    return _card(children: [
+      Wrap(
+        spacing: 8,
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Text(OwnerFacilityStrings.sectionClosures, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          TextButton.icon(
+            onPressed: () async {
+              final updated = await showClosureSheet(context, f);
+              _apply(updated);
+              if (updated != null && mounted) showOwnerSnack(context, OwnerFacilityStrings.closureAdded);
+            },
+            icon: const Icon(Icons.block, size: 18),
+            label: const Text(OwnerFacilityStrings.addClosure),
+          ),
+        ],
+      ),
+      if (active.isEmpty)
+        const Text(OwnerFacilityStrings.noClosures, style: TextStyle(color: AppColors.textSecondary))
+      else
+        for (final c in active)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               children: [
-                Icon(
-                  sportIcon(c.sport),
-                  size: 20,
-                  color: c.isLocked ? AppColors.textSecondary : AppColors.primaryGreen,
-                ),
+                const Icon(Icons.block, size: 18, color: Colors.red),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        OwnerFacilityStrings.courtLine(c.label, c.courtCount),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: c.isLocked ? AppColors.textSecondary : AppColors.textMain,
-                          decoration: c.isLocked ? TextDecoration.lineThrough : null,
-                        ),
+                        '${c.isWholeFacility ? OwnerFacilityStrings.wholeFacility : f.courtFor(c.sport!, c.courtType!)?.label ?? ''}'
+                        ' • ${OwnerFacilityStrings.closureRange(Formatters.dayMonth(c.from), Formatters.dayMonth(c.to))}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      Text(
-                        _pricingSummary(c),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: c.needsPricing && f.isApproved ? AppColors.tagOrangeText : AppColors.textSecondary,
-                        ),
-                      ),
+                      Text(c.reason, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     ],
                   ),
                 ),
-                if (c.isLocked) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(6)),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.lock_outline, size: 12, color: AppColors.textSecondary),
-                        SizedBox(width: 2),
-                        Text(
-                          OwnerFacilityStrings.locked,
-                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => _unlock(c),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.primaryGreen,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    child: const Text(OwnerFacilityStrings.unlock),
-                  ),
-                ] else if (f.isApproved)
-                  const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                TextButton(onPressed: () => _removeClosure(c), child: const Text(OwnerFacilityStrings.reopen)),
               ],
             ),
           ),
-        ),
-    ],
-  );
-
-  String _pricingSummary(CourtConfig c) {
-    final p = c.pricing;
-    if (p == null) return OwnerFacilityStrings.noPricing;
-    final prices = [p.weekdayPrice, p.weekdayPeakPrice, p.weekendPrice, p.weekendPeakPrice];
-    final low = prices.reduce((a, b) => a < b ? a : b);
-    final high = prices.reduce((a, b) => a > b ? a : b);
-    return '${OwnerFacilityStrings.slotLength(p.slotMinutes)} • ${OwnerFacilityStrings.priceRange(low, high)}';
+    ]);
   }
 
-  Widget _closuresSection(OwnerFacility f) {
-    final active = f.activeClosures(DateTime.now());
-    return _section(
-      title: OwnerFacilityStrings.sectionClosures,
-      action: _actionButton(OwnerFacilityStrings.addClosure, () async {
-        final updated = await showClosureSheet(context, f);
-        _apply(updated);
-        if (updated != null && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(OwnerFacilityStrings.closureAdded)));
-        }
-      }, icon: Icons.block),
-      children: [
-        if (active.isEmpty)
-          const Text(OwnerFacilityStrings.noClosures, style: TextStyle(color: AppColors.textSecondary))
-        else
-          for (final c in active)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.block, size: 18, color: Colors.red),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${c.isWholeFacility ? OwnerFacilityStrings.wholeFacility : f.courtFor(c.sport!, c.courtType!)?.label ?? ''}'
-                          ' • ${OwnerFacilityStrings.closureRange(Formatters.dayMonth(c.from), Formatters.dayMonth(c.to))}',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        Text(c.reason, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                      ],
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => _removeClosure(c),
-                    style: TextButton.styleFrom(foregroundColor: AppColors.primaryGreen),
-                    child: const Text(OwnerFacilityStrings.reopen),
-                  ),
-                ],
-              ),
+  Widget _closeCard() => _card(
+        border: const Color(0xFFFECACA),
+        children: [
+          const Text(OwnerFacilityStrings.closeTitle,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFFB91C1C))),
+          const Text(OwnerFacilityStrings.closeHint, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton(
+              onPressed: _busy == 'delete' ? null : _close,
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+              child: const Text(OwnerFacilityStrings.closeButton),
             ),
-      ],
-    );
-  }
+          ),
+        ],
+      );
 }

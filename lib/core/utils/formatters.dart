@@ -36,6 +36,12 @@ class Formatters {
   /// "Thứ 4, 15/10"
   static String weekdayDayMonth(DateTime dt) => '${weekday(dt)}, ${dayMonth(dt)}';
 
+  /// "15/10/2026"
+  static String date(DateTime dt) => '${dayMonth(dt)}/${dt.year}';
+
+  /// "18:30 15/10/2026" (như formatDateTime của Web).
+  static String dateTime(DateTime dt) => '${time(dt)} ${date(dt)}';
+
   /// "Thứ 4, 15/10 • 18:00 - 19:00"
   static String slotLabel(DateTime start, DateTime end) => '${weekdayDayMonth(start)} • ${timeRange(start, end)}';
 

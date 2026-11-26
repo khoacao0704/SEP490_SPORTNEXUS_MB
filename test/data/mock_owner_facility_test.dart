@@ -5,7 +5,6 @@ import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_owner_repository.dart';
 import 'package:test1/data/repositories/owner_repository.dart';
 import 'package:test1/models/court_type.dart';
-import 'package:test1/models/geo_point.dart';
 import 'package:test1/models/owner_facility.dart';
 import 'package:test1/models/sport.dart';
 
@@ -23,25 +22,17 @@ void main() {
   Matcher throwsOwner(String message) =>
       throwsA(isA<OwnerException>().having((e) => e.message, 'message', message));
 
-  const profile = FacilityProfile(
+  const input = FacilityInput(
     name: 'Sân Mới',
-    city: 'Hồ Chí Minh',
-    ward: 'Phường Bến Nghé',
-    address: '1 Lê Lợi',
-    location: GeoPoint(10.77, 106.70),
-    licenseNumber: '0311112222',
-    licenseImages: ['/tmp/license.jpg'],
-  );
-  const operations = FacilityOperations(
+    streetAddress: '1 Lê Lợi',
+    provinceCode: '79',
+    wardCode: '26734',
+    latitude: 10.77,
+    longitude: 106.70,
     phone: '0901234567',
-    openMinutes: 6 * 60,
-    closeMinutes: 22 * 60,
-    images: ['/tmp/court.jpg'],
-  );
-  const submission = FacilitySubmission(
-    profile: profile,
-    operations: operations,
-    courts: [CourtConfig(sport: Sport.badminton, courtCount: 3)],
+    rules: 'Mang giày thể thao\nKhông hút thuốc',
+    recurringDiscountPercent: 15,
+    amenityIds: ['am-parking', 'am-wifi'],
   );
 
   CourtPricing pricing({int peakStart = 17 * 60, int peakEnd = 21 * 60, int price = 100000}) => CourtPricing(
@@ -65,81 +56,84 @@ void main() {
     expect((await repo.getMyFacilities()).map((f) => f.id), ['f-hcm-thientrieu', 'f-hcm-hoalu']);
   });
 
-  test('đăng cơ sở mới phải đủ giấy phép, ảnh, loại sân; gửi xong ở trạng thái chờ duyệt', () async {
-    expect(
-      () => repo.submitFacility(FacilitySubmission(
-        profile: FacilityProfile(
-          name: profile.name,
-          city: profile.city,
-          ward: profile.ward,
-          address: profile.address,
-          location: profile.location,
-          licenseNumber: profile.licenseNumber,
-          licenseImages: const [],
-        ),
-        operations: operations,
-        courts: submission.courts,
-      )),
-      throwsOwner(OwnerFacilityStrings.missingLicenseImage),
+  test('tạo cơ sở như Web: địa chỉ lưu bằng mã tỉnh / phường, chờ Admin duyệt, kèm tiện ích', () async {
+    await expectLater(
+      repo.createFacility(const FacilityInput(name: ' ', streetAddress: 'x', provinceCode: '79', wardCode: '26734')),
+      throwsOwner(OwnerFacilityStrings.errName),
     );
-    expect(
-      () => repo.submitFacility(const FacilitySubmission(profile: profile, operations: operations, courts: [])),
-      throwsOwner(OwnerFacilityStrings.missingCourt),
+    await expectLater(
+      repo.createFacility(const FacilityInput(name: 'A', streetAddress: '', provinceCode: '79', wardCode: '26734')),
+      throwsOwner(OwnerFacilityStrings.errAddress),
     );
-    expect(
-      () => repo.submitFacility(const FacilitySubmission(
-        profile: profile,
-        operations: operations,
-        courts: [
-          CourtConfig(sport: Sport.badminton, courtCount: 1),
-          CourtConfig(sport: Sport.badminton, courtCount: 2),
-        ],
-      )),
-      throwsOwner(OwnerFacilityStrings.duplicateCourt),
+    await expectLater(
+      repo.createFacility(const FacilityInput(
+          name: 'A', streetAddress: 'x', provinceCode: '79', wardCode: '26734', openTime: '22:00', closeTime: '06:00')),
+      throwsOwner(OwnerFacilityStrings.errHours),
     );
 
-    final created = await repo.submitFacility(submission);
+    final created = await repo.createFacility(input);
     expect(created.status, ApprovalStatus.pending);
-    expect(created.courts.single.pricing, isNull);
+    expect(created.profile.address, '1 Lê Lợi, Phường Sài Gòn, Hồ Chí Minh');
+    expect(created.provinceCode, '79');
+    expect(created.operations.rules, ['Mang giày thể thao', 'Không hút thuốc']);
+    expect(created.recurringDiscountPercent, 15);
+    expect(created.amenityItems.map((a) => a.id), ['am-parking', 'am-wifi']);
     expect((await repo.getOwnerFacilities()).first.id, created.id);
     expect((await repo.getMyFacilities()).any((f) => f.id == created.id), isFalse);
   });
 
-  test('chưa duyệt thì chưa cài giá, khung giờ, tạm đóng', () async {
+  test('sửa thông tin lưu thẳng (không qua yêu cầu duyệt lại)', () async {
+    final updated = await repo.updateFacility(
+      'f-hcm-hoalu',
+      const FacilityInput(name: 'Hoa Lư Arena', streetAddress: '2 Đinh Tiên Hoàng', provinceCode: '79', wardCode: '26737'),
+    );
+    expect(updated.profile.name, 'Hoa Lư Arena');
+    expect(updated.profile.ward, 'Phường Tân Định');
+    expect(updated.status, ApprovalStatus.approved);
+    expect((await repo.getMyFacilities()).map((f) => f.name), contains('Hoa Lư Arena'));
+  });
+
+  test('ảnh: thêm, đặt đại diện, xóa; tối đa 10 ảnh', () async {
+    await repo.uploadFacilityPhotos('f-own-pending', ['/tmp/a.jpg', '/tmp/b.jpg']);
+    var f = await repo.getOwnerFacility('f-own-pending');
+    final before = f.photos.length;
+    expect(f.photos.where((p) => p.isThumbnail), hasLength(1));
+    final second = f.photos.last;
+    await repo.setFacilityThumbnail('f-own-pending', second.id);
+    f = await repo.getOwnerFacility('f-own-pending');
+    expect(f.photos.singleWhere((p) => p.isThumbnail).id, second.id);
+    await repo.deleteFacilityPhoto('f-own-pending', second.id);
+    f = await repo.getOwnerFacility('f-own-pending');
+    expect(f.photos, hasLength(before - 1));
+    expect(f.photos.where((p) => p.isThumbnail), hasLength(1), reason: 'xóa ảnh đại diện thì ảnh đầu thành đại diện');
+    await expectLater(
+      repo.uploadFacilityPhotos('f-own-pending', List.filled(11, '/tmp/x.jpg')),
+      throwsOwner(OwnerFacilityStrings.tooManyPhotos(10)),
+    );
+  });
+
+  test('tiện ích lưu riêng', () async {
+    await repo.updateFacilityAmenities('f-hcm-hoalu', ['am-shower']);
+    final f = await repo.getOwnerFacility('f-hcm-hoalu');
+    expect(f.amenityItems.single.name, 'Phòng tắm');
+    expect(f.operations.amenities, ['Phòng tắm']);
+  });
+
+  test('đóng cơ sở: còn đơn sắp tới thì chặn; không có đơn thì đóng được', () async {
+    await expectLater(repo.deleteFacility('f-hcm-thientrieu'), throwsA(isA<OwnerException>()));
+    await repo.deleteFacility('f-own-pending');
+    expect((await repo.getOwnerFacilities()).any((f) => f.id == 'f-own-pending'), isFalse);
+  });
+
+  test('chưa duyệt thì chưa cài giá loại sân, tạm đóng', () async {
     expect(
       () => repo.saveCourt('f-own-pending', CourtConfig(sport: Sport.pickleball, courtCount: 4, pricing: pricing())),
       throwsOwner(OwnerFacilityStrings.notApproved),
     );
-    expect(() => repo.updateOperations('f-own-pending', operations), throwsOwner(OwnerFacilityStrings.notApproved));
     expect(
       () => repo.addClosure('f-own-pending', from: now, to: now, reason: 'x'),
       throwsOwner(OwnerFacilityStrings.notApproved),
     );
-  });
-
-  test('hồ sơ bị từ chối được sửa và nộp lại; hồ sơ khác thì không', () async {
-    final rejected = await repo.getOwnerFacility('f-own-rejected');
-    expect(rejected.rejectReason, isNotNull);
-
-    final again = await repo.resubmitFacility('f-own-rejected', submission);
-    expect(again.status, ApprovalStatus.pending);
-    expect(again.rejectReason, isNull);
-    expect(again.profile.name, 'Sân Mới');
-
-    expect(() => repo.resubmitFacility('f-hcm-hoalu', submission), throwsOwner(OwnerFacilityStrings.notRejected));
-  });
-
-  test('đổi tên / địa chỉ / giấy phép cần duyệt lại, trong lúc chờ giữ thông tin cũ', () async {
-    final updated = await repo.requestProfileChange('f-hcm-hoalu', profile);
-    expect(updated.hasPendingChange, isTrue);
-    expect(updated.profile.name, 'Sân Bóng Hoa Lư');
-    expect(updated.change!.profile.name, 'Sân Mới');
-    expect(
-      () => repo.requestProfileChange('f-hcm-hoalu', profile),
-      throwsOwner(OwnerFacilityStrings.changeAlreadyPending),
-    );
-    // Vẫn hiện tên cũ cho bộ chọn cơ sở.
-    expect((await repo.getMyFacilities()).map((f) => f.name), contains('Sân Bóng Hoa Lư'));
   });
 
   test('cài giá & khung giờ cho loại sân chưa có giá', () async {
@@ -178,25 +172,21 @@ void main() {
     expect(starts, hasLength(11));
   });
 
-  test('thêm loại sân mới và không giảm số sân con dưới sân đang dùng', () async {
+  test('thêm loại sân mới, đổi số sân con', () async {
     final added = await repo.saveCourt(
       'f-hcm-thientrieu',
       CourtConfig(sport: Sport.tennis, courtCount: 2, pricing: pricing()),
     );
     expect(added.courts.map((c) => c.sport), contains(Sport.tennis));
 
-    // Kèo LFG đang chơi ở Sân 2 cầu lông.
+    // Chặn giảm sân con đang có đơn: đợt 2 làm lại theo sân con của Web.
     final badminton = added.courtFor(Sport.badminton, CourtType.standard)!;
-    expect(
-      () => repo.saveCourt('f-hcm-thientrieu', badminton.copyWith(courtCount: 1)),
-      throwsOwner(OwnerFacilityStrings.courtInUse),
-    );
     final more = await repo.saveCourt('f-hcm-thientrieu', badminton.copyWith(courtCount: 8));
     expect(more.courtFor(Sport.badminton, CourtType.standard)!.courtCount, 8);
   });
 
   test('khóa loại sân: chặn nếu còn lượt đặt; đang khóa không sửa được; mở khóa lại được', () async {
-    // Bóng đá 7 người còn lượt OW1003 chưa check-out.
+    // Hoa Lư còn đơn bóng đá OW1004 chưa diễn ra.
     expect(
       () => repo.lockCourt('f-hcm-hoalu', Sport.football, CourtType.football7),
       throwsOwner(OwnerFacilityStrings.lockBlocked(1)),
@@ -230,17 +220,17 @@ void main() {
   });
 
   test('tạm đóng bị chặn nếu khoảng ngày đã có lượt đặt', () async {
-    // Thiên Triều hôm nay còn 2 lượt chưa check-out.
+    // Thiên Triều hôm nay còn 4 đơn hiệu lực (đang chơi, đã thanh toán, vãng lai, chờ góp tiền).
     expect(
       () => repo.addClosure('f-hcm-thientrieu', from: now, to: now, reason: 'Bảo trì'),
-      throwsOwner(OwnerFacilityStrings.closureBlocked(2)),
+      throwsOwner(OwnerFacilityStrings.closureBlocked(4)),
     );
     expect(
       () => repo.addClosure('f-hcm-thientrieu', sport: Sport.pickleball, from: now, to: now, reason: ''),
       throwsOwner(OwnerFacilityStrings.missingInfo),
     );
 
-    // Pickleball hôm nay chỉ có lượt đã check-out -> đóng được.
+    // Pickleball không có đơn nào -> đóng được.
     final closed = await repo.addClosure(
       'f-hcm-thientrieu',
       sport: Sport.pickleball,

@@ -1,183 +1,210 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/constants/vietnam_cities.dart';
 import '../../core/strings/owner_facility_strings.dart';
 import '../../data/app_repositories.dart';
-import '../../data/repositories/owner_repository.dart';
-import '../../models/court_type.dart';
 import '../../models/geo_point.dart';
 import '../../models/owner_facility.dart';
-import '../../models/sport.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/owner/owner_form.dart';
-import '../../widgets/owner/photo_picker.dart';
+import '../../widgets/owner/owner_cancel_dialog.dart';
+import '../../widgets/owner/slot_pickers.dart';
 import 'location_picker_screen.dart';
 
-enum FacilityFormMode {
-  /// Đăng cơ sở mới.
-  create,
-
-  /// Sửa hồ sơ bị từ chối và nộp lại.
-  resubmit,
-
-  /// Cơ sở đã duyệt xin đổi tên / địa chỉ / giấy phép.
-  change,
-}
-
-/// Form hồ sơ cơ sở gửi Admin duyệt. Pop trả về [OwnerFacility] sau khi gửi thành công.
+/// Tạo cơ sở mới hoặc sửa thông tin cơ sở (FacilityForm của Web).
+/// Địa chỉ: chọn tỉnh / phường (lưu bằng mã) + số nhà; tọa độ ghim trên bản đồ hoặc nhập tay.
+/// Tạo mới chọn kèm tiện ích; sửa thì tiện ích và ảnh sửa riêng ở chi tiết cơ sở.
+/// Pop trả về [OwnerFacility] đã lưu.
 class FacilityFormScreen extends StatefulWidget {
-  final FacilityFormMode mode;
+  /// null = tạo mới.
   final OwnerFacility? facility;
 
-  const FacilityFormScreen({super.key, this.mode = FacilityFormMode.create, this.facility})
-    : assert(mode == FacilityFormMode.create || facility != null);
+  const FacilityFormScreen({super.key, this.facility});
 
   @override
   State<FacilityFormScreen> createState() => _FacilityFormScreenState();
 }
 
 class _FacilityFormScreenState extends State<FacilityFormScreen> {
-  final _formKey = GlobalKey<FormState>();
-  late final FacilityProfile? _p = widget.mode == FacilityFormMode.change
-      ? (widget.facility!.change?.profile ?? widget.facility!.profile)
-      : widget.facility?.profile;
-  late final FacilityOperations? _o = widget.facility?.operations;
+  OwnerFacility? get _f => widget.facility;
+  bool get _creating => _f == null;
 
-  late final _name = TextEditingController(text: _p?.name);
-  late final _ward = TextEditingController(text: _p?.ward);
-  late final _address = TextEditingController(text: _p?.address);
-  late final _license = TextEditingController(text: _p?.licenseNumber);
-  late final _phone = TextEditingController(text: _o?.phone);
-  late final _description = TextEditingController(text: _o?.description);
+  late final _name = TextEditingController(text: _f?.profile.name ?? '');
+  late final _street = TextEditingController(text: _f?.streetAddress ?? _streetFromAddress(_f));
+  late final _phone = TextEditingController(text: _f?.operations.phone ?? '');
+  late final _lat = TextEditingController(text: _hasLocation(_f) ? '${_f!.profile.location.latitude}' : '');
+  late final _lng = TextEditingController(text: _hasLocation(_f) ? '${_f!.profile.location.longitude}' : '');
+  late final _description = TextEditingController(text: _f?.operations.description ?? '');
+  late final _rules = TextEditingController(text: _f?.operations.rules.join('\n') ?? '');
+  late final _discount = TextEditingController(text: '${_f?.recurringDiscountPercent ?? 10}');
+  late String _open = _f == null ? '06:00' : formatMinutes(_f!.operations.openMinutes);
+  late String _close = _f == null ? '22:00' : formatMinutes(_f!.operations.closeMinutes);
+  late bool _autoSlots = _f?.autoGenerateSlots ?? true;
 
-  late String _city = _p?.city ?? VietnamCities.hoChiMinh.name;
-  late GeoPoint? _location = _p?.location;
-  late List<String> _licenseImages = [...?_p?.licenseImages];
-  late List<String> _photos = [...?_o?.images];
-  late int _open = _o?.openMinutes ?? 6 * 60;
-  late int _close = _o?.closeMinutes ?? 22 * 60;
-  late List<CourtConfig> _courts = [...?widget.facility?.courts];
-
-  bool _submitting = false;
-
-  /// Bật sau lần bấm gửi đầu tiên để hiện lỗi ảnh / vị trí / loại sân.
+  List<AreaOption> _provinces = const [];
+  List<AreaOption> _wards = const [];
+  String? _provinceCode;
+  String? _wardCode;
+  List<FacilityAmenity> _amenities = const [];
+  final Set<String> _amenityIds = {};
+  bool _busy = false;
   bool _showErrors = false;
+  String? _error;
 
-  bool get _profileOnly => widget.mode == FacilityFormMode.change;
+  static bool _hasLocation(OwnerFacility? f) =>
+      f != null && (f.profile.location.latitude != 0 || f.profile.location.longitude != 0);
+
+  /// Cơ sở cũ chỉ có địa chỉ ghép: bỏ phần phường, tỉnh ở cuối để ô số nhà không bị lặp khi lưu lại.
+  static String _streetFromAddress(OwnerFacility? f) {
+    if (f == null) return '';
+    final parts = f.profile.address.split(',').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    while (parts.isNotEmpty && (parts.last == f.profile.city || parts.last == f.profile.ward)) {
+      parts.removeLast();
+    }
+    return parts.join(', ');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAreas();
+    if (_creating) {
+      AppRepositories.owner.getAmenities().then((a) {
+        if (mounted) setState(() => _amenities = a);
+      }).catchError((_) {});
+    }
+  }
 
   @override
   void dispose() {
-    for (final c in [_name, _ward, _address, _license, _phone, _description]) {
+    for (final c in [_name, _street, _phone, _lat, _lng, _description, _rules, _discount]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  String get _title => switch (widget.mode) {
-    FacilityFormMode.create => OwnerFacilityStrings.registerTitle,
-    FacilityFormMode.resubmit => OwnerFacilityStrings.resubmitTitle,
-    FacilityFormMode.change => OwnerFacilityStrings.changeTitle,
-  };
-
-  String? get _locationError => _showErrors && _location == null ? OwnerFacilityStrings.missingLocation : null;
-  String? get _licenseError => _showErrors && _licenseImages.isEmpty ? OwnerFacilityStrings.missingLicenseImage : null;
-  String? get _photoError => _showErrors && _photos.isEmpty ? OwnerFacilityStrings.missingPhoto : null;
-  String? get _courtError {
-    if (!_showErrors) return null;
-    if (_courts.isEmpty) return OwnerFacilityStrings.missingCourt;
-    final kinds = _courts.map((c) => '${c.sport.name}/${c.courtType.name}').toSet();
-    return kinds.length == _courts.length ? null : OwnerFacilityStrings.duplicateCourt;
+  Future<void> _loadAreas() async {
+    try {
+      final provinces = await AppRepositories.owner.getProvinces();
+      if (!mounted) return;
+      final f = _f;
+      final code = f?.provinceCode ?? provinces.where((p) => p.name == f?.profile.city).firstOrNull?.code;
+      setState(() {
+        _provinces = provinces;
+        _provinceCode = provinces.any((p) => p.code == code) ? code : null;
+      });
+      if (_provinceCode != null) await _loadWards(_provinceCode!, keepWard: true);
+    } catch (e) {
+      if (mounted) setState(() => _error = ownerErrorMessage(e));
+    }
   }
 
-  String? get _hoursError => _showErrors && _close <= _open ? OwnerFacilityStrings.invalidHours : null;
+  Future<void> _loadWards(String provinceCode, {bool keepWard = false}) async {
+    final wards = await AppRepositories.owner.getWards(provinceCode);
+    if (!mounted || provinceCode != _provinceCode) return;
+    final f = _f;
+    final code = keepWard ? (f?.wardCode ?? wards.where((w) => w.name == f?.profile.ward).firstOrNull?.code) : null;
+    setState(() {
+      _wards = wards;
+      _wardCode = wards.any((w) => w.code == code) ? code : null;
+    });
+  }
 
-  Future<void> _pickLocation() async {
+  Future<void> _pickOnMap() async {
+    final lat = double.tryParse(_lat.text.trim());
+    final lng = double.tryParse(_lng.text.trim());
+    final current = lat != null && lng != null ? GeoPoint(lat, lng) : null;
+    final cityName = _provinces.where((p) => p.code == _provinceCode).firstOrNull?.name;
+    final center = current ??
+        VietnamCities.all.where((c) => c.name == cityName).firstOrNull?.center ??
+        VietnamCities.hoChiMinh.center;
     final picked = await Navigator.push<GeoPoint>(
       context,
-      MaterialPageRoute(
-        builder: (_) => LocationPickerScreen(initialCenter: VietnamCities.byName(_city).center, initial: _location),
-      ),
+      MaterialPageRoute(builder: (_) => LocationPickerScreen(initialCenter: center, initial: current)),
     );
-    if (picked != null) setState(() => _location = picked);
+    if (picked == null) return;
+    setState(() {
+      _lat.text = picked.latitude.toStringAsFixed(6);
+      _lng.text = picked.longitude.toStringAsFixed(6);
+    });
   }
 
-  void _addCourt() {
-    // Gợi ý loại sân chưa có trong danh sách.
-    for (final sport in Sport.values) {
-      for (final type in CourtType.forSport(sport)) {
-        if (!_courts.any((c) => c.sameKind(sport, type))) {
-          setState(() => _courts = [..._courts, CourtConfig(sport: sport, courtType: type, courtCount: 1)]);
-          return;
-        }
+  /// Kiểm tra như validateOwnerForm của Web; trả về câu lỗi hoặc null.
+  String? _validate() {
+    if (_name.text.trim().isEmpty) return OwnerFacilityStrings.errName;
+    if (_provinceCode == null || _wardCode == null || _street.text.trim().isEmpty) return OwnerFacilityStrings.errAddress;
+    final latText = _lat.text.trim();
+    final lngText = _lng.text.trim();
+    if (latText.isEmpty != lngText.isEmpty) return OwnerFacilityStrings.errLatLng;
+    if (latText.isNotEmpty) {
+      final lat = double.tryParse(latText);
+      final lng = double.tryParse(lngText);
+      if (lat == null || lng == null || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return OwnerFacilityStrings.errLatLngRange;
       }
     }
+    if (parseMinutes(_close) <= parseMinutes(_open)) return OwnerFacilityStrings.errHours;
+    final pct = int.tryParse(_discount.text.trim());
+    if (pct == null || pct < 0 || pct > 50) return OwnerFacilityStrings.errDiscount;
+    return null;
   }
-
-  void _updateCourt(int i, CourtConfig c) => setState(() => _courts = [..._courts]..[i] = c);
 
   Future<void> _submit() async {
-    setState(() => _showErrors = true);
-    final formOk = _formKey.currentState!.validate();
-    final extrasOk =
-        _locationError == null &&
-        _licenseError == null &&
-        (_profileOnly || (_photoError == null && _courtError == null && _hoursError == null));
-    if (!formOk || !extrasOk) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text(OwnerFacilityStrings.missingInfo), backgroundColor: Colors.red));
-      return;
-    }
-
-    final profile = FacilityProfile(
+    final error = _validate();
+    setState(() {
+      _showErrors = true;
+      _error = error;
+    });
+    if (error != null) return;
+    final description = _description.text.trim();
+    final rules = _rules.text.trim();
+    final phone = _phone.text.trim();
+    final input = FacilityInput(
       name: _name.text.trim(),
-      city: _city,
-      ward: _ward.text.trim(),
-      address: _address.text.trim(),
-      location: _location!,
-      licenseNumber: _license.text.trim(),
-      licenseImages: _licenseImages,
+      streetAddress: _street.text.trim().replaceAll(RegExp(r',+$'), '').trim(),
+      provinceCode: _provinceCode!,
+      wardCode: _wardCode!,
+      latitude: double.tryParse(_lat.text.trim()),
+      longitude: double.tryParse(_lng.text.trim()),
+      phone: phone.isEmpty ? null : phone,
+      openTime: _open,
+      closeTime: _close,
+      description: description.isEmpty ? null : description,
+      rules: rules.isEmpty ? null : rules,
+      autoGenerateSlots: _autoSlots,
+      recurringDiscountPercent: int.parse(_discount.text.trim()),
+      amenityIds: _amenityIds.toList(),
     );
-    setState(() => _submitting = true);
+    setState(() => _busy = true);
     try {
-      final repo = AppRepositories.owner;
-      final OwnerFacility result;
-      if (_profileOnly) {
-        result = await repo.requestProfileChange(widget.facility!.id, profile);
-      } else {
-        final submission = FacilitySubmission(
-          profile: profile,
-          operations: FacilityOperations(
-            phone: _phone.text.trim(),
-            openMinutes: _open,
-            closeMinutes: _close,
-            description: _description.text.trim(),
-            amenities: _o?.amenities ?? const [],
-            rules: _o?.rules ?? const [],
-            images: _photos,
-          ),
-          courts: _courts,
-        );
-        result = widget.mode == FacilityFormMode.resubmit
-            ? await repo.resubmitFacility(widget.facility!.id, submission)
-            : await repo.submitFacility(submission);
-      }
+      final saved = _creating
+          ? await AppRepositories.owner.createFacility(input)
+          : await AppRepositories.owner.updateFacility(_f!.id, input);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_profileOnly ? OwnerFacilityStrings.changeSubmitted : OwnerFacilityStrings.submitted)),
-      );
-      Navigator.pop(context, result);
-    } on OwnerException catch (e) {
+      showOwnerSnack(context, _creating ? OwnerFacilityStrings.created : OwnerFacilityStrings.infoSaved);
+      Navigator.pop(context, saved);
+    } catch (e) {
       if (mounted) {
-        setState(() => _submitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+        setState(() {
+          _busy = false;
+          _error = ownerErrorMessage(e);
+        });
       }
     }
   }
 
-  String? _required(String? v) => (v == null || v.trim().isEmpty) ? OwnerFacilityStrings.required : null;
+  InputDecoration _dec(String label, {String? hint, bool invalid = false}) => InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+        border: const OutlineInputBorder(),
+        errorText: invalid ? '' : null,
+        errorStyle: const TextStyle(height: 0, fontSize: 0),
+      );
 
   @override
   Widget build(BuildContext context) {
+    final missing = _showErrors;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -185,243 +212,189 @@ class _FacilityFormScreenState extends State<FacilityFormScreen> {
         elevation: 0.5,
         iconTheme: const IconThemeData(color: AppColors.textMain),
         title: Text(
-          _title,
+          _creating ? OwnerFacilityStrings.createTitle : OwnerFacilityStrings.editTitle,
           style: const TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 18),
         ),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (_profileOnly)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 12),
-                child: Text(
-                  OwnerFacilityStrings.changePendingBanner,
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-              ),
-            FormSection(
-              title: OwnerFacilityStrings.formBasic,
-              children: [
-                TextFormField(
-                  controller: _name,
-                  decoration: ownerInputDecoration(OwnerFacilityStrings.name),
-                  validator: _required,
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: _city,
-                  decoration: ownerInputDecoration(OwnerFacilityStrings.city),
-                  items: [for (final c in VietnamCities.all) DropdownMenuItem(value: c.name, child: Text(c.name))],
-                  onChanged: (v) => setState(() => _city = v ?? _city),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _ward,
-                  decoration: ownerInputDecoration(OwnerFacilityStrings.ward),
-                  validator: _required,
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _address,
-                  decoration: ownerInputDecoration(OwnerFacilityStrings.address),
-                  validator: _required,
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _pickLocation,
-                  icon: Icon(_location == null ? Icons.add_location_alt_outlined : Icons.check_circle),
-                  label: Text(
-                    _location == null ? OwnerFacilityStrings.pickLocation : OwnerFacilityStrings.locationPicked,
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primaryGreen,
-                    side: BorderSide(color: _locationError != null ? Colors.red : AppColors.primaryGreen),
-                    minimumSize: const Size.fromHeight(44),
-                  ),
-                ),
-                if (_location != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      '${_location!.latitude.toStringAsFixed(5)}, ${_location!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                  ),
-                if (_locationError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(_locationError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
-                  ),
-                if (!_profileOnly) ...[
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _phone,
-                    keyboardType: TextInputType.phone,
-                    decoration: ownerInputDecoration(OwnerFacilityStrings.phone),
-                    validator: (v) => _required(v) ?? (isFacilityPhone(v!) ? null : OwnerFacilityStrings.invalidPhone),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TimeField(
-                          label: OwnerFacilityStrings.openTime,
-                          minutes: _open,
-                          onChanged: (m) => setState(() => _open = m),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TimeField(
-                          label: OwnerFacilityStrings.closeTime,
-                          minutes: _close,
-                          onChanged: (m) => setState(() => _close = m),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_hoursError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(_hoursError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
-                    ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _description,
-                    maxLines: 3,
-                    decoration: ownerInputDecoration(OwnerFacilityStrings.description),
-                  ),
-                ],
-              ],
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (_creating)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(OwnerFacilityStrings.createHint, style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary)),
             ),
-            if (!_profileOnly) ...[
-              FormSection(
-                title: OwnerFacilityStrings.formCourts,
-                hint: OwnerFacilityStrings.formCourtsHint,
-                trailing: TextButton.icon(
-                  onPressed: _addCourt,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text(OwnerFacilityStrings.add),
-                  style: TextButton.styleFrom(foregroundColor: AppColors.primaryGreen),
-                ),
-                children: [
-                  for (var i = 0; i < _courts.length; i++) _courtRow(i),
-                  if (_courtError != null) Text(_courtError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
-                ],
+          TextField(
+            controller: _name,
+            maxLength: 200,
+            decoration: _dec(OwnerFacilityStrings.fName, invalid: missing && _name.text.trim().isEmpty)
+                .copyWith(counterText: ''),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            key: ValueKey('p-$_provinceCode-${_provinces.length}'),
+            initialValue: _provinceCode,
+            isExpanded: true,
+            decoration: _dec(OwnerFacilityStrings.fProvince, invalid: missing && _provinceCode == null),
+            items: [for (final p in _provinces) DropdownMenuItem(value: p.code, child: Text(p.name))],
+            onChanged: (v) {
+              setState(() {
+                _provinceCode = v;
+                _wardCode = null;
+                _wards = const [];
+              });
+              if (v != null) _loadWards(v);
+            },
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            key: ValueKey('w-$_provinceCode-$_wardCode-${_wards.length}'),
+            initialValue: _wardCode,
+            isExpanded: true,
+            decoration: _dec(OwnerFacilityStrings.fWard, invalid: missing && _wardCode == null),
+            items: [for (final w in _wards) DropdownMenuItem(value: w.code, child: Text(w.name))],
+            onChanged: (v) => setState(() => _wardCode = v),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _street,
+            decoration: _dec(OwnerFacilityStrings.fStreet, invalid: missing && _street.text.trim().isEmpty),
+          ),
+          const SizedBox(height: 12),
+          TextField(controller: _phone, keyboardType: TextInputType.phone, decoration: _dec(OwnerFacilityStrings.fPhone)),
+          const SizedBox(height: 16),
+          const Text(OwnerFacilityStrings.fMap, style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text(OwnerFacilityStrings.fMapHint, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _pickOnMap,
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text(OwnerFacilityStrings.fPickOnMap),
               ),
-              FormSection(
-                title: OwnerFacilityStrings.formPhotos,
-                children: [
-                  PhotoPickerGrid(
-                    photos: _photos,
-                    errorText: _photoError,
-                    onChanged: (p) => setState(() => _photos = p),
-                  ),
-                ],
+              if (_lat.text.isNotEmpty || _lng.text.isNotEmpty)
+                TextButton(
+                  onPressed: () => setState(() {
+                    _lat.clear();
+                    _lng.clear();
+                  }),
+                  child: const Text(OwnerFacilityStrings.fClearPin),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _lat,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.\-]'))],
+                  decoration: _dec(OwnerFacilityStrings.fLat),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _lng,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.\-]'))],
+                  decoration: _dec(OwnerFacilityStrings.fLng),
+                  onChanged: (_) => setState(() {}),
+                ),
               ),
             ],
-            FormSection(
-              title: OwnerFacilityStrings.formLicense,
-              hint: OwnerFacilityStrings.licenseHint,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TimeButton(
+                  label: OwnerFacilityStrings.fOpen,
+                  value: _open,
+                  clearable: false,
+                  onChanged: (v) => setState(() => _open = v ?? _open),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TimeButton(
+                  label: OwnerFacilityStrings.fClose,
+                  value: _close,
+                  clearable: false,
+                  onChanged: (v) => setState(() => _close = v ?? _close),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(controller: _description, maxLength: 2000, minLines: 2, maxLines: 5, decoration: _dec(OwnerFacilityStrings.fDescription)),
+          const SizedBox(height: 4),
+          TextField(controller: _rules, maxLength: 2000, minLines: 2, maxLines: 5, decoration: _dec(OwnerFacilityStrings.fRules)),
+          CheckboxListTile(
+            value: _autoSlots,
+            onChanged: (v) => setState(() => _autoSlots = v ?? true),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: const Text(OwnerFacilityStrings.fAutoSlots, style: TextStyle(fontSize: 14)),
+          ),
+          TextField(
+            controller: _discount,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: _dec(OwnerFacilityStrings.fDiscount, hint: '10'),
+          ),
+          const SizedBox(height: 4),
+          const Text(OwnerFacilityStrings.fDiscountHint, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          if (_creating && _amenities.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(OwnerFacilityStrings.fAmenities, style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
               children: [
-                TextFormField(
-                  controller: _license,
-                  decoration: ownerInputDecoration(OwnerFacilityStrings.licenseNumber),
-                  validator: _required,
-                ),
-                const SizedBox(height: 12),
-                PhotoPickerGrid(
-                  photos: _licenseImages,
-                  errorText: _licenseError,
-                  onChanged: (p) => setState(() => _licenseImages = p),
-                ),
+                for (final a in _amenities)
+                  FilterChip(
+                    label: Text(a.name),
+                    selected: _amenityIds.contains(a.id),
+                    onSelected: (on) => setState(() => on ? _amenityIds.add(a.id) : _amenityIds.remove(a.id)),
+                  ),
               ],
             ),
           ],
-        ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: const TextStyle(color: Colors.red)),
+          ],
+          const SizedBox(height: 80),
+        ],
       ),
-      bottomNavigationBar: SubmitBar(
-        label: _profileOnly ? OwnerFacilityStrings.submitChange : OwnerFacilityStrings.submit,
-        busy: _submitting,
-        onPressed: _submit,
-      ),
-    );
-  }
-
-  Widget _courtRow(int i) {
-    final c = _courts[i];
-    final types = CourtType.forSport(c.sport);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
-      decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(10)),
-      child: Column(
-        children: [
-          Row(
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<Sport>(
-                  isExpanded: true,
-                  initialValue: c.sport,
-                  decoration: ownerInputDecoration(OwnerFacilityStrings.sport),
-                  items: [for (final s in Sport.values) DropdownMenuItem(value: s, child: Text(s.label))],
-                  onChanged: (s) {
-                    if (s == null) return;
-                    _updateCourt(
-                      i,
-                      CourtConfig(sport: s, courtType: CourtType.forSport(s).first, courtCount: c.courtCount),
-                    );
-                  },
+                child: OutlinedButton(
+                  onPressed: _busy ? null : () => Navigator.pop(context),
+                  child: const Text(OwnerFacilityStrings.cancel),
                 ),
               ),
-              IconButton(
-                onPressed: () => setState(() => _courts = [..._courts]..removeAt(i)),
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
+              const SizedBox(width: 12),
               Expanded(
-                child: types.length == 1
-                    ? Text(types.first.label, style: const TextStyle(color: AppColors.textSecondary))
-                    : DropdownButtonFormField<CourtType>(
-                        isExpanded: true,
-                        key: ValueKey('type-$i-${c.sport.name}'),
-                        initialValue: c.courtType,
-                        decoration: ownerInputDecoration(OwnerFacilityStrings.courtType),
-                        items: [for (final t in types) DropdownMenuItem(value: t, child: Text(t.label))],
-                        onChanged: (t) {
-                          if (t != null) {
-                            _updateCourt(i, CourtConfig(sport: c.sport, courtType: t, courtCount: c.courtCount));
-                          }
-                        },
-                      ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                children: [
-                  Text(
-                    OwnerFacilityStrings.courtCount,
-                    style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                  ),
-                  CountStepper(
-                    value: c.courtCount,
-                    onChanged: (n) => _updateCourt(i, c.copyWith(courtCount: n)),
-                  ),
-                ],
+                child: ElevatedButton(
+                  onPressed: _busy ? null : _submit,
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white),
+                  child: Text(_creating ? OwnerFacilityStrings.createSubmit : OwnerFacilityStrings.saveInfo),
+                ),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
