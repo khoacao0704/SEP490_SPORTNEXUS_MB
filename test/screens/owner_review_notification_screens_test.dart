@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/owner_review_strings.dart';
+import 'package:test1/core/strings/owner_slot_strings.dart';
 import 'package:test1/core/strings/owner_strings.dart';
 import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
@@ -9,10 +10,14 @@ import 'package:test1/data/mock/mock_notification_repository.dart';
 import 'package:test1/data/mock/mock_owner_repository.dart';
 import 'package:test1/models/app_notification.dart';
 import 'package:test1/models/facility_review.dart';
+import 'package:test1/models/owner_complaint.dart';
 import 'package:test1/screens/notification/notifications_screen.dart';
 import 'package:test1/screens/owner/owner_account_screen.dart';
+import 'package:test1/screens/owner/owner_complaints_screen.dart';
 import 'package:test1/screens/owner/owner_notifications.dart';
 import 'package:test1/screens/owner/owner_reviews_screen.dart';
+
+import '../helpers/layout_check.dart';
 
 void main() {
   setUp(() async {
@@ -32,40 +37,55 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('đánh giá: điểm trung bình, lọc chưa trả lời, ẩn danh', (tester) async {
+  testWidgets('đánh giá như Web: thống kê, phân bố sao, tên khách, lọc chưa phản hồi', (tester) async {
     await pump(tester, const OwnerReviewsScreen());
-    expect(find.text('3.6'), findsOneWidget);
-    expect(find.text(OwnerReviewStrings.reviewCount(8)), findsOneWidget);
-    expect(find.text(OwnerReviewStrings.anonymous), findsNWidgets(9));
-    expect(find.text(OwnerReviewStrings.reportHidden), findsOneWidget);
+    expect(find.text(OwnerReviewStrings.statAverage), findsOneWidget);
+    expect(find.text('3.6 / 5'), findsOneWidget);
+    expect(find.text('25%'), findsOneWidget);
+    expect(find.text(OwnerReviewStrings.distributionTitle), findsOneWidget);
+    expect(find.text('Nguyễn Minh Anh'), findsOneWidget);
     expect(find.text(OwnerReviewStrings.reportPending), findsOneWidget);
-
-    await tester.tap(find.textContaining(OwnerReviewStrings.filterUnreplied));
+    expect(find.text(OwnerReviewStrings.noComment), findsOneWidget);
+    await tester.scrollUntilVisible(find.text(OwnerReviewStrings.hidden), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Spam quảng cáo'), findsOneWidget);
+    await tester.drag(find.byType(ListView).first, const Offset(0, 5000));
     await tester.pumpAndSettle();
-    expect(find.text(OwnerReviewStrings.anonymous), findsNWidgets(6));
+
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<bool?>, OwnerReviewStrings.allReplied));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(OwnerReviewStrings.unreplied).last);
+    await tester.pumpAndSettle();
     expect(find.text(OwnerReviewStrings.yourReply), findsNothing);
+    expect(find.text('Lê Thu Hà'), findsNothing);
   });
 
-  testWidgets('trả lời đánh giá 2 sao', (tester) async {
+  testWidgets('gửi phản hồi, sửa rồi xóa phản hồi', (tester) async {
     await pump(tester, const OwnerReviewsScreen());
-    await tester.tap(find.widgetWithText(TextButton, OwnerReviewStrings.reply).first);
+    await tester.enterText(find.byType(TextField).first, 'Cảm ơn bạn, sân đã thay đèn mới.');
+    await tester.tap(find.text(OwnerReviewStrings.sendReply).first);
     await tester.pumpAndSettle();
-    expect(find.text(OwnerReviewStrings.replyTitle), findsOneWidget);
-    expect(find.text('"Đèn sân 3 bị chớp, mong sân sửa sớm."'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField), 'Cảm ơn bạn, sân đã thay đèn mới.');
-    await tester.tap(find.text(OwnerReviewStrings.send));
-    await tester.pumpAndSettle();
-
+    expect(find.text(OwnerReviewStrings.replySent), findsOneWidget);
     expect(find.text('Cảm ơn bạn, sân đã thay đèn mới.'), findsOneWidget);
-    expect(find.text(OwnerReviewStrings.replySaved), findsOneWidget);
-    final reviews = await AppRepositories.owner.getFacilityReviews();
-    expect(reviews.firstWhere((r) => r.id == 'rv-01').reply, isNotNull);
+
+    await tester.tap(find.text(OwnerReviewStrings.edit).first);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Cảm ơn bạn, sân đã thay đèn mới.'), 'Đã thay đèn.');
+    await tester.tap(find.text(OwnerReviewStrings.saveReply));
+    await tester.pumpAndSettle();
+    expect(find.text('Đã thay đèn.'), findsOneWidget);
+
+    await tester.tap(find.text(OwnerReviewStrings.delete).first);
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerReviewStrings.deleteConfirm), findsOneWidget);
+    await tester.tap(find.text(OwnerSlotStrings.confirm));
+    await tester.pumpAndSettle();
+    final first = (await AppRepositories.owner.getFacilityReviews()).items.first;
+    expect(first.hasReply, isFalse);
   });
 
-  testWidgets('báo cáo đánh giá vi phạm', (tester) async {
+  testWidgets('báo cáo đánh giá vi phạm (giữ của mobile)', (tester) async {
     await pump(tester, const OwnerReviewsScreen());
-    await tester.tap(find.widgetWithText(TextButton, OwnerReviewStrings.report).first);
+    await tester.tap(find.text(OwnerReviewStrings.report).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text(ReportReason.spam.label));
     await tester.pumpAndSettle();
@@ -74,8 +94,81 @@ void main() {
 
     expect(find.text(OwnerReviewStrings.reportSent), findsOneWidget);
     expect(find.text(OwnerReviewStrings.reportPending), findsNWidgets(2));
-    final rv = (await AppRepositories.owner.getFacilityReviews()).firstWhere((r) => r.id == 'rv-01');
+    final rv = (await AppRepositories.owner.getFacilityReviews()).items.firstWhere((r) => r.id == 'rv-01');
     expect(rv.report!.reason, ReportReason.spam);
+  });
+
+  testWidgets('khiếu nại: tab có số đếm, mở xử lý, gửi giải trình', (tester) async {
+    await pump(tester, const OwnerComplaintsScreen());
+    expect(find.text('${ComplaintTab.pending.label} (2)'), findsOneWidget);
+    expect(find.text(OwnerComplaintStrings.handle), findsNWidgets(2));
+
+    await tester.tap(find.text('${ComplaintTab.pending.label} (2)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lê Thu Hà'), findsNothing);
+
+    await tester.tap(find.text(OwnerComplaintStrings.handle).first);
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerComplaintStrings.detailTitle('Nguyễn Minh Anh')), findsOneWidget);
+    expect(find.text('50%'), findsOneWidget);
+    await tester.tap(find.text(OwnerComplaintStrings.submitRespond));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerComplaintStrings.responseEmpty), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, OwnerComplaintStrings.fieldRespond), 'Đã thay bóng đèn sân 3.');
+    await tester.tap(find.text(OwnerComplaintStrings.submitRespond));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerComplaintStrings.title), findsOneWidget);
+    expect((await AppRepositories.owner.getComplaint('cp-01')).status, ComplaintStatus.ownerResponded);
+    expect(find.text('${ComplaintTab.pending.label} (1)'), findsOneWidget);
+  });
+
+  testWidgets('khiếu nại: đồng ý hoàn tiền có hỏi xác nhận, khóa ca', (tester) async {
+    await pump(tester, const OwnerComplaintDetailScreen(complaintId: 'cp-02'));
+    await tester.tap(find.text(OwnerComplaintStrings.modeRefund));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, OwnerComplaintStrings.fieldRefund), 'Xin lỗi bạn.');
+    await tester.enterText(find.widgetWithText(TextField, OwnerComplaintStrings.refundPercent), '40');
+    await tester.tap(find.text(OwnerComplaintStrings.lockSlot));
+    await tester.tap(find.text(OwnerComplaintStrings.submitRefund));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerComplaintStrings.refundConfirm(40)), findsOneWidget);
+    await tester.tap(find.text(OwnerSlotStrings.confirm));
+    await tester.pumpAndSettle();
+    final c = await AppRepositories.owner.getComplaint('cp-02');
+    expect(c.status, ComplaintStatus.resolvedRefunded);
+    expect(c.appliedRefundPercentage, 40);
+  });
+
+  testWidgets('khiếu nại đã xử lý: chỉ xem, có kết luận Admin, không có form', (tester) async {
+    await pump(tester, const OwnerComplaintDetailScreen(complaintId: 'cp-04'));
+    expect(find.text(OwnerComplaintStrings.yourResponse), findsOneWidget);
+    expect(find.textContaining('Chủ sân đã hoàn tiền'), findsOneWidget);
+    expect(find.text(OwnerComplaintStrings.submitRespond), findsNothing);
+  });
+
+  Future<void> scrollAll(WidgetTester t) async {
+    for (var i = 0; i < 30; i++) {
+      await t.drag(find.byType(Scrollable).first, const Offset(0, -500), warnIfMissed: false);
+      await t.pump();
+    }
+  }
+
+  testWidgets('bố cục Đánh giá và Khiếu nại: nhiều cỡ máy + chữ phóng to không tràn', (tester) async {
+    final problems = [
+      ...await collectLayoutProblems(tester, 'Đánh giá', () => const OwnerReviewsScreen(), interact: scrollAll),
+      ...await collectLayoutProblems(tester, 'Khiếu nại', () => const OwnerComplaintsScreen(), interact: scrollAll),
+      ...await collectLayoutProblems(tester, 'Xử lý khiếu nại', () => const OwnerComplaintDetailScreen(complaintId: 'cp-01'),
+          interact: (t) async {
+        await t.ensureVisible(find.text(OwnerComplaintStrings.modeRefund));
+        await t.pump();
+        await t.tap(find.text(OwnerComplaintStrings.modeRefund));
+        await t.pump();
+        await scrollAll(t);
+      }),
+      ...await collectLayoutProblems(tester, 'Khiếu nại đã xử lý', () => const OwnerComplaintDetailScreen(complaintId: 'cp-04'), interact: scrollAll),
+    ];
+    expect(problems, isEmpty, reason: problems.join('\n'));
   });
 
   testWidgets('thông báo Chủ sân: chỉ nhóm của Chủ sân, bấm mở đúng màn', (tester) async {
@@ -108,12 +201,18 @@ void main() {
     expect(find.widgetWithText(ChoiceChip, NotificationGroup.lfg.label), findsOneWidget);
   });
 
-  testWidgets('tab Tài khoản mở Đánh giá và Thông báo', (tester) async {
+  testWidgets('tab Tài khoản mở Đánh giá, Khiếu nại và Thông báo', (tester) async {
     final owner = (await AppRepositories.auth.getCurrentUser())!;
     await pump(tester, OwnerAccountScreen(user: owner, onSelectTab: (_) {}));
     await tester.tap(find.text(OwnerStrings.menuReviews));
     await tester.pumpAndSettle();
     expect(find.text(OwnerReviewStrings.title), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(OwnerStrings.menuComplaints));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerComplaintStrings.title), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
 

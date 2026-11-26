@@ -7,9 +7,14 @@ import '../../core/constants/owner_rules.dart';
 import '../../core/strings/owner_facility_strings.dart';
 import '../../core/strings/owner_finance_strings.dart';
 import '../../core/strings/owner_review_strings.dart';
+import '../../core/strings/owner_shop_strings.dart';
 import '../../core/strings/owner_strings.dart';
 import '../../models/booking.dart' show CancelReason;
 import '../../models/owner_booking.dart';
+import '../../models/owner_complaint.dart';
+import '../../models/owner_dashboard.dart';
+import '../../models/owner_promotion.dart';
+import '../../models/owner_shop.dart';
 import '../../models/owner_court.dart';
 import '../../models/court_type.dart';
 import '../../models/facility.dart';
@@ -23,6 +28,7 @@ import '../repositories/owner_repository.dart';
 import '../repositories/wallet_repository.dart';
 import 'mock_auth_repository.dart';
 import 'mock_owner_booking_data.dart';
+import 'mock_owner_complaint_data.dart';
 import 'mock_owner_facility_data.dart';
 import 'mock_owner_finance_data.dart';
 import 'mock_owner_review_data.dart';
@@ -53,6 +59,7 @@ class MockOwnerRepository implements OwnerRepository {
   /// billId -> thời điểm trả.
   Map<String, DateTime>? _paidFees;
   List<FacilityReview>? _reviews;
+  List<(String, OwnerComplaint)>? _complaints;
 
   MockOwnerRepository({
     this.latency = const Duration(milliseconds: 400),
@@ -706,29 +713,349 @@ class MockOwnerRepository implements OwnerRepository {
     );
   }
 
-  // ---------------- Đánh giá ----------------
+  // ---------------- Quảng bá (như Web) ----------------
 
-  @override
-  Future<List<FacilityReview>> getFacilityReviews({String? facilityId}) async {
-    await _delay();
-    final ids = await _myFacilityIds();
-    return _allReviews()
-        .where((r) => ids.contains(r.facilityId) && (facilityId == null || r.facilityId == facilityId))
-        .toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  static const List<PromotionPackage> _packages = [
+    PromotionPackage(id: 'pk-7', name: 'Nổi bật 7 ngày', targetType: 'FACILITY', durationDays: 7, price: 150000,
+        description: 'Cơ sở hiện ở đầu kết quả tìm kiếm trong 7 ngày.'),
+    PromotionPackage(id: 'pk-30', name: 'Nổi bật 30 ngày', targetType: 'FACILITY', durationDays: 30, price: 500000),
+  ];
+
+  List<(String, OwnerPromotion)>? _promotions;
+
+  List<(String, OwnerPromotion)> _allPromotions() {
+    final now = _now();
+    return _promotions ??= [
+      (
+        'f-hcm-thientrieu',
+        OwnerPromotion(
+          id: 'pr-1',
+          packageName: 'Nổi bật 7 ngày',
+          targetName: 'Sân Cầu Lông Thiên Triều',
+          targetType: 'FACILITY',
+          startAt: now.subtract(const Duration(days: 2)),
+          endAt: now.add(const Duration(days: 5)),
+          price: 150000,
+          status: PromotionStatus.active,
+        ),
+      ),
+      (
+        'f-hcm-hoalu',
+        OwnerPromotion(
+          id: 'pr-0',
+          packageName: 'Nổi bật 30 ngày',
+          targetName: 'Sân Bóng Hoa Lư',
+          targetType: 'FACILITY',
+          startAt: now.subtract(const Duration(days: 60)),
+          endAt: now.subtract(const Duration(days: 30)),
+          price: 500000,
+          status: PromotionStatus.expired,
+        ),
+      ),
+    ];
   }
 
   @override
-  Future<FacilityReview> replyToReview(String reviewId, String text) async {
+  Future<List<PromotionPackage>> getPromotionPackages() async {
+    await _delay();
+    return _packages;
+  }
+
+  @override
+  Future<void> purchasePromotion({required String packageId, required String facilityId}) async {
+    await _delay();
+    final pkg = _packages.where((p) => p.id == packageId).firstOrNull;
+    if (pkg == null) throw const OwnerException(OwnerPromoStrings.packageNotFound);
+    final facility = (await _mine()).where((f) => f.id == facilityId && f.isApproved).firstOrNull;
+    if (facility == null) throw const OwnerException(OwnerPromoStrings.pickTarget);
+    try {
+      await wallet.pay(amount: pkg.price, type: TransactionType.walletPayment, description: 'Quảng bá: ${pkg.name}', reference: pkg.id);
+    } on WalletException catch (e) {
+      throw OwnerException(e.message);
+    }
+    final now = _now();
+    final list = _allPromotions();
+    // Đang có lượt chạy thì cộng nối thời hạn.
+    final running = list
+        .where((e) => e.$1 == facilityId && e.$2.status == PromotionStatus.active && (e.$2.endAt?.isAfter(now) ?? false))
+        .map((e) => e.$2.endAt!)
+        .fold<DateTime?>(null, (a, b) => a == null || b.isAfter(a) ? b : a);
+    final start = running ?? now;
+    list.insert(
+      0,
+      (
+        facilityId,
+        OwnerPromotion(
+          id: 'pr-${++_counter}',
+          packageName: pkg.name,
+          targetName: facility.profile.name,
+          targetType: 'FACILITY',
+          startAt: start,
+          endAt: start.add(Duration(days: pkg.durationDays)),
+          price: pkg.price,
+          status: running == null ? PromotionStatus.active : PromotionStatus.scheduled,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Future<List<OwnerPromotion>> getMyPromotions({bool activeOnly = false}) async {
+    await _delay();
+    final ids = await _myFacilityIds();
+    return [
+      for (final (fid, p) in _allPromotions())
+        if (ids.contains(fid) && (!activeOnly || p.status == PromotionStatus.active)) p,
+    ];
+  }
+
+  // ---------------- Shop tại sân (như Web) ----------------
+
+  Map<String, List<ShopProduct>>? _products;
+  Map<String, List<ShopOrder>>? _shopOrders;
+
+  Map<String, List<ShopProduct>> _allProducts() => _products ??= {
+        'f-hcm-thientrieu': [
+          const ShopProduct(id: 'sp-1', facilityId: 'f-hcm-thientrieu', name: 'Nước suối 500ml', price: 10000, stock: 48),
+          const ShopProduct(id: 'sp-2', facilityId: 'f-hcm-thientrieu', name: 'Thuê vợt cầu lông', price: 30000, stock: 6,
+              description: 'Trả vợt tại quầy sau khi chơi.'),
+          const ShopProduct(id: 'sp-3', facilityId: 'f-hcm-thientrieu', name: 'Quả cầu lông (hộp 12)', price: 220000, stock: 0,
+              isActive: false),
+        ],
+        'f-hcm-hoalu': [
+          const ShopProduct(id: 'sp-4', facilityId: 'f-hcm-hoalu', name: 'Nước tăng lực', price: 15000, stock: 30),
+        ],
+      };
+
+  Map<String, List<ShopOrder>> _allShopOrders() {
+    final now = _now();
+    return _shopOrders ??= {
+      'f-hcm-thientrieu': [
+        ShopOrder(id: 'so-1', productId: 'sp-1', productName: 'Nước suối 500ml', customerName: 'Nguyễn Minh Anh',
+            customerPhone: '0909123401', quantity: 2, totalAmount: 20000, status: ShopOrderStatus.pending,
+            note: 'Lấy lúc 16h', createdAt: now.subtract(const Duration(minutes: 20))),
+        ShopOrder(id: 'so-2', productId: 'sp-2', productName: 'Thuê vợt cầu lông', customerName: 'Lê Thu Hà',
+            customerPhone: '0909123403', quantity: 1, totalAmount: 30000, status: ShopOrderStatus.ready,
+            createdAt: now.subtract(const Duration(hours: 1))),
+        ShopOrder(id: 'so-3', productId: 'sp-1', productName: 'Nước suối 500ml', customerName: 'Võ Hoàng Nam',
+            quantity: 3, totalAmount: 30000, status: ShopOrderStatus.pickedUp, createdAt: now.subtract(const Duration(days: 1))),
+      ],
+      'f-hcm-hoalu': [],
+    };
+  }
+
+  @override
+  Future<List<ShopProduct>> getShopProducts(String facilityId) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return List.of(_allProducts()[facilityId] ?? const []);
+  }
+
+  void _validateProduct(ShopProductInput input) {
+    if (input.name.trim().isEmpty) throw const OwnerException(OwnerShopStrings.errName);
+    if (input.price < 0) throw const OwnerException(OwnerShopStrings.errPrice);
+    if (input.stock < 0) throw const OwnerException(OwnerShopStrings.errStock);
+  }
+
+  ShopProduct _product(String id, String facilityId, ShopProductInput i) => ShopProduct(
+        id: id,
+        facilityId: facilityId,
+        name: i.name.trim(),
+        description: (i.description ?? '').trim().isEmpty ? null : i.description!.trim(),
+        price: i.price,
+        stock: i.stock,
+        imageUrl: i.imageUrl,
+        isActive: i.isActive,
+      );
+
+  @override
+  Future<void> createShopProduct(String facilityId, ShopProductInput input) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    _validateProduct(input);
+    _allProducts().putIfAbsent(facilityId, () => []).add(_product('sp-new-${++_counter}', facilityId, input));
+  }
+
+  @override
+  Future<void> updateShopProduct(String productId, ShopProductInput input) async {
+    await _delay();
+    _validateProduct(input);
+    final (list, i) = await _findProduct(productId);
+    list[i] = _product(productId, list[i].facilityId, input);
+  }
+
+  @override
+  Future<void> deleteShopProduct(String productId) async {
+    await _delay();
+    final (list, i) = await _findProduct(productId);
+    list.removeAt(i);
+  }
+
+  Future<(List<ShopProduct>, int)> _findProduct(String productId) async {
+    final ids = await _myFacilityIds();
+    for (final e in _allProducts().entries) {
+      final i = e.value.indexWhere((p) => p.id == productId);
+      if (i >= 0 && ids.contains(e.key)) return (e.value, i);
+    }
+    throw const OwnerException(OwnerShopStrings.notFound);
+  }
+
+  @override
+  Future<String> uploadShopImage(String filePath) async {
+    await _delay();
+    return filePath;
+  }
+
+  @override
+  Future<List<ShopOrder>> getShopOrders(String facilityId, {ShopOrderStatus? status}) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return [for (final o in _allShopOrders()[facilityId] ?? const <ShopOrder>[]) if (status == null || o.status == status) o];
+  }
+
+  @override
+  Future<void> updateShopOrderStatus(String orderId, ShopOrderStatus status) async {
+    await _delay();
+    final ids = await _myFacilityIds();
+    for (final e in _allShopOrders().entries) {
+      final i = e.value.indexWhere((o) => o.id == orderId);
+      if (i < 0 || !ids.contains(e.key)) continue;
+      final cur = e.value[i].status;
+      final ok = status == ShopOrderStatus.cancelled ? cur.canCancel : cur.next?.$1 == status;
+      if (!ok) throw const OwnerException(OwnerShopStrings.badTransition);
+      e.value[i] = e.value[i].copyWith(status: status);
+      return;
+    }
+    throw const OwnerException(OwnerShopStrings.orderNotFound);
+  }
+
+  // ---------------- Tổng quan (như Web) ----------------
+
+  /// Số liệu giả lập ổn định theo ngày (để biểu đồ có dữ liệu), không tính ngày sau hôm nay.
+  @override
+  Future<OwnerDashboard> getDashboard({required String facilityId, required DateTime from, required DateTime to}) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    final now = _now();
+    final today = DateTime(now.year, now.month, now.day);
+    final courts = (await getCourts(facilityId)).where((c) => c.isActive).toList();
+    const slotsPerDay = 16;
+    final byCourt = {for (final c in courts) c.id: [0, 0, 0]}; // đơn, ca đặt, doanh thu
+    final days = <DayStat>[];
+    final hours = <int, int>{};
+    for (var d = DateTime(from.year, from.month, from.day); !d.isAfter(to) && !d.isAfter(today); d = DateTime(d.year, d.month, d.day + 1)) {
+      var dayBookings = 0;
+      var dayRevenue = 0;
+      for (var i = 0; i < courts.length; i++) {
+        final n = (d.day * 7 + d.month * 3 + i * 5) % 5;
+        final stat = byCourt[courts[i].id]!;
+        stat[0] += n;
+        stat[1] += n;
+        stat[2] += n * courts[i].defaultPrice;
+        dayBookings += n;
+        dayRevenue += n * courts[i].defaultPrice;
+        for (var k = 0; k < n; k++) {
+          final h = 17 + (k + i) % 4;
+          hours[h] = (hours[h] ?? 0) + 1;
+        }
+      }
+      days.add(DayStat(date: d, revenue: dayRevenue, bookings: dayBookings));
+    }
+    final stats = [
+      for (final c in courts)
+        CourtStat(
+          courtId: c.id,
+          courtName: c.name,
+          bookings: byCourt[c.id]![0],
+          bookedSlots: byCourt[c.id]![1],
+          sellableSlots: days.length * slotsPerDay,
+          revenue: byCourt[c.id]![2],
+        ),
+    ];
+    final total = stats.fold<int>(0, (s, c) => s + c.bookings);
+    final booked = stats.fold<int>(0, (s, c) => s + c.bookedSlots);
+    final sellable = stats.fold<int>(0, (s, c) => s + c.sellableSlots);
+    final revenue = stats.fold<int>(0, (s, c) => s + c.revenue);
+    final cancelled = total ~/ 12;
+    final reviews = (await _myReviews(facilityId)).where((r) => !r.isHidden).toList();
+    final todayPage = await getBookings(facilityId: facilityId, date: today, pageSize: 100);
+    final ids = await _myFacilityIds();
+    final openReports = _allComplaints()
+        .where((e) => e.$1 == facilityId && ids.contains(e.$1) && e.$2.status.canAct)
+        .length;
+    return OwnerDashboard(
+      totalBookings: total,
+      checkedInBookings: total - cancelled - total ~/ 10,
+      cancelledBookings: cancelled,
+      upcomingTodayBookings: todayPage.items.where((b) => b.status == OwnerBookingStatus.paid).length,
+      occupancyRate: sellable == 0 ? 0 : booked * 100 / sellable,
+      bookedSlots: booked,
+      sellableSlots: sellable,
+      totalRevenue: revenue,
+      onlineRevenue: revenue * 4 ~/ 5,
+      walkInRevenue: revenue - revenue * 4 ~/ 5,
+      cancellationRate: total == 0 ? 0 : cancelled * 100 / total,
+      reviewCount: reviews.length,
+      averageRating: reviews.isEmpty ? 0 : reviews.fold<int>(0, (s, r) => s + r.rating) / reviews.length,
+      openReports: openReports,
+      bookingsByHour: hours,
+      revenueByDay: days,
+      revenueByCourt: stats,
+    );
+  }
+
+  // ---------------- Đánh giá (như Web) ----------------
+
+  @override
+  Future<ReviewPage> getFacilityReviews({String? facilityId, int? rating, bool? replied, int page = 1, int pageSize = 10}) async {
+    await _delay();
+    final all = (await _myReviews(facilityId))
+        .where((r) => (rating == null || r.rating == rating) && (replied == null || r.hasReply == replied))
+        .toList();
+    final pages = (all.length / pageSize).ceil().clamp(1, 1 << 30);
+    final start = ((page - 1) * pageSize).clamp(0, all.length);
+    final end = (start + pageSize).clamp(0, all.length);
+    return ReviewPage(items: all.sublist(start, end), total: all.length, totalPages: pages);
+  }
+
+  /// Thống kê như BE: không tính đánh giá Admin đã ẩn.
+  @override
+  Future<ReviewStats> getReviewStats({String? facilityId}) async {
+    await _delay();
+    final visible = (await _myReviews(facilityId)).where((r) => !r.isHidden).toList();
+    final replied = visible.where((r) => r.hasReply).length;
+    final since = _now().subtract(const Duration(days: 30));
+    return ReviewStats(
+      totalReviews: visible.length,
+      averageRating: visible.isEmpty ? null : visible.fold<int>(0, (s, r) => s + r.rating) / visible.length,
+      repliedCount: replied,
+      unrepliedCount: visible.length - replied,
+      replyRate: visible.isEmpty ? null : replied / visible.length,
+      newLast30Days: visible.where((r) => r.createdAt.isAfter(since)).length,
+      distribution: {for (var s = 1; s <= 5; s++) s: visible.where((r) => r.rating == s).length},
+    );
+  }
+
+  @override
+  Future<void> replyToReview(String reviewId, String text, {bool edit = false}) async {
     await _delay();
     final review = await _findReview(reviewId);
     final trimmed = text.trim();
     if (trimmed.isEmpty) throw const OwnerException(OwnerReviewStrings.replyEmpty);
-    if (!review.canReply) throw const OwnerException(OwnerReviewStrings.cannotReplyHidden);
+    if (edit && !review.hasReply) throw const OwnerException(OwnerReviewStrings.noReplyYet);
+    if (!edit && review.hasReply) throw const OwnerException(OwnerReviewStrings.alreadyReplied);
     final cut = trimmed.length > OwnerReviewStrings.replyMaxLength
         ? trimmed.substring(0, OwnerReviewStrings.replyMaxLength)
         : trimmed;
-    return _saveReview(review.copyWith(reply: ReviewReply(text: cut, updatedAt: _now())));
+    _saveReview(review.copyWith(ownerReply: cut, repliedAt: _now()));
+  }
+
+  @override
+  Future<void> deleteReviewReply(String reviewId) async {
+    await _delay();
+    final review = await _findReview(reviewId);
+    if (!review.hasReply) throw const OwnerException(OwnerReviewStrings.noReplyYet);
+    _saveReview(review.copyWith(clearReply: true));
   }
 
   @override
@@ -743,6 +1070,14 @@ class MockOwnerRepository implements OwnerRepository {
 
   List<FacilityReview> _allReviews() => _reviews ??= MockOwnerReviewData.seed(_now());
 
+  Future<List<FacilityReview>> _myReviews(String? facilityId) async {
+    final ids = await _myFacilityIds();
+    return _allReviews()
+        .where((r) => ids.contains(r.facilityId) && (facilityId == null || r.facilityId == facilityId))
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
   Future<FacilityReview> _findReview(String reviewId) async {
     final ids = await _myFacilityIds();
     final r = _allReviews().where((r) => r.id == reviewId && ids.contains(r.facilityId)).firstOrNull;
@@ -754,6 +1089,113 @@ class MockOwnerRepository implements OwnerRepository {
     final list = _allReviews();
     list[list.indexWhere((r) => r.id == updated.id)] = updated;
     return updated;
+  }
+
+  // ---------------- Khiếu nại (như Web) ----------------
+
+  List<(String, OwnerComplaint)> _allComplaints() => _complaints ??= MockOwnerComplaintData.seed(_now());
+
+  @override
+  Future<ComplaintPage> getComplaints({
+    ComplaintStatus? status,
+    String? facilityId,
+    String? keyword,
+    int page = 1,
+    int pageSize = 10,
+  }) async {
+    await _delay();
+    final ids = await _myFacilityIds();
+    final q = (keyword ?? '').trim().toLowerCase();
+    final mine = [
+      for (final (fid, c) in _allComplaints())
+        if (ids.contains(fid) && (facilityId == null || fid == facilityId)) c,
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final matched = mine
+        .where((c) =>
+            q.isEmpty || c.reporterName.toLowerCase().contains(q) || c.reason.toLowerCase().contains(q))
+        .toList();
+    final list = matched.where((c) => status == null || c.status == status).toList();
+    int count(ComplaintStatus s) => matched.where((c) => c.status == s).length;
+    final start = ((page - 1) * pageSize).clamp(0, list.length);
+    final end = (start + pageSize).clamp(0, list.length);
+    return ComplaintPage(
+      items: list.sublist(start, end),
+      total: list.length,
+      totalPages: (list.length / pageSize).ceil().clamp(1, 1 << 30),
+      counts: ComplaintCounts(
+        pending: count(ComplaintStatus.pending),
+        responded: count(ComplaintStatus.ownerResponded),
+        refunded: count(ComplaintStatus.resolvedRefunded),
+        noRefund: count(ComplaintStatus.resolvedNoRefund),
+        closed: count(ComplaintStatus.rejected) + count(ComplaintStatus.withdrawn),
+      ),
+    );
+  }
+
+  @override
+  Future<OwnerComplaint> getComplaint(String complaintId) async {
+    await _delay();
+    return _findComplaint(complaintId);
+  }
+
+  @override
+  Future<String> uploadEvidence(String filePath) async {
+    await _delay();
+    return filePath;
+  }
+
+  @override
+  Future<void> respondComplaint(String complaintId, {required String response, List<String> evidenceUrls = const []}) async {
+    await _delay();
+    final c = await _checkActionable(complaintId, response, evidenceUrls);
+    _saveComplaint(c.copyWith(
+      status: ComplaintStatus.ownerResponded,
+      ownerResponse: response.trim(),
+      ownerEvidenceUrls: evidenceUrls,
+      ownerRespondedAt: _now(),
+    ));
+  }
+
+  @override
+  Future<void> acceptComplaintRefund(
+    String complaintId, {
+    required String response,
+    required int refundPercent,
+    List<String> evidenceUrls = const [],
+    bool lockSlot = false,
+  }) async {
+    await _delay();
+    final c = await _checkActionable(complaintId, response, evidenceUrls);
+    if (refundPercent < 1 || refundPercent > 100) throw const OwnerException(OwnerComplaintStrings.percentError);
+    _saveComplaint(c.copyWith(
+      status: ComplaintStatus.resolvedRefunded,
+      ownerResponse: response.trim(),
+      ownerEvidenceUrls: evidenceUrls,
+      ownerRespondedAt: _now(),
+      resolvedAt: _now(),
+      refundedAmount: (c.bookingTotalAmount ?? 0) * refundPercent ~/ 100,
+      appliedRefundPercentage: refundPercent,
+    ));
+  }
+
+  Future<OwnerComplaint> _findComplaint(String id) async {
+    final ids = await _myFacilityIds();
+    final hit = _allComplaints().where((e) => e.$2.id == id && ids.contains(e.$1)).firstOrNull;
+    if (hit == null) throw const OwnerException(OwnerComplaintStrings.notFound);
+    return hit.$2;
+  }
+
+  Future<OwnerComplaint> _checkActionable(String id, String response, List<String> evidence) async {
+    final c = await _findComplaint(id);
+    if (!c.status.canAct) throw const OwnerException(OwnerComplaintStrings.cannotAct);
+    if (response.trim().isEmpty) throw const OwnerException(OwnerComplaintStrings.responseEmpty);
+    return c;
+  }
+
+  void _saveComplaint(OwnerComplaint updated) {
+    final list = _allComplaints();
+    final i = list.indexWhere((e) => e.$2.id == updated.id);
+    list[i] = (list[i].$1, updated);
   }
 
   List<RevenueItem> _revenueItems() => _revenue ??= [

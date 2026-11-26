@@ -8,11 +8,13 @@ import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_owner_booking_data.dart';
 import 'package:test1/data/mock/mock_owner_repository.dart';
+import 'package:test1/data/mock/mock_wallet_repository.dart';
 import 'package:test1/models/app_user.dart';
 import 'package:test1/models/owner_booking.dart';
 import 'package:test1/screens/auth/role_router.dart';
 import 'package:test1/screens/owner/owner_booking_detail_screen.dart';
 import 'package:test1/screens/owner/owner_main_screen.dart';
+import 'package:test1/screens/owner/owner_overview_screen.dart';
 import 'package:test1/screens/owner/owner_scan_screen.dart';
 import 'package:test1/widgets/owner/schedule_grid_view.dart';
 
@@ -28,6 +30,7 @@ void main() {
     final auth = MockAuthRepository(latency: Duration.zero);
     AppRepositories.auth = auth;
     AppRepositories.owner = MockOwnerRepository(latency: Duration.zero, now: () => fixedNow);
+    AppRepositories.ownerWallet = MockWalletRepository(latency: Duration.zero, keyPrefix: MockOwnerRepository.ownerWalletPrefix);
     owner = await auth.login('owner@sportnexus.vn', 'Owner@123');
   });
 
@@ -81,18 +84,23 @@ void main() {
       OwnerStrings.navFacilities,
       OwnerStrings.navAccount,
     ]) {
-      expect(find.text(label), findsOneWidget);
+      expect(find.descendant(of: find.byType(BottomNavigationBar), matching: find.text(label)), findsOneWidget);
     }
-    // Tổng quan hôm nay của Thiên Triều: có khách đặt hôm nay.
-    expect(find.text('Nguyễn Minh Anh'), findsOneWidget);
+    // Tổng quan của Thiên Triều: có khách đặt hôm nay (khối nằm dưới, phải cuộn tới).
+    final overviewList = find.descendant(of: find.byType(OwnerOverviewScreen), matching: find.byType(Scrollable)).first;
+    await tester.scrollUntilVisible(find.textContaining('Nguyễn Minh Anh'), 400, scrollable: overviewList);
+    expect(find.textContaining('Nguyễn Minh Anh'), findsOneWidget);
+    await tester.drag(overviewList, const Offset(0, 20000));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Sân Cầu Lông Thiên Triều').first);
     await tester.pumpAndSettle();
     expect(find.text(OwnerStrings.allFacilities), findsNothing);
     await tester.tap(find.text('Sân Bóng Hoa Lư').last);
     await tester.pumpAndSettle();
-    expect(find.text('Phạm Đức Huy'), findsOneWidget);
-    expect(find.text('Nguyễn Minh Anh'), findsNothing);
+    await tester.scrollUntilVisible(find.textContaining('Phạm Đức Huy'), 400, scrollable: overviewList);
+    expect(find.textContaining('Phạm Đức Huy'), findsOneWidget);
+    expect(find.textContaining('Nguyễn Minh Anh'), findsNothing);
 
     await tester.tap(find.text(OwnerStrings.navFacilities));
     await tester.pumpAndSettle();

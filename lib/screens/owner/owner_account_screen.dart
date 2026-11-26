@@ -7,9 +7,12 @@ import '../../models/app_user.dart';
 import '../../theme/app_colors.dart';
 import '../auth/login_screen.dart';
 import 'listing_fee_screen.dart';
+import 'owner_complaints_screen.dart';
 import 'owner_finance_screen.dart';
 import 'owner_notifications.dart';
+import 'owner_promotions_screen.dart';
 import 'owner_reviews_screen.dart';
+import 'owner_shop_screen.dart';
 import 'owner_tournaments_screen.dart';
 
 /// Tài khoản Chủ sân: thông tin, các mục sẽ làm ở bước sau, đăng xuất.
@@ -33,6 +36,9 @@ class OwnerAccountScreen extends StatelessWidget {
       (Icons.account_balance_wallet_outlined, OwnerStrings.menuRevenue, () => const OwnerFinanceScreen()),
       (Icons.receipt_long_outlined, OwnerStrings.menuListingFee, () => const ListingFeeScreen()),
       (Icons.star_outline, OwnerStrings.menuReviews, () => const OwnerReviewsScreen()),
+      (Icons.report_outlined, OwnerStrings.menuComplaints, () => const OwnerComplaintsScreen()),
+      (Icons.campaign_outlined, OwnerStrings.menuPromotions, () => const OwnerPromotionsScreen()),
+      (Icons.storefront_outlined, OwnerStrings.menuShop, () => const OwnerShopScreen()),
       (Icons.emoji_events_outlined, OwnerStrings.menuTournaments, () => const OwnerTournamentsScreen()),
       (
         Icons.notifications_outlined,

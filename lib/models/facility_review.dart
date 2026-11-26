@@ -1,6 +1,4 @@
-import 'sport.dart';
-
-/// Lý do Chủ sân báo cáo một đánh giá lên Admin.
+/// Lý do Chủ sân báo cáo một đánh giá lên Admin (chỉ có trên mobile, BE chưa có API).
 enum ReportReason {
   offensive('Offensive', 'Ngôn từ tục tĩu, xúc phạm'),
   falseInfo('FalseInfo', 'Sai sự thật, bịa đặt'),
@@ -38,101 +36,170 @@ class ReviewReport {
   final DateTime createdAt;
 
   const ReviewReport({required this.reason, required this.createdAt, this.note = '', this.status = ReportStatus.pending});
-
-  factory ReviewReport.fromJson(Map<String, dynamic> json) => ReviewReport(
-        reason: ReportReason.fromApi(json['reason'] as String),
-        note: json['note'] as String? ?? '',
-        status: ReportStatus.fromApi(json['status'] as String),
-        createdAt: DateTime.parse(json['createdAt'] as String),
-      );
 }
 
-/// Câu trả lời công khai của Chủ sân (một câu cho mỗi đánh giá, sửa được).
-class ReviewReply {
-  final String text;
-  final DateTime updatedAt;
-
-  const ReviewReply({required this.text, required this.updatedAt});
-
-  factory ReviewReply.fromJson(Map<String, dynamic> json) =>
-      ReviewReply(text: json['text'] as String, updatedAt: DateTime.parse(json['updatedAt'] as String));
-}
-
-/// Đánh giá người chơi chấm cho cơ sở. Ẩn danh: không có tên người chấm.
+/// Đánh giá của khách về cơ sở của Chủ sân (GET /owner/facility-reviews, các trường như Web đọc).
 class FacilityReview {
   final String id;
   final String facilityId;
   final String facilityName;
-  final Sport sport;
-  final int stars;
+  final String userName;
+  final String? userAvatarUrl;
+  final int rating;
   final String comment;
   final DateTime createdAt;
-  final ReviewReply? reply;
+
+  /// Mỗi đánh giá chỉ có một phản hồi: lần đầu gửi, sau đó sửa / xóa.
+  final String? ownerReply;
+  final DateTime? repliedAt;
+
+  /// Admin đã ẩn đánh giá.
+  final bool isHidden;
+  final String? hiddenReason;
+
+  /// Báo cáo vi phạm của Chủ sân (chỉ mobile).
   final ReviewReport? report;
 
   const FacilityReview({
     required this.id,
     required this.facilityId,
     required this.facilityName,
-    required this.sport,
-    required this.stars,
+    required this.userName,
+    required this.rating,
     required this.createdAt,
+    this.userAvatarUrl,
     this.comment = '',
-    this.reply,
+    this.ownerReply,
+    this.repliedAt,
+    this.isHidden = false,
+    this.hiddenReason,
     this.report,
   });
 
-  bool get isHidden => report?.status == ReportStatus.hidden;
+  bool get hasReply => (ownerReply ?? '').trim().isNotEmpty;
 
-  /// Đã báo cáo thì không báo cáo lại; bị ẩn thì không trả lời nữa.
-  bool get canReport => report == null;
-  bool get canReply => !isHidden;
+  /// Đã báo cáo hoặc đã bị ẩn thì không báo cáo nữa.
+  bool get canReport => report == null && !isHidden;
 
-  FacilityReview copyWith({ReviewReply? reply, ReviewReport? report}) => FacilityReview(
+  FacilityReview copyWith({
+    String? ownerReply,
+    DateTime? repliedAt,
+    bool clearReply = false,
+    ReviewReport? report,
+    bool? isHidden,
+  }) =>
+      FacilityReview(
         id: id,
         facilityId: facilityId,
         facilityName: facilityName,
-        sport: sport,
-        stars: stars,
+        userName: userName,
+        userAvatarUrl: userAvatarUrl,
+        rating: rating,
         comment: comment,
         createdAt: createdAt,
-        reply: reply ?? this.reply,
+        ownerReply: clearReply ? null : (ownerReply ?? this.ownerReply),
+        repliedAt: clearReply ? null : (repliedAt ?? this.repliedAt),
+        isHidden: isHidden ?? this.isHidden,
+        hiddenReason: hiddenReason,
         report: report ?? this.report,
       );
 
-  factory FacilityReview.fromJson(Map<String, dynamic> json) => FacilityReview(
-        id: json['id'] as String,
-        facilityId: json['facilityId'] as String,
-        facilityName: json['facilityName'] as String,
-        sport: Sport.fromApi(json['sport'] as String),
-        stars: (json['stars'] as num).toInt(),
-        comment: json['comment'] as String? ?? '',
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        reply: json['reply'] == null ? null : ReviewReply.fromJson(json['reply'] as Map<String, dynamic>),
-        report: json['report'] == null ? null : ReviewReport.fromJson(json['report'] as Map<String, dynamic>),
-      );
+  factory FacilityReview.fromJson(Map<String, dynamic> json) {
+    String? str(Object? v) {
+      final s = v?.toString().trim();
+      return s == null || s.isEmpty ? null : s;
+    }
+
+    DateTime? date(Object? v) => v == null ? null : DateTime.tryParse(v.toString())?.toLocal();
+    return FacilityReview(
+      id: '${json['id'] ?? ''}',
+      facilityId: '${json['facilityId'] ?? ''}',
+      facilityName: str(json['facilityName']) ?? '',
+      userName: str(json['userFullName'] ?? json['userName']) ?? '',
+      userAvatarUrl: str(json['userAvatarUrl']),
+      rating: (json['rating'] as num?)?.toInt() ?? 0,
+      comment: str(json['comment']) ?? '',
+      createdAt: date(json['createdAt']) ?? DateTime.now(),
+      ownerReply: str(json['ownerReply']),
+      repliedAt: date(json['repliedAt']),
+      isHidden: json['isHidden'] == true,
+      hiddenReason: str(json['hiddenReason']),
+    );
+  }
 }
 
-/// Tổng hợp đánh giá (không tính đánh giá Admin đã ẩn).
-class ReviewSummary {
-  final List<FacilityReview> reviews;
+/// Một trang đánh giá.
+class ReviewPage {
+  final List<FacilityReview> items;
+  final int total;
+  final int totalPages;
 
-  const ReviewSummary(this.reviews);
+  const ReviewPage({required this.items, required this.total, required this.totalPages});
 
-  List<FacilityReview> get _visible => reviews.where((r) => !r.isHidden).toList();
+  static const empty = ReviewPage(items: [], total: 0, totalPages: 1);
 
-  int get count => _visible.length;
-
-  double get average => count == 0 ? 0 : _visible.fold(0, (s, r) => s + r.stars) / count;
-
-  /// Số đánh giá theo sao, chỉ số 0 = 1 sao.
-  List<int> get distribution {
-    final d = List.filled(5, 0);
-    for (final r in _visible) {
-      d[r.stars - 1]++;
-    }
-    return d;
+  factory ReviewPage.fromJson(Object? data, {required int pageSize}) {
+    final map = data is Map ? Map<String, dynamic>.from(data) : const <String, dynamic>{};
+    final raw = data is List ? data : (map['items'] ?? map['data'] ?? const []) as List;
+    final items = raw.whereType<Map>().map((e) => FacilityReview.fromJson(Map<String, dynamic>.from(e))).toList();
+    final total = (map['totalCount'] ?? map['total'] ?? map['totalItems']) as num?;
+    final count = total?.toInt() ?? items.length;
+    final pages = (map['totalPages'] as num?)?.toInt() ?? 0;
+    return ReviewPage(
+      items: items,
+      total: count,
+      totalPages: pages > 0 ? pages : (count / pageSize).ceil().clamp(1, 1 << 30),
+    );
   }
+}
 
-  int get unreplied => _visible.where((r) => r.reply == null).length;
+/// Thống kê đánh giá (GET /owner/facility-reviews/statistics).
+class ReviewStats {
+  final int totalReviews;
+  final double? averageRating;
+  final int repliedCount;
+  final int unrepliedCount;
+
+  /// Tỉ lệ phản hồi, BE có thể trả 0..1 hoặc 0..100.
+  final double? replyRate;
+  final int newLast30Days;
+
+  /// Số đánh giá theo sao (1..5).
+  final Map<int, int> distribution;
+
+  const ReviewStats({
+    required this.totalReviews,
+    required this.repliedCount,
+    required this.unrepliedCount,
+    required this.newLast30Days,
+    required this.distribution,
+    this.averageRating,
+    this.replyRate,
+  });
+
+  /// Tỉ lệ phản hồi theo %, làm tròn như Web.
+  int? get replyPercent => replyRate == null ? null : (replyRate! <= 1 ? replyRate! * 100 : replyRate!).round();
+
+  int countOf(int star) => distribution[star] ?? 0;
+
+  factory ReviewStats.fromJson(Map<String, dynamic> json) {
+    int n(Object? v) => (v as num?)?.toInt() ?? 0;
+    final dist = <int, int>{};
+    final raw = json['ratingDistribution'];
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        final star = int.tryParse('$k');
+        if (star != null) dist[star] = n(v);
+      });
+    }
+    return ReviewStats(
+      totalReviews: n(json['totalReviews']),
+      averageRating: (json['averageRating'] as num?)?.toDouble(),
+      repliedCount: n(json['repliedCount']),
+      unrepliedCount: n(json['unrepliedCount']),
+      replyRate: (json['replyRate'] as num?)?.toDouble(),
+      newLast30Days: n(json['newReviewsLast30Days']),
+      distribution: dist,
+    );
+  }
 }
