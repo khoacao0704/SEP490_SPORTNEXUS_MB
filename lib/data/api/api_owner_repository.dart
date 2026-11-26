@@ -2,7 +2,12 @@ import '../../core/constants/owner_rules.dart';
 import '../../core/strings/owner_strings.dart';
 import '../../models/booking.dart' show CancelReason;
 import '../../models/owner_booking.dart';
+import '../../models/owner_complaint.dart';
+import '../../models/owner_dashboard.dart';
+import '../../models/owner_promotion.dart';
+import '../../models/owner_shop.dart';
 import '../../models/owner_court.dart';
+import '../../core/strings/owner_review_strings.dart';
 import '../../core/strings/owner_slot_strings.dart';
 import '../../models/court_type.dart';
 import '../../models/facility.dart';
@@ -560,12 +565,188 @@ class ApiOwnerRepository implements OwnerRepository {
   @override
   Future<ListingFeeBill> payListingFee(String billId) async => _todo();
 
-  @override
-  Future<List<FacilityReview>> getFacilityReviews({String? facilityId}) async => _todo();
+  // ==================== Đánh giá (như Web: src/api/owner/reviewApi.js) ====================
+
+  static const String reviewsPath = '/api/v1/owner/facility-reviews';
+  static const String reviewStatsPath = '/api/v1/owner/facility-reviews/statistics';
+  static String reviewReplyPath(String reviewId) => '/api/v1/owner/facility-reviews/$reviewId/reply';
 
   @override
-  Future<FacilityReview> replyToReview(String reviewId, String text) async => _todo();
+  Future<ReviewPage> getFacilityReviews({String? facilityId, int? rating, bool? replied, int page = 1, int pageSize = 10}) =>
+      _run(() async => ReviewPage.fromJson(
+            await _api.get(reviewsPath, query: {
+              'FacilityId': ?facilityId,
+              'Rating': ?rating,
+              'Replied': ?replied,
+              'Page': page,
+              'PageSize': pageSize,
+            }),
+            pageSize: pageSize,
+          ));
 
   @override
-  Future<FacilityReview> reportReview(String reviewId, ReportReason reason, {String note = ''}) async => _todo();
+  Future<ReviewStats> getReviewStats({String? facilityId}) => _run(() async {
+        final data = await _api.get(reviewStatsPath, query: {'facilityId': ?facilityId});
+        return ReviewStats.fromJson(data is Map ? Map<String, dynamic>.from(data) : const {});
+      });
+
+  @override
+  Future<void> replyToReview(String reviewId, String text, {bool edit = false}) => _run(() => edit
+      ? _api.put(reviewReplyPath(reviewId), body: {'reply': text.trim()})
+      : _api.post(reviewReplyPath(reviewId), body: {'reply': text.trim()}));
+
+  @override
+  Future<void> deleteReviewReply(String reviewId) => _run(() => _api.delete(reviewReplyPath(reviewId)));
+
+  /// BE chưa có API cho Chủ sân báo cáo đánh giá (ReportTargetType không có loại đánh giá).
+  @override
+  Future<FacilityReview> reportReview(String reviewId, ReportReason reason, {String note = ''}) async =>
+      throw const OwnerException(OwnerReviewStrings.reportUnavailable, unavailable: true);
+
+  // ==================== Tổng quan (như Web: getOwnerDashboard) ====================
+
+  static const String dashboardPath = '/api/v1/owner/dashboard';
+
+  @override
+  Future<OwnerDashboard> getDashboard({required String facilityId, required DateTime from, required DateTime to}) =>
+      _run(() async {
+        final data = await _api.get(dashboardPath, query: {
+          'FacilityId': facilityId,
+          'From': dashboardDay(from),
+          'To': dashboardDay(to),
+        });
+        return OwnerDashboard.fromJson(data is Map ? Map<String, dynamic>.from(data) : const {});
+      });
+
+  // ==================== Quảng bá (như Web: promotionApi.js) ====================
+
+  static const String promotionPackagesPath = '/api/v1/promotions/packages';
+  static const String promotionsPath = '/api/v1/promotions';
+  static const String myPromotionsPath = '/api/v1/promotions/mine';
+
+  @override
+  Future<List<PromotionPackage>> getPromotionPackages() => _run(() async => [
+        for (final e in _listOf(await _api.get(promotionPackagesPath, query: const {'targetType': 'FACILITY'})).whereType<Map>())
+          PromotionPackage.fromJson(Map<String, dynamic>.from(e)),
+      ]);
+
+  @override
+  Future<void> purchasePromotion({required String packageId, required String facilityId}) =>
+      _run(() => _api.post(promotionsPath, body: {'packageId': packageId, 'targetId': facilityId}));
+
+  @override
+  Future<List<OwnerPromotion>> getMyPromotions({bool activeOnly = false}) => _run(() async => [
+        for (final e in _listOf(await _api.get(myPromotionsPath, query: {
+          if (activeOnly) 'activeOnly': true,
+          'page': 1,
+          'pageSize': 50,
+        })).whereType<Map>())
+          OwnerPromotion.fromJson(Map<String, dynamic>.from(e)),
+      ]);
+
+  // ==================== Shop tại sân (như Web: shopApi.js) ====================
+
+  static String shopProductsPath(String facilityId) => '/api/v1/shop/facilities/$facilityId/products';
+  static String shopProductPath(String productId) => '/api/v1/shop/products/$productId';
+  static String shopOrdersPath(String facilityId) => '/api/v1/shop/facilities/$facilityId/orders';
+  static String shopOrderStatusPath(String orderId) => '/api/v1/shop/orders/$orderId/status';
+
+  @override
+  Future<List<ShopProduct>> getShopProducts(String facilityId) => _run(() async => [
+        for (final e in _listOf(await _api.get(shopProductsPath(facilityId), query: const {'includeInactive': true})).whereType<Map>())
+          ShopProduct.fromJson(Map<String, dynamic>.from(e)),
+      ]);
+
+  @override
+  Future<void> createShopProduct(String facilityId, ShopProductInput input) =>
+      _run(() => _api.post(shopProductsPath(facilityId), body: input.toJson()));
+
+  @override
+  Future<void> updateShopProduct(String productId, ShopProductInput input) =>
+      _run(() => _api.put(shopProductPath(productId), body: input.toJson()));
+
+  @override
+  Future<void> deleteShopProduct(String productId) => _run(() => _api.delete(shopProductPath(productId)));
+
+  /// POST /uploads/images?purpose=general (như Web).
+  @override
+  Future<String> uploadShopImage(String filePath) => _run(() async {
+        final data = await _api.upload(uploadImagePath, filePath: filePath, query: const {'purpose': 'general'});
+        final url = data is String ? data : (data is Map ? (data['url'] ?? data['imageUrl']) : null);
+        if (url == null || '$url'.isEmpty) throw const OwnerException(OwnerComplaintStrings.uploadError);
+        return '$url';
+      });
+
+  @override
+  Future<List<ShopOrder>> getShopOrders(String facilityId, {ShopOrderStatus? status}) => _run(() async => [
+        for (final e in _listOf(await _api.get(shopOrdersPath(facilityId), query: {'status': ?status?.apiValue})).whereType<Map>())
+          ShopOrder.fromJson(Map<String, dynamic>.from(e)),
+      ]);
+
+  @override
+  Future<void> updateShopOrderStatus(String orderId, ShopOrderStatus status) =>
+      _run(() => _api.patch(shopOrderStatusPath(orderId), body: {'status': status.apiValue}));
+
+  // ==================== Khiếu nại (như Web: src/api/owner/reportApi.js) ====================
+
+  static const String complaintsPath = '/api/v1/reports/owner';
+  static String complaintPath(String id) => '/api/v1/reports/owner/$id';
+  static const String uploadImagePath = '/api/v1/uploads/images';
+
+  @override
+  Future<ComplaintPage> getComplaints({
+    ComplaintStatus? status,
+    String? facilityId,
+    String? keyword,
+    int page = 1,
+    int pageSize = 10,
+  }) =>
+      _run(() async => ComplaintPage.fromJson(
+            await _api.get(complaintsPath, query: {
+              'Status': ?status?.apiValue,
+              'FacilityId': ?facilityId,
+              if (keyword != null && keyword.trim().isNotEmpty) 'SearchKeyword': keyword.trim(),
+              'PageIndex': page,
+              'PageSize': pageSize,
+            }),
+            pageSize: pageSize,
+          ));
+
+  @override
+  Future<OwnerComplaint> getComplaint(String complaintId) => _run(() async {
+        final data = await _api.get(complaintPath(complaintId));
+        if (data is! Map) throw const OwnerException(OwnerComplaintStrings.notFound);
+        return OwnerComplaint.fromJson(Map<String, dynamic>.from(data));
+      });
+
+  /// POST /uploads/images?purpose=report (field `file`) → url, như Web.
+  @override
+  Future<String> uploadEvidence(String filePath) => _run(() async {
+        final data = await _api.upload(uploadImagePath, filePath: filePath, query: const {'purpose': 'report'});
+        final url = data is String ? data : (data is Map ? (data['url'] ?? data['imageUrl']) : null);
+        if (url == null || '$url'.isEmpty) throw const OwnerException(OwnerComplaintStrings.uploadError);
+        return '$url';
+      });
+
+  @override
+  Future<void> respondComplaint(String complaintId, {required String response, List<String> evidenceUrls = const []}) =>
+      _run(() => _api.post('${complaintPath(complaintId)}/respond', body: {
+            'ownerResponse': response.trim(),
+            'ownerEvidenceUrls': evidenceUrls,
+          }));
+
+  @override
+  Future<void> acceptComplaintRefund(
+    String complaintId, {
+    required String response,
+    required int refundPercent,
+    List<String> evidenceUrls = const [],
+    bool lockSlot = false,
+  }) =>
+      _run(() => _api.post('${complaintPath(complaintId)}/accept-refund', body: {
+            'ownerResponse': response.trim(),
+            'ownerEvidenceUrls': evidenceUrls,
+            'refundPercentage': refundPercent,
+            'lockSlotForMaintenance': lockSlot,
+          }));
 }

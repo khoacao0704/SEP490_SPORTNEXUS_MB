@@ -150,6 +150,8 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
         facilitySelector: selector,
         onChanged: _bump,
         onOpenSchedule: () => _selectTab(OwnerTab.schedule),
+        onOpenScan: () => _onTap(_scanIndex),
+        onOpenFacilities: () => _selectTab(OwnerTab.facilities),
         notificationBell: NotificationBell(screenBuilder: (_) => ownerNotificationsScreen(onSelectTab: _selectTab)),
       ),
       OwnerScheduleScreen(facilityId: _facilityId, revision: _revision, facilitySelector: selector, onChanged: _bump),

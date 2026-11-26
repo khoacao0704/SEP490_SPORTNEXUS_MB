@@ -7,7 +7,11 @@ import 'package:test1/data/api/api_client.dart';
 import 'package:test1/data/api/api_owner_repository.dart';
 import 'package:test1/data/api/token_store.dart';
 import 'package:test1/data/repositories/owner_repository.dart';
+import 'package:test1/models/facility_review.dart';
+import 'package:test1/models/owner_complaint.dart';
 import 'package:test1/models/owner_court.dart';
+import 'package:test1/models/owner_promotion.dart';
+import 'package:test1/models/owner_shop.dart';
 import 'package:test1/models/owner_facility.dart';
 
 /// Server giả: trả JSON theo "METHOD path", ghi lại request. Không gọi mạng.
@@ -184,6 +188,178 @@ void main() {
     server.ok('PATCH', '${ApiOwnerRepository.facilityImagesPath('f1')}/i1/thumbnail', null);
     await repo.setFacilityThumbnail('f1', 'i1');
     expect(server.requests.last.method, 'PATCH');
+  });
+
+  test('đánh giá: lọc gửi đúng query, đọc userFullName / ownerReply; thống kê; POST gửi, PUT sửa, DELETE xóa', () async {
+    server.ok('GET', ApiOwnerRepository.reviewsPath, {
+      'items': [
+        {
+          'id': 'r1',
+          'facilityId': 'f1',
+          'facilityName': 'Sân A',
+          'userFullName': 'Minh Anh',
+          'rating': 4,
+          'comment': 'Tốt',
+          'createdAt': '2026-11-20T08:00:00Z',
+          'ownerReply': 'Cảm ơn',
+          'repliedAt': '2026-11-21T08:00:00Z',
+          'isHidden': false,
+        },
+      ],
+      'totalCount': 25,
+    });
+    final page = await repo.getFacilityReviews(facilityId: 'f1', rating: 4, replied: true, page: 2);
+    expect(server.requests.last.queryParameters, {'FacilityId': 'f1', 'Rating': 4, 'Replied': true, 'Page': 2, 'PageSize': 10});
+    expect(page.totalPages, 3);
+    expect(page.items.single.userName, 'Minh Anh');
+    expect(page.items.single.hasReply, isTrue);
+
+    server.ok('GET', ApiOwnerRepository.reviewStatsPath, {
+      'totalReviews': 10,
+      'averageRating': 4.2,
+      'unrepliedCount': 3,
+      'replyRate': 0.7,
+      'newReviewsLast30Days': 2,
+      'ratingDistribution': {'5': 6, '4': 2, '1': 2},
+    });
+    final s = await repo.getReviewStats();
+    expect(s.replyPercent, 70);
+    expect(s.countOf(5), 6);
+    expect(s.countOf(3), 0);
+
+    server.ok('POST', ApiOwnerRepository.reviewReplyPath('r1'), null);
+    server.ok('PUT', ApiOwnerRepository.reviewReplyPath('r1'), null);
+    server.ok('DELETE', ApiOwnerRepository.reviewReplyPath('r1'), null);
+    await repo.replyToReview('r1', ' Cảm ơn ');
+    expect(server.requests.last.method, 'POST');
+    expect(server.requests.last.data, {'reply': 'Cảm ơn'});
+    await repo.replyToReview('r1', 'Sửa', edit: true);
+    expect(server.requests.last.method, 'PUT');
+    await repo.deleteReviewReply('r1');
+    expect(server.requests.last.method, 'DELETE');
+  });
+
+  test('báo cáo đánh giá: BE chưa có API thì báo "đang chờ hệ thống"', () async {
+    await expectLater(
+      repo.reportReview('r1', ReportReason.spam),
+      throwsA(isA<OwnerException>().having((e) => e.unavailable, 'unavailable', isTrue)),
+    );
+    expect(server.requests, isEmpty);
+  });
+
+  test('khiếu nại: đọc số đếm + trạng thái; giải trình và hoàn tiền gửi đúng body', () async {
+    server.ok('GET', ApiOwnerRepository.complaintsPath, {
+      'items': [
+        {
+          'id': 'c1',
+          'status': 'OwnerResponded',
+          'reporterName': 'Bảo',
+          'facilityName': 'Sân A',
+          'courtName': 'Sân 1',
+          'reason': 'Hư đèn',
+          'bookingStartTime': '2026-11-20T10:00:00Z',
+          'bookingTotalAmount': 160000,
+          'bookingStatus': 'CheckedIn',
+          'createdAt': '2026-11-20T12:00:00Z',
+          'evidenceImageUrls': ['https://x/1.jpg'],
+        },
+      ],
+      'totalCount': 1,
+      'pendingCount': 3,
+      'ownerRespondedCount': 1,
+    });
+    final page = await repo.getComplaints(status: ComplaintStatus.pending, keyword: ' Bảo ');
+    expect(server.requests.last.queryParameters, {'Status': 'PENDING', 'SearchKeyword': 'Bảo', 'PageIndex': 1, 'PageSize': 10});
+    expect(page.counts.pending, 3);
+    final c = page.items.single;
+    expect(c.status, ComplaintStatus.ownerResponded);
+    expect(c.status.canAct, isTrue);
+    expect(c.bookingStatus, 'CHECKED_IN');
+
+    server.ok('POST', '${ApiOwnerRepository.complaintPath('c1')}/respond', null);
+    await repo.respondComplaint('c1', response: ' Đã sửa ', evidenceUrls: const ['u1']);
+    expect(server.requests.last.data, {'ownerResponse': 'Đã sửa', 'ownerEvidenceUrls': ['u1']});
+
+    server.ok('POST', '${ApiOwnerRepository.complaintPath('c1')}/accept-refund', null);
+    await repo.acceptComplaintRefund('c1', response: 'Hoàn', refundPercent: 50, lockSlot: true);
+    expect(server.requests.last.data, {
+      'ownerResponse': 'Hoàn',
+      'ownerEvidenceUrls': <String>[],
+      'refundPercentage': 50,
+      'lockSlotForMaintenance': true,
+    });
+  });
+
+  test('tổng quan: gửi FacilityId / From / To theo ngày, đọc đủ số liệu', () async {
+    server.ok('GET', ApiOwnerRepository.dashboardPath, {
+      'totalBookings': 12,
+      'checkedInBookings': 8,
+      'occupancyRate': 42.5,
+      'bookedSlots': 17,
+      'sellableSlots': 40,
+      'totalRevenue': 1200000,
+      'openReports': 1,
+      'bookingsByHour': [
+        {'hour': 18, 'bookings': 5},
+        {'hour': 7, 'bookings': 2},
+      ],
+      'revenueByDay': [
+        {'date': '2026-11-25T00:00:00', 'revenue': 300000, 'bookings': 3},
+      ],
+      'revenueByCourt': [
+        {'courtId': 'c1', 'courtName': 'Sân 1', 'bookings': 12, 'bookedSlots': 17, 'sellableSlots': 40, 'revenue': 1200000},
+      ],
+    });
+    final d = await repo.getDashboard(facilityId: 'f1', from: DateTime(2026, 10, 27), to: DateTime(2026, 11, 25));
+    expect(server.requests.last.queryParameters, {'FacilityId': 'f1', 'From': '2026-10-27', 'To': '2026-11-25'});
+    expect(d.peakHour, (18, 5));
+    expect(d.revenueByDay.single.date, DateTime(2026, 11, 25));
+    expect(d.revenueByCourt.single.occupancy, 43);
+    expect(d.openReports, 1);
+  });
+
+  test('quảng bá: gói cho cơ sở (targetType=FACILITY), mua gửi packageId + targetId, đọc lượt đã mua', () async {
+    server.ok('GET', ApiOwnerRepository.promotionPackagesPath, [
+      {'id': 'p1', 'name': 'Nổi bật', 'targetType': 'FACILITY', 'durationDays': 7, 'price': 150000},
+    ]);
+    expect((await repo.getPromotionPackages()).single.durationDays, 7);
+    expect(server.requests.last.queryParameters, {'targetType': 'FACILITY'});
+
+    server.ok('POST', ApiOwnerRepository.promotionsPath, null);
+    await repo.purchasePromotion(packageId: 'p1', facilityId: 'f1');
+    expect(server.requests.last.data, {'packageId': 'p1', 'targetId': 'f1'});
+
+    server.ok('GET', ApiOwnerRepository.myPromotionsPath, {
+      'items': [
+        {'id': 'm1', 'packageName': 'Nổi bật', 'targetName': 'Sân A', 'status': 'Active', 'price': 150000, 'endAt': '2030-01-01T00:00:00Z'},
+      ],
+    });
+    final mine = await repo.getMyPromotions(activeOnly: true);
+    expect(mine.single.status, PromotionStatus.active);
+    expect(server.requests.last.queryParameters['activeOnly'], true);
+  });
+
+  test('shop: sản phẩm gồm cả ẩn, upsert gửi đúng body, đơn đọc trạng thái, PATCH đổi trạng thái', () async {
+    server.ok('GET', ApiOwnerRepository.shopProductsPath('f1'), [
+      {'id': 's1', 'facilityId': 'f1', 'name': 'Nước', 'price': 10000, 'stock': 5, 'isActive': false},
+    ]);
+    expect((await repo.getShopProducts('f1')).single.isActive, isFalse);
+    expect(server.requests.last.queryParameters, {'includeInactive': true});
+
+    server.ok('POST', ApiOwnerRepository.shopProductsPath('f1'), null);
+    await repo.createShopProduct('f1', const ShopProductInput(name: ' Nước ', description: ' ', price: 10000, stock: 5));
+    expect(server.requests.last.data,
+        {'name': 'Nước', 'description': null, 'price': 10000, 'stock': 5, 'imageUrl': null, 'isActive': true});
+
+    server.ok('GET', ApiOwnerRepository.shopOrdersPath('f1'), [
+      {'id': 'o1', 'productName': 'Nước', 'quantity': 2, 'totalAmount': 20000, 'status': 'PickedUp', 'createdAt': '2026-11-26T08:00:00Z'},
+    ]);
+    expect((await repo.getShopOrders('f1', status: ShopOrderStatus.pickedUp)).single.status, ShopOrderStatus.pickedUp);
+    expect(server.requests.last.queryParameters, {'status': 'PICKED_UP'});
+
+    server.ok('PATCH', ApiOwnerRepository.shopOrderStatusPath('o1'), null);
+    await repo.updateShopOrderStatus('o1', ShopOrderStatus.ready);
+    expect(server.requests.last.data, {'status': 'READY'});
   });
 
   test('giờ mở cửa gửi TimeSpan', () async {

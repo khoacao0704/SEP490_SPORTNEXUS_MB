@@ -3,6 +3,10 @@ import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/facility_review.dart';
 import '../../models/owner_booking.dart';
+import '../../models/owner_complaint.dart';
+import '../../models/owner_dashboard.dart';
+import '../../models/owner_promotion.dart';
+import '../../models/owner_shop.dart';
 import '../../models/owner_court.dart';
 import '../../models/owner_facility.dart';
 import '../../models/owner_finance.dart';
@@ -188,12 +192,79 @@ abstract class OwnerRepository {
 
   // ---------------- Đánh giá ----------------
 
-  /// Đánh giá (ẩn danh) của các cơ sở đã duyệt, mới nhất trước. Gồm cả đánh giá Admin đã ẩn.
-  Future<List<FacilityReview>> getFacilityReviews({String? facilityId});
+  /// GET /owner/facility-reviews: lọc theo cơ sở, số sao, đã / chưa phản hồi; mới nhất trước.
+  Future<ReviewPage> getFacilityReviews({String? facilityId, int? rating, bool? replied, int page = 1, int pageSize = 10});
 
-  /// Đăng hoặc sửa câu trả lời công khai (mỗi đánh giá một câu).
-  Future<FacilityReview> replyToReview(String reviewId, String text);
+  /// GET /owner/facility-reviews/statistics.
+  Future<ReviewStats> getReviewStats({String? facilityId});
 
-  /// Báo cáo đánh giá vi phạm lên Admin (mỗi đánh giá một lần). Chủ sân không tự xóa được.
+  /// Mỗi đánh giá một phản hồi: lần đầu POST ([edit] = false), sửa dùng PUT.
+  Future<void> replyToReview(String reviewId, String text, {bool edit = false});
+
+  /// Xóa phản hồi; đánh giá của khách vẫn giữ.
+  Future<void> deleteReviewReply(String reviewId);
+
+  /// Báo cáo đánh giá vi phạm lên Admin (chỉ mobile; BE chưa có API nên báo "đang chờ hệ thống").
   Future<FacilityReview> reportReview(String reviewId, ReportReason reason, {String note = ''});
+
+  // ---------------- Tổng quan ----------------
+
+  /// GET /owner/dashboard: số liệu của [facilityId] từ [from] tới [to] (tính theo ngày).
+  Future<OwnerDashboard> getDashboard({required String facilityId, required DateTime from, required DateTime to});
+
+  // ---------------- Quảng bá (gói đẩy tin cơ sở) ----------------
+
+  /// Gói đang bán cho cơ sở (mobile không làm gói cho giải đấu).
+  Future<List<PromotionPackage>> getPromotionPackages();
+
+  /// Mua gói cho cơ sở [facilityId], trừ vào số dư ví. Đang có lượt chạy thì BE cộng nối thời hạn.
+  Future<void> purchasePromotion({required String packageId, required String facilityId});
+
+  /// Lượt quảng bá đã mua, mới nhất trước.
+  Future<List<OwnerPromotion>> getMyPromotions({bool activeOnly = false});
+
+  // ---------------- Shop tại sân ----------------
+
+  /// Sản phẩm của cơ sở, gồm cả sản phẩm đang ẩn.
+  Future<List<ShopProduct>> getShopProducts(String facilityId);
+  Future<void> createShopProduct(String facilityId, ShopProductInput input);
+  Future<void> updateShopProduct(String productId, ShopProductInput input);
+  Future<void> deleteShopProduct(String productId);
+
+  /// Tải ảnh sản phẩm, trả link.
+  Future<String> uploadShopImage(String filePath);
+
+  /// Đơn khách đặt tại cơ sở, lọc theo trạng thái.
+  Future<List<ShopOrder>> getShopOrders(String facilityId, {ShopOrderStatus? status});
+
+  /// Chuyển đơn sang READY / PICKED_UP / CANCELLED.
+  Future<void> updateShopOrderStatus(String orderId, ShopOrderStatus status);
+
+  // ---------------- Khiếu nại của khách ----------------
+
+  /// GET /reports/owner: lọc theo trạng thái, cơ sở, từ khóa (tên khách, lý do).
+  Future<ComplaintPage> getComplaints({
+    ComplaintStatus? status,
+    String? facilityId,
+    String? keyword,
+    int page = 1,
+    int pageSize = 10,
+  });
+
+  Future<OwnerComplaint> getComplaint(String complaintId);
+
+  /// Tải một ảnh bằng chứng, trả link.
+  Future<String> uploadEvidence(String filePath);
+
+  /// Gửi giải trình cho Admin xem xét (chuyển sang Đã giải trình).
+  Future<void> respondComplaint(String complaintId, {required String response, List<String> evidenceUrls = const []});
+
+  /// Đồng ý hoàn [refundPercent]% cho khách ngay; [lockSlot] khóa ca đó để bảo trì sân.
+  Future<void> acceptComplaintRefund(
+    String complaintId, {
+    required String response,
+    required int refundPercent,
+    List<String> evidenceUrls = const [],
+    bool lockSlot = false,
+  });
 }

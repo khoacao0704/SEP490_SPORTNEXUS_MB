@@ -22,12 +22,6 @@ class OwnerStrings {
   // Tổng quan (đợt 5 làm lại theo Web)
   static String greeting(String name) => 'Xin chào, $name';
   static const String today = 'Hôm nay';
-  static const String statToday = 'Đơn hôm nay';
-  static const String statWaiting = 'Chờ check-in';
-  static const String statCheckedIn = 'Đã check-in';
-  static const String statExpected = 'Doanh thu dự kiến';
-  static const String todayCustomers = 'Khách đặt sân hôm nay';
-  static const String noTodayCustomers = 'Chưa có khách đặt sân hôm nay.';
   static const String viewSchedule = 'Mở lịch đặt sân';
 
   static const String loadError = 'Không tải được dữ liệu. Kéo xuống để thử lại.';
@@ -323,7 +317,10 @@ class OwnerStrings {
   static const String accountTitle = 'Tài Khoản';
   static const String roleOwner = 'Chủ sân';
   static const String menuRevenue = 'Doanh thu & Ví';
-  static const String menuReviews = 'Đánh giá từ người chơi';
+  static const String menuReviews = 'Đánh giá của khách';
+  static const String menuComplaints = 'Khiếu nại của khách';
+  static const String menuPromotions = 'Quảng bá';
+  static const String menuShop = 'Shop tại sân';
   static const String menuNotifications = 'Thông báo';
   static const String menuTournaments = 'Giải đấu của tôi';
   static const String menuListingFee = 'Phí duy trì hàng tháng';

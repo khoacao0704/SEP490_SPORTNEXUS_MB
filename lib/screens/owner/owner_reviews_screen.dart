@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../../core/strings/owner_review_strings.dart';
-import '../../core/strings/owner_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
 import '../../data/repositories/owner_repository.dart';
 import '../../models/facility.dart';
 import '../../models/facility_review.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/facility/sport_icon.dart';
+import '../../widgets/owner/owner_badges.dart';
+import '../../widgets/owner/owner_cancel_dialog.dart' show ownerErrorMessage;
+import '../../widgets/owner/slot_pickers.dart' show confirmOwner, showOwnerSnack;
+import '../../widgets/owner/stat_grid.dart';
 
-enum _Filter { all, unreplied, low }
-
-/// Đánh giá ẩn danh của người chơi: điểm trung bình, phân bố sao, trả lời công khai, báo cáo vi phạm.
+/// Đánh giá của khách (như Web: OwnerReviews.jsx): thống kê, phân bố sao, lọc theo cơ sở / số sao / phản hồi,
+/// gửi - sửa - xóa phản hồi, phân trang. Mobile giữ thêm nút báo cáo đánh giá vi phạm.
 class OwnerReviewsScreen extends StatefulWidget {
   const OwnerReviewsScreen({super.key});
 
@@ -21,87 +22,77 @@ class OwnerReviewsScreen extends StatefulWidget {
 }
 
 class _OwnerReviewsScreenState extends State<OwnerReviewsScreen> {
+  static const int _pageSize = 10;
+
   List<Facility> _facilities = [];
-  List<FacilityReview> _reviews = [];
   String? _facilityId;
-  _Filter _filter = _Filter.all;
+  int? _rating;
+  bool? _replied;
+  int _page = 1;
+
+  ReviewStats? _stats;
+  String? _statsError;
+  ReviewPage _list = ReviewPage.empty;
+  String? _listError;
   bool _loading = true;
-  String? _error;
+
+  /// Chỉ nhận kết quả của lần tải mới nhất (đổi bộ lọc liên tục).
+  int _seq = 0;
 
   @override
   void initState() {
     super.initState();
+    _loadFacilities();
     _load();
   }
 
-  /// Chỉ nhận kết quả của lần tải mới nhất (đổi cơ sở / ngày / tháng liên tục).
-  int _loadSeq = 0;
+  Future<void> _loadFacilities() async {
+    try {
+      final list = await AppRepositories.owner.getMyFacilities();
+      if (mounted) setState(() => _facilities = list);
+    } catch (_) {}
+  }
 
   Future<void> _load() async {
-    final seq = ++_loadSeq;
+    final seq = ++_seq;
+    setState(() => _loading = true);
+    final repo = AppRepositories.owner;
+    ReviewStats? stats;
+    String? statsError;
+    ReviewPage list = ReviewPage.empty;
+    String? listError;
+    await Future.wait([
+      repo.getReviewStats(facilityId: _facilityId).then<void>((v) => stats = v, onError: (Object e) => statsError = ownerErrorMessage(e)),
+      repo
+          .getFacilityReviews(facilityId: _facilityId, rating: _rating, replied: _replied, page: _page, pageSize: _pageSize)
+          .then<void>((v) => list = v, onError: (Object e) => listError = ownerErrorMessage(e)),
+    ]);
+    if (!mounted || seq != _seq) return;
     setState(() {
-      _loading = true;
-      _error = null;
+      _stats = stats;
+      _statsError = statsError;
+      _list = list;
+      _listError = listError;
+      _loading = false;
     });
-    try {
-      final facilities = await AppRepositories.owner.getMyFacilities();
-      final reviews = await AppRepositories.owner.getFacilityReviews(facilityId: _facilityId);
-      if (!mounted || seq != _loadSeq) return;
-      setState(() {
-        _facilities = facilities;
-        _reviews = reviews;
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted || seq != _loadSeq) return;
-      setState(() {
-        _loading = false;
-        _error = OwnerReviewStrings.loadError;
-      });
-    }
   }
 
-  void _replace(FacilityReview updated) =>
-      setState(() => _reviews = [for (final r in _reviews) r.id == updated.id ? updated : r]);
-
-  List<FacilityReview> get _filtered => switch (_filter) {
-    _Filter.all => _reviews,
-    _Filter.unreplied => _reviews.where((r) => r.reply == null && !r.isHidden).toList(),
-    _Filter.low => _reviews.where((r) => r.stars <= 2).toList(),
-  };
-
-  Future<void> _reply(FacilityReview r) async {
-    final updated = await showModalBottomSheet<FacilityReview>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _ReplySheet(review: r),
-    );
-    if (updated != null && mounted) {
-      _replace(updated);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(OwnerReviewStrings.replySaved)));
-    }
+  void _setFilter(VoidCallback change) {
+    setState(() {
+      change();
+      _page = 1;
+    });
+    _load();
   }
 
-  Future<void> _report(FacilityReview r) async {
-    final updated = await showModalBottomSheet<FacilityReview>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _ReportSheet(review: r),
-    );
-    if (updated != null && mounted) {
-      _replace(updated);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(OwnerReviewStrings.reportSent)));
-    }
+  void _goPage(int page) {
+    setState(() => _page = page);
+    _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final summary = ReviewSummary(_reviews);
-    final items = _filtered;
+    final items = _list.items;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -118,96 +109,135 @@ class _OwnerReviewsScreenState extends State<OwnerReviewsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (_facilities.length > 1)
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  _chip(OwnerStrings.allFacilities, _facilityId == null, () {
-                    setState(() => _facilityId = null);
-                    _load();
-                  }),
-                  for (final f in _facilities)
-                    _chip(f.name, _facilityId == f.id, () {
-                      setState(() => _facilityId = f.id);
-                      _load();
-                    }),
-                ],
-              ),
+            const Text(OwnerReviewStrings.subtitle, style: TextStyle(color: AppColors.textSecondary)),
             const SizedBox(height: 12),
-            if (_loading)
+            if (_statsError != null) _ErrorBox(_statsError!),
+            _StatsGrid(stats: _stats),
+            const SizedBox(height: 12),
+            _DistributionCard(stats: _stats),
+            const SizedBox(height: 16),
+            _filters(),
+            const SizedBox(height: 12),
+            if (_listError != null) _ErrorBox(_listError!),
+            if (_loading && items.isEmpty)
               const Padding(
-                padding: EdgeInsets.only(top: 60),
-                child: Center(child: CircularProgressIndicator()),
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Text(OwnerReviewStrings.loading, textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary)),
               )
-            else if (_error != null)
-              Text(_error!, style: const TextStyle(color: AppColors.textSecondary))
-            else if (_reviews.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 60),
-                child: Text(
-                  OwnerReviewStrings.empty,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              )
-            else ...[
-              _SummaryCard(summary: summary),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: [
-                  _chip(
-                    OwnerReviewStrings.filterAll,
-                    _filter == _Filter.all,
-                    () => setState(() => _filter = _Filter.all),
-                  ),
-                  _chip(
-                    summary.unreplied > 0
-                        ? '${OwnerReviewStrings.filterUnreplied} (${summary.unreplied})'
-                        : OwnerReviewStrings.filterUnreplied,
-                    _filter == _Filter.unreplied,
-                    () => setState(() => _filter = _Filter.unreplied),
-                  ),
-                  _chip(
-                    OwnerReviewStrings.filterLow,
-                    _filter == _Filter.low,
-                    () => setState(() => _filter = _Filter.low),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (items.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 40),
-                  child: Text(
-                    OwnerReviewStrings.emptyFilter,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                )
-              else
-                for (final r in items)
-                  _ReviewCard(
-                    review: r,
-                    showFacility: _facilityId == null,
-                    onReply: () => _reply(r),
-                    onReport: () => _report(r),
-                  ),
-            ],
+            else if (items.isEmpty)
+              const _Empty()
+            else
+              for (final r in items)
+                _ReviewItem(key: ValueKey('${r.id}|${r.ownerReply ?? ''}|${r.report?.status}'), review: r, onChanged: _load),
+            if (_list.totalPages > 1) _pager(),
           ],
         ),
       ),
     );
   }
 
-  Widget _chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
-    label: Text(label),
-    selected: selected,
-    selectedColor: AppColors.lightGreen,
-    labelStyle: TextStyle(color: selected ? AppColors.darkGreen : AppColors.textMain, fontWeight: FontWeight.w600),
-    onSelected: (_) => onTap(),
-  );
+  Widget _filters() {
+    InputDecoration deco(String label) => InputDecoration(
+          labelText: label,
+          isDense: true,
+          filled: true,
+          fillColor: AppColors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        );
+    final facility = DropdownButtonFormField<String?>(
+      key: ValueKey('f-$_facilityId-${_facilities.length}'),
+      initialValue: _facilityId,
+      isExpanded: true,
+      decoration: deco(OwnerReviewStrings.filterFacility),
+      items: [
+        const DropdownMenuItem<String?>(value: null, child: Text(OwnerReviewStrings.allFacilities)),
+        for (final f in _facilities)
+          DropdownMenuItem<String?>(value: f.id, child: Text(f.name, overflow: TextOverflow.ellipsis)),
+      ],
+      onChanged: (v) => _setFilter(() => _facilityId = v),
+    );
+    final rating = DropdownButtonFormField<int?>(
+      initialValue: _rating,
+      isExpanded: true,
+      decoration: deco(OwnerReviewStrings.filterRating),
+      items: [
+        const DropdownMenuItem<int?>(value: null, child: Text(OwnerReviewStrings.allRatings, overflow: TextOverflow.ellipsis)),
+        for (final n in [5, 4, 3, 2, 1]) DropdownMenuItem<int?>(value: n, child: Text(OwnerReviewStrings.stars(n))),
+      ],
+      onChanged: (v) => _setFilter(() => _rating = v),
+    );
+    final replied = DropdownButtonFormField<bool?>(
+      initialValue: _replied,
+      isExpanded: true,
+      decoration: deco(OwnerReviewStrings.filterReplied),
+      items: const [
+        DropdownMenuItem<bool?>(value: null, child: Text(OwnerReviewStrings.allReplied, overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem<bool?>(value: false, child: Text(OwnerReviewStrings.unreplied, overflow: TextOverflow.ellipsis)),
+        DropdownMenuItem<bool?>(value: true, child: Text(OwnerReviewStrings.replied, overflow: TextOverflow.ellipsis)),
+      ],
+      onChanged: (v) => _setFilter(() => _replied = v),
+    );
+    return Column(
+      children: [
+        facility,
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: rating),
+            const SizedBox(width: 10),
+            Expanded(child: replied),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _pager() => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          children: [
+            OutlinedButton(onPressed: _page <= 1 ? null : () => _goPage(_page - 1), child: const Text(OwnerReviewStrings.prev)),
+            Text(OwnerReviewStrings.pageOf(_page, _list.totalPages), style: const TextStyle(color: AppColors.textSecondary)),
+            OutlinedButton(
+              onPressed: _page >= _list.totalPages ? null : () => _goPage(_page + 1),
+              child: const Text(OwnerReviewStrings.next),
+            ),
+          ],
+        ),
+      );
+}
+
+class _ErrorBox extends StatelessWidget {
+  final String message;
+
+  const _ErrorBox(this.message);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: BadgeTone.red.background, borderRadius: BorderRadius.circular(10)),
+        child: Text(message, style: TextStyle(color: BadgeTone.red.foreground)),
+      );
+}
+
+class _Empty extends StatelessWidget {
+  const _Empty();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Column(
+          children: [
+            Icon(Icons.rate_review_outlined, size: 40, color: AppColors.textSecondary),
+            SizedBox(height: 8),
+            Text(OwnerReviewStrings.empty, textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary)),
+          ],
+        ),
+      );
 }
 
 class _Stars extends StatelessWidget {
@@ -217,116 +247,40 @@ class _Stars extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      for (var i = 1; i <= 5; i++)
-        Icon(
-          i <= value ? Icons.star_rounded : Icons.star_outline_rounded,
-          size: 16,
-          color: i <= value ? Colors.amber : AppColors.cardBorder,
-        ),
-    ],
-  );
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 1; i <= 5; i++)
+            Icon(
+              i <= value ? Icons.star_rounded : Icons.star_outline_rounded,
+              size: 16,
+              color: i <= value ? const Color(0xFFF59E0B) : const Color(0xFFD6DCDA),
+            ),
+        ],
+      );
 }
 
-class _SummaryCard extends StatelessWidget {
-  final ReviewSummary summary;
+class _StatsGrid extends StatelessWidget {
+  final ReviewStats? stats;
 
-  const _SummaryCard({required this.summary});
+  const _StatsGrid({required this.stats});
 
   @override
   Widget build(BuildContext context) {
-    final dist = summary.distribution;
-    final maxCount = dist.fold(0, (a, b) => a > b ? a : b);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.cardBorder),
-      ),
-      child: Row(
-        children: [
-          Column(
-            children: [
-              Text(
-                summary.average.toStringAsFixed(1),
-                style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: AppColors.textMain),
-              ),
-              _Stars(summary.average.round()),
-              const SizedBox(height: 4),
-              Text(
-                OwnerReviewStrings.reviewCount(summary.count),
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-              ),
-              if (summary.unreplied > 0)
-                Text(
-                  OwnerReviewStrings.unreplied(summary.unreplied),
-                  style: const TextStyle(fontSize: 12, color: AppColors.tagOrangeText),
-                ),
-            ],
-          ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
-              children: [
-                for (var star = 5; star >= 1; star--)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        SizedBox(width: 14, child: Text('$star', style: const TextStyle(fontSize: 12))),
-                        const Icon(Icons.star_rounded, size: 12, color: Colors.amber),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: maxCount == 0 ? 0 : dist[star - 1] / maxCount,
-                              minHeight: 6,
-                              backgroundColor: AppColors.divider,
-                              color: Colors.amber,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        SizedBox(
-                          width: 20,
-                          child: Text(
-                            '${dist[star - 1]}',
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    final s = stats;
+    const dash = OwnerReviewStrings.dash;
+    return StatGrid(
+      children: [
+        _tile(OwnerReviewStrings.statAverage, s?.averageRating == null ? dash : '${s!.averageRating!.toStringAsFixed(1)} / 5'),
+        _tile(OwnerReviewStrings.statTotal, s == null ? dash : '${s.totalReviews}'),
+        _tile(OwnerReviewStrings.statUnreplied, s == null ? dash : '${s.unrepliedCount}'),
+        _tile(OwnerReviewStrings.statReplyRate, s?.replyPercent == null ? dash : '${s!.replyPercent}%'),
+        _tile(OwnerReviewStrings.statNew30, s == null ? dash : '${s.newLast30Days}'),
+      ],
     );
   }
-}
 
-class _ReviewCard extends StatelessWidget {
-  final FacilityReview review;
-  final bool showFacility;
-  final VoidCallback onReply;
-  final VoidCallback onReport;
-
-  const _ReviewCard({required this.review, required this.showFacility, required this.onReply, required this.onReport});
-
-  @override
-  Widget build(BuildContext context) {
-    final r = review;
-    final report = r.report;
-    return Opacity(
-      opacity: r.isHidden ? 0.6 : 1,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+  Widget _tile(String label, String value) => Container(
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: AppColors.white,
           borderRadius: BorderRadius.circular(14),
@@ -335,206 +289,298 @@ class _ReviewCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const CircleAvatar(
-                  radius: 14,
-                  backgroundColor: AppColors.divider,
-                  child: Icon(Icons.person_outline, size: 16, color: AppColors.textSecondary),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        OwnerReviewStrings.anonymous,
-                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                      ),
-                      Text(
-                        Formatters.timeAgo(r.createdAt, DateTime.now()),
-                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-                _Stars(r.stars),
-              ],
-            ),
+            Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
             const SizedBox(height: 6),
-            Row(
-              children: [
-                Icon(sportIcon(r.sport), size: 14, color: AppColors.textSecondary),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    showFacility ? '${r.sport.label} • ${r.facilityName}' : r.sport.label,
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            if (r.comment.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(r.comment, style: const TextStyle(color: AppColors.textMain, height: 1.4)),
-            ],
-            if (r.reply != null)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(top: 10),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: AppColors.lightGreen, borderRadius: BorderRadius.circular(10)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      OwnerReviewStrings.yourReply,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.darkGreen),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(r.reply!.text, style: const TextStyle(fontSize: 13, color: AppColors.textMain)),
-                  ],
-                ),
-              ),
-            if (report != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.flag_outlined,
-                      size: 14,
-                      color: report.status == ReportStatus.hidden ? Colors.red.shade700 : AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        switch (report.status) {
-                          ReportStatus.pending => OwnerReviewStrings.reportPending,
-                          ReportStatus.kept => OwnerReviewStrings.reportKept,
-                          ReportStatus.hidden => OwnerReviewStrings.reportHidden,
-                        },
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: report.status == ReportStatus.hidden ? Colors.red.shade700 : AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (r.canReport)
-                  TextButton.icon(
-                    onPressed: onReport,
-                    icon: const Icon(Icons.flag_outlined, size: 16),
-                    label: const Text(OwnerReviewStrings.report),
-                    style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
-                  ),
-                if (r.canReply)
-                  TextButton.icon(
-                    onPressed: onReply,
-                    icon: Icon(r.reply == null ? Icons.reply : Icons.edit_outlined, size: 16),
-                    label: Text(r.reply == null ? OwnerReviewStrings.reply : OwnerReviewStrings.editReply),
-                    style: TextButton.styleFrom(foregroundColor: AppColors.primaryGreen),
-                  ),
-              ],
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain)),
             ),
           ],
         ),
+      );
+}
+
+class _DistributionCard extends StatelessWidget {
+  final ReviewStats? stats;
+
+  const _DistributionCard({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = stats?.totalReviews ?? 0;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.cardBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            OwnerReviewStrings.distributionTitle,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain),
+          ),
+          const SizedBox(height: 10),
+          for (final star in [5, 4, 3, 2, 1])
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  Text('$star ★', style: const TextStyle(fontSize: 13)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: total == 0 ? 0 : (stats!.countOf(star) / total),
+                        minHeight: 8,
+                        backgroundColor: const Color(0xFFEEF2F1),
+                        color: const Color(0xFFF59E0B),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('${stats?.countOf(star) ?? 0}', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
-class _ReplySheet extends StatefulWidget {
+/// Một đánh giá + phản hồi (như ReviewItem của Web) + báo cáo (mobile).
+class _ReviewItem extends StatefulWidget {
   final FacilityReview review;
+  final VoidCallback onChanged;
 
-  const _ReplySheet({required this.review});
+  const _ReviewItem({super.key, required this.review, required this.onChanged});
 
   @override
-  State<_ReplySheet> createState() => _ReplySheetState();
+  State<_ReviewItem> createState() => _ReviewItemState();
 }
 
-class _ReplySheetState extends State<_ReplySheet> {
-  late final _controller = TextEditingController(text: widget.review.reply?.text);
-  bool _sending = false;
-  String? _error;
+class _ReviewItemState extends State<_ReviewItem> {
+  late final TextEditingController _text = TextEditingController(text: widget.review.ownerReply ?? '');
+  bool _editing = false;
+  bool _busy = false;
 
   @override
   void dispose() {
-    _controller.dispose();
+    _text.dispose();
     super.dispose();
   }
 
-  Future<void> _send() async {
-    setState(() {
-      _sending = true;
-      _error = null;
-    });
+  Future<void> _save() async {
+    final r = widget.review;
+    if (_text.text.trim().isEmpty) {
+      showOwnerSnack(context, OwnerReviewStrings.replyEmpty, error: true);
+      return;
+    }
+    setState(() => _busy = true);
     try {
-      final updated = await AppRepositories.owner.replyToReview(widget.review.id, _controller.text);
-      if (mounted) Navigator.pop(context, updated);
-    } on OwnerException catch (e) {
-      if (mounted) {
-        setState(() {
-          _sending = false;
-          _error = e.message;
-        });
-      }
+      await AppRepositories.owner.replyToReview(r.id, _text.text, edit: r.hasReply);
+      if (!mounted) return;
+      showOwnerSnack(context, r.hasReply ? OwnerReviewStrings.replyEdited : OwnerReviewStrings.replySent);
+      setState(() => _editing = false);
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) showOwnerSnack(context, ownerErrorMessage(e), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _remove() async {
+    if (!await confirmOwner(context, OwnerReviewStrings.deleteConfirm)) return;
+    if (!mounted) return;
+    setState(() => _busy = true);
+    try {
+      await AppRepositories.owner.deleteReviewReply(widget.review.id);
+      if (!mounted) return;
+      showOwnerSnack(context, OwnerReviewStrings.replyDeleted);
+      _text.clear();
+      widget.onChanged();
+    } catch (e) {
+      if (mounted) showOwnerSnack(context, ownerErrorMessage(e), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _report() async {
+    final updated = await showModalBottomSheet<FacilityReview>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _ReportSheet(review: widget.review),
+    );
+    if (updated != null && mounted) {
+      showOwnerSnack(context, OwnerReviewStrings.reportSent);
+      widget.onChanged();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                OwnerReviewStrings.replyTitle,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textMain),
-              ),
-              const SizedBox(height: 4),
-              const Text(OwnerReviewStrings.replyHint, style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-              if (widget.review.comment.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text('"${widget.review.comment}"', style: const TextStyle(fontStyle: FontStyle.italic)),
-              ],
-              const SizedBox(height: 12),
-              TextField(
-                controller: _controller,
-                maxLines: 4,
-                maxLength: OwnerReviewStrings.replyMaxLength,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: OwnerReviewStrings.replyPlaceholder,
-                  errorText: _error,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _sending ? null : _send,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryGreen,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text(OwnerReviewStrings.send, style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
+    final r = widget.review;
+    final name = r.userName.isEmpty ? OwnerReviewStrings.guest : r.userName;
+    final avatar = r.userAvatarUrl;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.cardBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: AppColors.lightGreen,
+            foregroundImage: avatar == null ? null : NetworkImage(avatar),
+            child: Text(name.characters.first, style: const TextStyle(color: AppColors.darkGreen, fontWeight: FontWeight.bold)),
           ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textMain)),
+                    _Stars(r.rating),
+                    if (r.isHidden) const OwnerBadge(OwnerReviewStrings.hidden, tone: BadgeTone.gray),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${r.facilityName} • ${Formatters.dateTime(r.createdAt)}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                if (r.isHidden && r.hiddenReason != null)
+                  Text(r.hiddenReason!, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                const SizedBox(height: 8),
+                r.comment.isEmpty
+                    ? const Text(
+                        OwnerReviewStrings.noComment,
+                        style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textSecondary),
+                      )
+                    : Text(r.comment, style: const TextStyle(color: AppColors.textMain)),
+                if (r.hasReply && !_editing) _replyBox(r),
+                if (!r.hasReply || _editing) _replyForm(r),
+                _reportLine(r),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _replyBox(FacilityReview r) => Container(
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.fromLTRB(12, 6, 4, 10),
+        decoration: BoxDecoration(color: const Color(0xFFF1F7F3), borderRadius: BorderRadius.circular(10)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              children: [
+                const Text(OwnerReviewStrings.yourReply, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                if (r.repliedAt != null)
+                  Text(Formatters.dateTime(r.repliedAt!), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            _text.text = r.ownerReply ?? '';
+                            _editing = true;
+                          }),
+                  child: const Text(OwnerReviewStrings.edit),
+                ),
+                TextButton(onPressed: _busy ? null : _remove, child: const Text(OwnerReviewStrings.delete)),
+              ],
+            ),
+            Text(r.ownerReply ?? '', style: const TextStyle(color: AppColors.textMain)),
+          ],
         ),
+      );
+
+  Widget _replyForm(FacilityReview r) => Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _text,
+              minLines: 2,
+              maxLines: 5,
+              maxLength: OwnerReviewStrings.replyMaxLength,
+              decoration: InputDecoration(
+                hintText: OwnerReviewStrings.replyHint,
+                isDense: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              children: [
+                if (_editing)
+                  TextButton(onPressed: () => setState(() => _editing = false), child: const Text(OwnerReviewStrings.cancel)),
+                ElevatedButton(
+                  onPressed: _busy ? null : _save,
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white),
+                  child: Text(r.hasReply ? OwnerReviewStrings.saveReply : OwnerReviewStrings.sendReply),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+  Widget _reportLine(FacilityReview r) {
+    final report = r.report;
+    if (report == null) {
+      if (!r.canReport) return const SizedBox.shrink();
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _busy ? null : _report,
+          style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary, padding: EdgeInsets.zero),
+          icon: const Icon(Icons.flag_outlined, size: 16),
+          label: const Text(OwnerReviewStrings.report),
+        ),
+      );
+    }
+    final text = switch (report.status) {
+      ReportStatus.pending => OwnerReviewStrings.reportPending,
+      ReportStatus.kept => OwnerReviewStrings.reportKept,
+      ReportStatus.hidden => null,
+    };
+    if (text == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.flag_outlined, size: 14, color: AppColors.textSecondary),
+          const SizedBox(width: 4),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+        ],
       ),
     );
   }
@@ -584,7 +630,7 @@ class _ReportSheetState extends State<_ReportSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
