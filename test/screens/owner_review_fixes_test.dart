@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:test1/core/strings/owner_facility_strings.dart';
 import 'package:test1/core/strings/owner_tournament_strings.dart';
 import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
@@ -13,7 +12,6 @@ import 'package:test1/data/mock/mock_wallet_repository.dart';
 import 'package:test1/models/court_type.dart';
 import 'package:test1/models/sport.dart';
 import 'package:test1/models/tournament.dart';
-import 'package:test1/screens/owner/operations_edit_screen.dart';
 import 'package:test1/screens/owner/tournament_form_screen.dart';
 
 /// Các lỗi tìm ra khi rà soát màn hình Chủ sân trước khi nối API.
@@ -44,20 +42,6 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: home));
     await tester.pumpAndSettle();
   }
-
-  testWidgets('thêm tiện ích qua hộp thoại không lỗi ô nhập đã hủy', (tester) async {
-    final facility = await owner.getOwnerFacility('f-hcm-hoalu');
-    await pump(tester, OperationsEditScreen(facility: facility));
-
-    await tester.tap(find.widgetWithText(TextButton, OwnerFacilityStrings.add).first);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'Wifi miễn phí');
-    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text(OwnerFacilityStrings.add)));
-    await tester.pumpAndSettle();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Wifi miễn phí'), findsOneWidget);
-  });
 
   testWidgets('sửa giải khi loại sân thi đấu đã bị khóa vẫn mở được form', (tester) async {
     final now = DateTime.now();

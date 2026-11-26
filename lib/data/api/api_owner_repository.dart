@@ -1,6 +1,9 @@
 import '../../core/constants/owner_rules.dart';
 import '../../core/strings/owner_strings.dart';
-import '../../models/court_session.dart';               // ← CourtSession + TicketLookup
+import '../../models/booking.dart' show CancelReason;
+import '../../models/owner_booking.dart';
+import '../../models/owner_court.dart';
+import '../../core/strings/owner_slot_strings.dart';
 import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/facility_review.dart';             // ← ReportReason is here
@@ -12,8 +15,8 @@ import '../repositories/owner_repository.dart';
 import 'api_client.dart';
 
 /// OwnerRepository gọi Backend thật.
-/// Hiện chỉ nối phần danh sách cơ sở (getOwnerFacilities / getMyFacilities / getOwnerFacility).
-/// Các hàm còn lại tạm báo "đang phát triển" — nối dần sau.
+/// Đã nối: cơ sở, vận hành (đơn, lưới lịch, vãng lai, check-in, kết thúc ca, khóa/đổi giá ca, quét QR, hủy đơn).
+/// Các hàm còn lại tạm báo "đang phát triển" — nối theo từng đợt.
 class ApiOwnerRepository implements OwnerRepository {
   final ApiClient _api;
 
@@ -38,30 +41,10 @@ class ApiOwnerRepository implements OwnerRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getAmenities() async {
-    try {
-      final data = await _api.get('/api/v1/master-data/amenities');
-
-      final List<dynamic> items;
-
-      if (data is List) {
-        items = data;
-      } else if (data is Map && data['items'] is List) {
-        items = data['items'] as List;
-      } else if (data is Map && data['data'] is List) {
-        items = data['data'] as List;
-      } else {
-        return [];
-      }
-
-      return items
-          .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList();
-    } on ApiException catch (e) {
-      throw OwnerException(e.message);
-    }
-  }
+  Future<List<FacilityAmenity>> getAmenities() => _run(() async => [
+        for (final e in _listOf(await _api.get('/api/v1/master-data/amenities')).whereType<Map>())
+          FacilityAmenity(id: '${e['id'] ?? ''}', name: '${e['name'] ?? ''}'),
+      ]);
 
   @override
   Future<OwnerFacility> getOwnerFacility(String facilityId) async {
@@ -88,14 +71,17 @@ class ApiOwnerRepository implements OwnerRepository {
         .toList();
   }
 
-  /// Map JSON từ BE → OwnerFacility của app.
-  /// BE hiện đơn giản hơn model FE, nên các field thiếu được gán giá trị mặc định an toàn.
+  /// FacilityResponse của BE → OwnerFacility (theo cách Web đọc: streetAddress + provinceName/wardName,
+  /// imageItems có id / ảnh bìa, amenities là object, rules là chuỗi nhiều dòng).
   OwnerFacility _mapOwnerFacility(Map<String, dynamic> json) {
-    final id = (json['id'] ?? json['facilityId'] ?? '').toString();
-    final name = (json['name'] ?? '').toString();
-    final address = (json['address'] ?? '').toString();
-    final city = (json['city'] ?? json['province'] ?? '').toString();
-    final ward = (json['ward'] ?? json['district'] ?? '').toString();
+    String s(Object? v) => (v ?? '').toString().trim();
+    final id = s(json['id'] ?? json['facilityId']);
+    final street = json.containsKey('streetAddress') ? s(json['streetAddress']) : null;
+    final city = s(json['provinceName'] ?? json['city'] ?? json['province']);
+    final ward = s(json['wardName'] ?? json['ward'] ?? json['district']);
+    final address = street != null
+        ? [street, ward, city].where((p) => p.isNotEmpty).join(', ')
+        : s(json['address']);
 
     final lat = (json['latitude'] as num?)?.toDouble() ??
         (json['location'] is Map ? (json['location']['latitude'] as num?)?.toDouble() : null) ??
@@ -104,52 +90,59 @@ class ApiOwnerRepository implements OwnerRepository {
         (json['location'] is Map ? (json['location']['longitude'] as num?)?.toDouble() : null) ??
         0.0;
 
-    final statusStr = (json['approvalStatus'] ?? 'Pending').toString();
-    final status = _mapStatus(statusStr);
-
-    final openTime = (json['openTime'] ?? '06:00').toString();
-    final closeTime = (json['closeTime'] ?? '22:00').toString();
-    final phone = (json['phone'] ?? '').toString();
-    final description = (json['description'] ?? '').toString();
-
-    final imageUrls = _stringList(json['imageUrls'] ?? json['images']);
-    final amenities = _stringList(json['amenities']);
-    final rules = _stringList(json['rules']);
-
-    final rating = (json['rating'] as num?)?.toDouble() ?? 0.0;
-    final reviewCount = (json['reviewCount'] as num?)?.toInt() ?? 0;
-
-    final submittedAt = _parseDate(json['createdAt'] ?? json['submittedAt']) ?? DateTime.now();
+    final photos = [
+      for (final e in (json['imageItems'] as List? ?? const []).whereType<Map>())
+        FacilityPhoto(id: s(e['id']), url: s(e['url']), isThumbnail: e['isThumbnail'] == true),
+    ];
+    final imageUrls = photos.isNotEmpty ? [for (final p in photos) p.url] : _stringList(json['imageUrls'] ?? json['images']);
+    final amenityItems = [
+      for (final e in (json['amenities'] as List? ?? const []))
+        if (e is Map) FacilityAmenity(id: s(e['id']), name: s(e['name'])) else FacilityAmenity(id: '', name: '$e'),
+    ];
+    final rulesRaw = json['rules'];
+    final rules = rulesRaw is List
+        ? _stringList(rulesRaw)
+        : s(rulesRaw).split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+    final discount = json['recurringDiscountPercent'] as num? ?? (json['isBulkDiscountEnabled'] == true ? 10 : 0);
 
     return OwnerFacility(
       id: id,
-      status: status,
+      status: _mapStatus(s(json['approvalStatus']).isEmpty ? 'Pending' : s(json['approvalStatus'])),
       profile: FacilityProfile(
-        name: name,
+        name: s(json['name']),
         city: city.isEmpty ? '—' : city,
         ward: ward.isEmpty ? '—' : ward,
         address: address.isEmpty ? '—' : address,
         location: GeoPoint(lat, lng),
-        licenseNumber: (json['licenseNumber'] ?? '').toString(),
+        licenseNumber: s(json['licenseNumber']),
         licenseImages: _stringList(json['licenseImages']),
       ),
       operations: FacilityOperations(
-        phone: phone,
-        openMinutes: _safeParseMinutes(openTime),
-        closeMinutes: _safeParseMinutes(closeTime),
-        description: description,
-        amenities: amenities,
+        phone: s(json['phone']),
+        openMinutes: _safeParseMinutes(s(json['openTime']).isEmpty ? '06:00' : s(json['openTime'])),
+        closeMinutes: _safeParseMinutes(s(json['closeTime']).isEmpty ? '22:00' : s(json['closeTime'])),
+        description: s(json['description']),
+        amenities: [for (final a in amenityItems) a.name],
         rules: rules,
         images: imageUrls,
       ),
       courts: _mapCourts(json),
       closures: const [],
-      submittedAt: submittedAt,
+      submittedAt: _parseDate(json['createdAt'] ?? json['submittedAt']) ?? DateTime.now(),
       rejectReason: json['rejectReason'] as String?,
-      rating: rating,
-      reviewCount: reviewCount,
-      recurringDiscountPercent: ((json['recurringDiscountPercent'] as num?) ?? 0).round().clamp(0, 100),
+      rating: (json['averageRating'] as num? ?? json['rating'] as num?)?.toDouble() ?? 0.0,
+      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
+      recurringDiscountPercent: discount.round().clamp(0, 100),
       isSuspended: json['isSuspended'] == true,
+      streetAddress: street,
+      provinceCode: json['provinceCode'] == null ? null : s(json['provinceCode']),
+      wardCode: json['wardCode'] == null ? null : s(json['wardCode']),
+      autoGenerateSlots: json['autoGenerateSlots'] != false,
+      isLocked: json['isLocked'] == true,
+      lockedReason: json['lockedReason'] as String?,
+      photos: photos,
+      amenityItems: amenityItems,
+      courtCount: json['courts'] is List ? (json['courts'] as List).length : null,
     );
   }
 
@@ -192,297 +185,336 @@ class ApiOwnerRepository implements OwnerRepository {
     }
   }
 
-  List<CourtSession> _parseSessions(dynamic data) {
-    if (data == null) return [];
+  // ==================== Sân & giá, Ca sân ====================
 
-    // BE may return a plain list or a paged object { items: [...], total: n }
-    final List list;
-    if (data is List) {
-      list = data;
-    } else if (data is Map && data['items'] is List) {
-      list = data['items'] as List;
-    } else if (data is Map && data['data'] is List) {
-      list = data['data'] as List;
-    } else {
-      return [];
-    }
+  static const String sportsPath = '/api/v1/master-data/sports';
+  static String courtsPath(String facilityId) => '/api/v1/facilities/$facilityId/courts';
+  static String courtPath(String facilityId, String courtId) => '${courtsPath(facilityId)}/$courtId';
+  static String regeneratePath(String courtId) => '/api/v1/courts/$courtId/slots/regenerate-from';
+  static String courtGeneratePath(String courtId) => '/api/v1/courts/$courtId/slots/generate';
+  static String facilityGeneratePath(String facilityId) => '/api/v1/facilities/$facilityId/slots/generate';
+  static String slotsRangePath(String facilityId) => '/api/v1/facilities/$facilityId/slots/range';
+  static String bulkPath(String facilityId) => '/api/v1/facilities/$facilityId/slots/bulk';
+  static String bulkDeletePath(String facilityId) => '/api/v1/facilities/$facilityId/slots/bulk-delete';
+  static String slotPath(String slotId) => '/api/v1/slots/$slotId';
+  static String availabilityPath(String facilityId) => '/api/v1/facilities/$facilityId/availability';
+  static String pricePeriodsPath(String facilityId) => '/api/v1/facilities/$facilityId/price-periods';
 
-    return list
-        .whereType<Map>()
-        .map((e) => _mapSession(Map<String, dynamic>.from(e)))
-        .toList()
-      ..sort((a, b) => a.start.compareTo(b.start));
-  }
+  static List _listOf(Object? data) =>
+      data is List ? data : (data is Map ? (data['items'] ?? data['data'] ?? data['results']) as List? : null) ?? const [];
 
-  CourtSession _mapSession(Map<String, dynamic> json) {
-    // Prefer CourtSession.fromJson if BE shape matches the model.
-    // Fallback mapper for common BE field names.
+  @override
+  Future<List<SportCategory>> getSports() => _run(() async => [
+        for (final e in _listOf(await _api.get(sportsPath)).whereType<Map>())
+          SportCategory.fromJson(Map<String, dynamic>.from(e)),
+      ]);
+
+  @override
+  Future<List<OwnerCourt>> getCourts(String facilityId) => _run(() async => [
+        for (final e in _listOf(await _api.get(courtsPath(facilityId))).whereType<Map>())
+          OwnerCourt.fromJson(Map<String, dynamic>.from(e)),
+      ]);
+
+  @override
+  Future<OwnerCourt> getCourt(String facilityId, String courtId) => _run(() async {
+        final data = await _api.get(courtPath(facilityId, courtId));
+        if (data is! Map) throw const OwnerException(OwnerStrings.loadError);
+        return OwnerCourt.fromJson(Map<String, dynamic>.from(data));
+      });
+
+  @override
+  Future<void> createCourt(String facilityId, CourtInput input) =>
+      _run(() => _api.post(courtsPath(facilityId), body: input.toJson(editing: false)));
+
+  @override
+  Future<void> updateCourt(String facilityId, OwnerCourt previous, CourtInput input) => _run(() => _api.put(
+        courtPath(facilityId, previous.id),
+        body: input.toJson(editing: true, previousIsIndoor: previous.isIndoor),
+      ));
+
+  @override
+  Future<int> deleteCourt(String facilityId, String courtId) => _run(() async {
+        final data = await _api.delete(courtPath(facilityId, courtId));
+        return data is Map && data['removedFutureSlots'] is num ? (data['removedFutureSlots'] as num).toInt() : 0;
+      });
+
+  @override
+  Future<void> regenerateCourtSlots(String courtId) =>
+      _run(() => _api.post(regeneratePath(courtId), body: {'fromDate': null}));
+
+  @override
+  Future<void> updateOpenHours(String facilityId, {required String openTime, required String closeTime}) =>
+      _run(() => _api.put('/api/v1/facilities/$facilityId', body: {
+            'openTime': timeSpanOf(openTime),
+            'closeTime': timeSpanOf(closeTime),
+          }));
+
+  @override
+  Future<SlotsRange> getSlotsRange(String facilityId, {required DateTime from, required DateTime to}) => _run(() async =>
+      SlotsRange.fromJson(await _api.get(slotsRangePath(facilityId), query: {'from': dayKey(from), 'to': dayKey(to)})));
+
+  @override
+  Future<FacilityAvailability> getAvailability(String facilityId, DateTime date) => _run(() async =>
+      FacilityAvailability.fromJson(await _api.get(availabilityPath(facilityId), query: {'date': dayKey(date)})));
+
+  @override
+  Future<List<GenerateResultRow>> generateSlots(
+    String facilityId,
+    GenerateSlotsRequest request, {
+    Map<String, String> courtNames = const {},
+  }) =>
+      _run(() async {
+        if (request.courtIds.length == 1) {
+          final id = request.courtIds.single;
+          final data = await _api.post(courtGeneratePath(id), body: request.toJson(withCourts: false));
+          return [
+            GenerateResultRow.fromJson(data is Map ? Map<String, dynamic>.from(data) : const {},
+                courtId: id, courtName: courtNames[id]),
+          ];
+        }
+        final data = await _api.post(facilityGeneratePath(facilityId), body: request.toJson());
+        return [
+          for (final e in _listOf(data).whereType<Map>())
+            GenerateResultRow.fromJson(Map<String, dynamic>.from(e)),
+        ];
+      });
+
+  @override
+  Future<BulkSlotResult> bulkSlots(String facilityId, BulkSlotRequest request) => _run(() async => BulkSlotResult.fromJson(
+        request.action == BulkSlotAction.delete
+            ? await _api.post(bulkDeletePath(facilityId), body: request.filterJson())
+            : await _api.put(bulkPath(facilityId), body: request.updateJson()),
+      ));
+
+  @override
+  Future<void> deleteSlot(String slotId) => _run(() => _api.delete(slotPath(slotId)));
+
+  /// Như Web: BE trả 404 / 405 nghĩa là chưa có API đợt giá.
+  Future<T> _runPeriods<T>(Future<T> Function() call) async {
     try {
-      return CourtSession.fromJson(json);
-    } catch (_) {
-      // Flexible mapping when BE fields differ
-      final id = (json['id'] ?? json['bookingId'] ?? '').toString();
-      final facilityId = (json['facilityId'] ?? '').toString();
-      final facilityName = (json['facilityName'] ?? json['facility']?['name'] ?? '').toString();
-
-      final start = DateTime.parse(
-        (json['start'] ?? json['startTime'] ?? json['slotStart'] ?? DateTime.now().toIso8601String()).toString(),
-      );
-      final end = DateTime.parse(
-        (json['end'] ?? json['endTime'] ?? json['slotEnd'] ?? start.add(const Duration(hours: 1)).toIso8601String())
-            .toString(),
-      );
-
-      final sportRaw = (json['sport'] ?? json['sportName'] ?? 'Football').toString();
-      final courtTypeRaw = json['courtType'] as String?;
-
-      final playersRaw = json['players'] ?? json['participants'] ?? [];
-      final players = (playersRaw is List)
-          ? playersRaw.whereType<Map>().map((p) {
-        final m = Map<String, dynamic>.from(p);
-        return SessionPlayer(
-          userId: (m['userId'] ?? m['id'] ?? '').toString(),
-          name: (m['name'] ?? m['fullName'] ?? m['username'] ?? '—').toString(),
-          ticketCode: (m['ticketCode'] ?? m['qrCode'] ?? m['code'] ?? '').toString(),
-          checkedInAt: m['checkedInAt'] != null ? DateTime.tryParse(m['checkedInAt'].toString()) : null,
-        );
-      }).toList()
-          : <SessionPlayer>[];
-
-      // If BE only returns booker info (no players array)
-      if (players.isEmpty && (json['userId'] != null || json['bookerName'] != null)) {
-        players.add(SessionPlayer(
-          userId: (json['userId'] ?? json['bookerId'] ?? '').toString(),
-          name: (json['bookerName'] ?? json['fullName'] ?? json['username'] ?? '—').toString(),
-          ticketCode: (json['ticketCode'] ?? json['qrCode'] ?? '').toString(),
-          checkedInAt: json['checkedInAt'] != null ? DateTime.tryParse(json['checkedInAt'].toString()) : null,
-        ));
+      return await call();
+    } on ApiException catch (e) {
+      if (e.statusCode == 404 || e.statusCode == 405) {
+        throw const OwnerException(OwnerSlotStrings.periodsUnavailableSave, unavailable: true);
       }
-
-      final kindRaw = (json['kind'] ?? json['type'] ?? 'Booking').toString();
-      final kind = kindRaw.toLowerCase().contains('lfg') ? SessionKind.lfg : SessionKind.booking;
-
-      return CourtSession(
-        id: id,
-        kind: kind,
-        facilityId: facilityId,
-        facilityName: facilityName.isEmpty ? '—' : facilityName,
-        sport: _safeSport(sportRaw),
-        courtType: CourtType.fromApi(courtTypeRaw),
-        start: start,
-        end: end,
-        totalPrice: (json['totalPrice'] as num?)?.toInt() ?? (json['price'] as num?)?.toInt() ?? 0,
-        paidViaApp: (json['paidViaApp'] as num?)?.toInt() ?? (json['paidAmount'] as num?)?.toInt() ?? 0,
-        players: players,
-        assignedCourt: (json['assignedCourt'] ?? json['courtName'] ?? json['court']?['name'] ?? '—').toString(),
-        checkedOutAt: json['checkedOutAt'] != null ? DateTime.tryParse(json['checkedOutAt'].toString()) : null,
-        cancelledAt: json['cancelledAt'] != null ? DateTime.tryParse(json['cancelledAt'].toString()) : null,
-      );
+      throw OwnerException(e.message);
     }
   }
 
-  Sport _safeSport(String value) {
-    try {
-      return Sport.fromApi(value);
-    } catch (_) {
-      return Sport.football; // safe fallback
-    }
-  }
-  String _minutesToTimeString(int minutes) {
-    final hours = minutes ~/ 60;
-    final remainingMinutes = minutes % 60;
+  @override
+  Future<List<PricePeriod>> getPricePeriods(String facilityId, {DateTime? from, DateTime? to}) => _runPeriods(() async => [
+        for (final e in _listOf(await _api.get(pricePeriodsPath(facilityId), query: {
+          if (from != null) 'from': dayKey(from),
+          if (to != null) 'to': dayKey(to),
+        })).whereType<Map>())
+          PricePeriod.fromJson(Map<String, dynamic>.from(e)),
+      ]);
 
-    return '${hours.toString().padLeft(2, '0')}:'
-        '${remainingMinutes.toString().padLeft(2, '0')}:00';
-  }
+  @override
+  Future<PricePeriodResult> savePricePeriod(String facilityId, PricePeriod period) => _runPeriods(() async =>
+      PricePeriodResult.fromJson(period.id.isEmpty
+          ? await _api.post(pricePeriodsPath(facilityId), body: period.toJson())
+          : await _api.put('${pricePeriodsPath(facilityId)}/${period.id}', body: period.toJson())));
 
-  List<String> _validImageUrls(List<String> images) {
-    return images.where((value) {
-      final uri = Uri.tryParse(value);
+  @override
+  Future<void> deletePricePeriod(String facilityId, String periodId) =>
+      _runPeriods(() => _api.delete('${pricePeriodsPath(facilityId)}/$periodId'));
 
-      return uri != null &&
-          (uri.scheme == 'http' || uri.scheme == 'https') &&
-          uri.host.isNotEmpty;
-    }).toList();
-  }
-  // ==================== Chưa nối (làm sau) ====================
+  // ==================== Vận hành: đơn, lịch, check-in ====================
 
   Never _todo() => throw Exception('Tính năng đang phát triển');
 
-  @override
-  Future<List<CourtSession>> getSessions({required DateTime day, String? facilityId}) async {
+  static String _day(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  static const String bookingsPath = '/api/v1/bookings/owner';
+  static String bookingPath(String id) => '$bookingsPath/$id';
+  static const String walkInPath = '$bookingsPath/walk-in';
+  static String checkInPath(String id) => '$bookingsPath/$id/check-in';
+  static String endPath(String id) => '$bookingsPath/$id/end';
+  static String cancelBookingPath(String bookingId) => '$bookingsPath/$bookingId/cancel';
+  static String daySlotsPath(String facilityId) => '/api/v1/facilities/$facilityId/slots';
+  static String slotStatusPath(String slotId) => '/api/v1/slots/$slotId/status';
+  static const String scanPath = '/api/v1/checkin/scan';
+  static const String cancelReasonsPath = '/api/v1/bookings/cancellation-reasons';
+
+  Future<T> _run<T>(Future<T> Function() call) async {
     try {
-      // BE expects date-time; we send start of day
-      final dateStr = DateTime(day.year, day.month, day.day).toIso8601String();
-
-      final query = <String, dynamic>{
-        'Date': dateStr,
-        'PageSize': 100,
-        if (facilityId != null && facilityId.isNotEmpty) 'FacilityId': facilityId,
-      };
-
-      final data = await _api.get('/api/v1/bookings/owner', query: query);
-      return _parseSessions(data);
+      return await call();
     } on ApiException catch (e) {
       throw OwnerException(e.message);
     }
   }
 
   @override
-  Future<CourtSession> getSession(String sessionId) async {
-    try {
-      final data = await _api.get('/api/v1/bookings/owner/$sessionId');
-      if (data is! Map<String, dynamic>) {
-        throw const OwnerException(OwnerStrings.loadError);
-      }
-      return _mapSession(data);
-    } on ApiException catch (e) {
-      throw OwnerException(e.message);
-    }
-  }
-
-  @override
-  Future<TicketLookup> lookupTicket(String code) async {
-    throw const OwnerException(
-      'Tra cứu vé chưa được hỗ trợ qua API.',
-    );
-  }
-
-  @override
-  Future<void> scanQr({
+  Future<OwnerBookingPage> getBookings({
     required String facilityId,
-    required String qrCode,
-  }) async {
-    try {
-      await _api.post(
-        '/api/v1/checkin/scan',
-        query: {
-          'facilityId': facilityId,
-          'qrCode': qrCode.trim(),
-        },
-      );
-    } on ApiException catch (e) {
-      throw OwnerException(e.message);
-    }
-  }
-
-
-  @override
-  Future<CourtSession> checkIn({required String sessionId, required String userId}) async => _todo();
-
-  @override
-  Future<CourtSession> checkOut(String sessionId) async => _todo();
-
-  static String cancelBookingPath(String bookingId) => '/api/v1/bookings/owner/$bookingId/cancel';
-
-  /// Mã lượt sân chính là bookingId (lấy từ /bookings/owner). Body: reason (tự nhập), lockSlotAfterCancel.
-  @override
-  Future<OwnerCancelResult> cancelBooking(String sessionId, {String? reason, bool lockSlot = false}) async {
-    final note = reason?.trim();
-    try {
-      final data = await _api.post(cancelBookingPath(sessionId), body: {
-        if (note != null && note.isNotEmpty) 'reason': note,
-        'lockSlotAfterCancel': lockSlot,
+    DateTime? date,
+    DateTime? from,
+    DateTime? to,
+    String? status,
+    String? search,
+    int page = 1,
+    int pageSize = 15,
+  }) =>
+      _run(() async {
+        final data = await _api.get(bookingsPath, query: {
+          'FacilityId': facilityId,
+          if (date != null) 'Date': _day(date),
+          if (from != null) 'DateFrom': _day(from),
+          if (to != null) 'DateTo': _day(to),
+          if (status != null && status.isNotEmpty) 'Status': status,
+          if (search != null && search.trim().isNotEmpty) 'Search': search.trim(),
+          'Page': page,
+          'PageSize': pageSize,
+        });
+        return OwnerBookingPage.fromJson(data, pageSize: pageSize);
       });
-      final json = data is Map<String, dynamic> ? data : const <String, dynamic>{};
-      int money(Object? v) => v is num ? v.round() : int.tryParse('$v') ?? 0;
-      final fairPlay = json['ownerFairPlayPenalty'];
-      return OwnerCancelResult(
-        penaltyAmount: money(json['ownerPenaltyAmount'] ?? json['penaltyAmount']),
-        fairPlayPenalty: fairPlay is num
-            ? fairPlay.abs().round()
-            : fairPlay == true
-                ? OwnerCancelRules.lateFairPlayPenalty
-                : 0,
-        refundAmount: money(json['refundAmount']),
-        lateCancel: json['lateCancel'] == true,
-      );
-    } on ApiException catch (e) {
-      throw OwnerException(e.message);
-    }
-  }
 
   @override
+  Future<OwnerBooking> getBooking(String bookingId) => _run(() async {
+        final data = await _api.get(bookingPath(bookingId));
+        if (data is! Map) throw const OwnerException(OwnerStrings.loadError);
+        return OwnerBooking.fromJson(Map<String, dynamic>.from(data));
+      });
+
   @override
-  Future<OwnerFacility> submitFacility(FacilitySubmission submission) async {
-    try {
-      final profile = submission.profile;
-      final operations = submission.operations;
+  Future<FacilityDaySchedule> getDaySchedule(String facilityId, DateTime date) => _run(() async {
+        final data = await _api.get(daySlotsPath(facilityId), query: {'date': _day(date)});
+        return FacilityDaySchedule.fromJson(data is Map ? Map<String, dynamic>.from(data) : const {});
+      });
 
-      final payload = <String, dynamic>{
-        'name': profile.name,
-        'address': profile.address,
-        'latitude': profile.location.latitude,
-        'longitude': profile.location.longitude,
-        'description': operations.description,
-        'phone': operations.phone,
-        'openTime': _minutesToTimeString(operations.openMinutes),
-        'closeTime': _minutesToTimeString(operations.closeMinutes),
-        'rules': operations.rules.join('\n'),
-        'autoGenerateSlots': true,
+  @override
+  Future<void> createWalkIn(WalkInRequest request) => _run(() => _api.post(walkInPath, body: request.toJson()));
 
-        // Do not send amenity labels as GUIDs.
-        // Connect these after confirming the amenity IDs from the backend.
-        'amenityIds': <String>[],
+  @override
+  Future<void> checkInBooking(String bookingId) => _run(() => _api.post(
+        checkInPath(bookingId),
+        body: {'participantUserId': null, 'checkInAllParticipants': true},
+      ));
 
-        // Only send image URLs; local file paths are not valid ImageUrls.
-        'imageUrls': _validImageUrls(operations.images),
-      };
+  @override
+  Future<void> endBooking(String bookingId) => _run(() => _api.post(endPath(bookingId)));
 
-      final data = await _api.post(
-        '/api/v1/facilities',
-        body: payload,
-      );
+  @override
+  Future<void> setSlotLocked(String slotId, {required bool locked}) => _run(() => _api.put(
+        slotStatusPath(slotId),
+        body: {'status': locked ? CourtSlotStatusCode.maintenance : CourtSlotStatusCode.available},
+      ));
 
-      if (data is! Map) {
-        throw const OwnerException(OwnerStrings.loadError);
-      }
+  @override
+  Future<void> setSlotPrice(String slotId, int price) => _run(() => _api.put(
+        slotStatusPath(slotId),
+        body: {'status': CourtSlotStatusCode.available, 'price': price},
+      ));
 
-      final facilityJson = Map<String, dynamic>.from(data);
-      final facilityId = (facilityJson['id'] ?? '').toString();
+  @override
+  Future<ScanResult> scanQr({required String facilityId, required String qrCode}) => _run(() async {
+        final data = await _api.post(scanPath, query: {'facilityId': facilityId, 'qrCode': qrCode.trim()});
+        // Như Web: hiện message BE (mô tả Booking / LFG, số tiền chuyển...), không có thì câu mặc định.
+        return ScanResult.fromJson(data, _api.lastMessage ?? OwnerStrings.scanSuccessDefault);
+      });
 
-      if (facilityId.isEmpty) {
-        throw const OwnerException(OwnerStrings.loadError);
-      }
+  @override
+  Future<List<CancelReason>> getCancelReasons() => _run(() async {
+        final data = await _api.get(cancelReasonsPath);
+        final list = data is List ? data : (data is Map ? data['items'] as List? : null) ?? const [];
+        return list
+            .whereType<Map>()
+            .map((r) => CancelReason(
+                  code: (r['code'] as num?)?.toInt() ?? 0,
+                  label: r['label']?.toString() ?? '',
+                  isCustom: r['isCustom'] == true,
+                ))
+            .toList();
+      });
 
-      final localImages = submission.operations.images
-          .where((path) {
-        final uri = Uri.tryParse(path);
-        return uri == null ||
-            (uri.scheme != 'http' && uri.scheme != 'https');
-      })
-          .toList();
-
-      if (localImages.isNotEmpty) {
-        await _api.uploadFiles(
-          '/api/v1/facilities/$facilityId/images',
-          filePaths: localImages,
-          field: 'files',
+  /// Body như Web: cancelReasonId (mã lý do), reason (chữ của lý do hoặc tự nhập), lockSlotAfterCancel.
+  @override
+  Future<OwnerCancelResult> cancelBooking(String bookingId, {int? reasonCode, String? reason, bool lockSlot = false}) =>
+      _run(() async {
+        final note = reason?.trim();
+        final data = await _api.post(cancelBookingPath(bookingId), body: {
+          'cancelReasonId': reasonCode,
+          'reason': note == null || note.isEmpty ? null : note,
+          'lockSlotAfterCancel': lockSlot,
+        });
+        final json = data is Map ? Map<String, dynamic>.from(data) : const <String, dynamic>{};
+        int money(Object? v) => v is num ? v.round() : int.tryParse('$v') ?? 0;
+        final fairPlay = json['ownerFairPlayPenalty'] ?? json['fairPlayPenalty'];
+        return OwnerCancelResult(
+          penaltyAmount: money(json['ownerPenaltyAmount'] ?? json['penaltyAmount']),
+          fairPlayPenalty: fairPlay is num
+              ? fairPlay.abs().round()
+              : fairPlay == true
+                  ? OwnerCancelRules.lateFairPlayPenalty
+                  : 0,
+          refundAmount: money(json['refundAmount']),
         );
-      }
+      });
 
-      final updated = await _api.get(
-        '/api/v1/facilities/$facilityId',
-      );
+  // ==================== Cơ sở của tôi ====================
 
-      if (updated is! Map) {
-        throw const OwnerException(OwnerStrings.loadError);
-      }
+  static const String facilitiesPath = '/api/v1/facilities';
+  static String facilityPath(String id) => '$facilitiesPath/$id';
+  static String facilityImagesPath(String id) => '${facilityPath(id)}/images';
+  static String facilityAmenitiesPath(String id) => '${facilityPath(id)}/amenities';
+  static const String provincesPath = '/api/v1/master-data/provinces';
+  static String wardsPath(String provinceCode) => '$provincesPath/$provinceCode/wards';
 
-      return _mapOwnerFacility(Map<String, dynamic>.from(updated));
-    } on ApiException catch (e) {
-      throw OwnerException(e.message);
-    }
+  static List<AreaOption> _areas(Object? data) => [
+        for (final e in _listOf(data).whereType<Map>())
+          AreaOption(
+            code: '${e['code'] ?? e['provinceCode'] ?? e['wardCode'] ?? ''}',
+            name: '${e['name'] ?? e['provinceName'] ?? e['wardName'] ?? ''}',
+          ),
+      ];
+
+  @override
+  Future<List<AreaOption>> getProvinces() => _run(() async => _areas(await _api.get(provincesPath)));
+
+  @override
+  Future<List<AreaOption>> getWards(String provinceCode) => _run(() async => _areas(await _api.get(wardsPath(provinceCode))));
+
+  Future<OwnerFacility> _fetch(String id) async {
+    final data = await _api.get(facilityPath(id));
+    if (data is! Map) throw const OwnerException(OwnerStrings.loadError);
+    return _mapOwnerFacility(Map<String, dynamic>.from(data));
   }
 
   @override
-  Future<OwnerFacility> resubmitFacility(String facilityId, FacilitySubmission submission) async => _todo();
+  Future<OwnerFacility> createFacility(FacilityInput input) => _run(() async {
+        final data = await _api.post(facilitiesPath, body: input.toJson(creating: true));
+        final id = data is Map ? '${data['id'] ?? ''}' : '';
+        if (id.isEmpty) throw const OwnerException(OwnerStrings.loadError);
+        return _fetch(id);
+      });
 
   @override
-  Future<OwnerFacility> requestProfileChange(String facilityId, FacilityProfile profile) async => _todo();
+  Future<OwnerFacility> updateFacility(String facilityId, FacilityInput input) => _run(() async {
+        await _api.put(facilityPath(facilityId), body: input.toJson(creating: false));
+        return _fetch(facilityId);
+      });
 
   @override
-  Future<OwnerFacility> updateOperations(String facilityId, FacilityOperations operations) async => _todo();
+  Future<void> deleteFacility(String facilityId) => _run(() => _api.delete(facilityPath(facilityId)));
+
+  @override
+  Future<void> uploadFacilityPhotos(String facilityId, List<String> filePaths) =>
+      _run(() => _api.uploadFiles(facilityImagesPath(facilityId), filePaths: filePaths, field: 'files'));
+
+  @override
+  Future<void> deleteFacilityPhoto(String facilityId, String photoId) =>
+      _run(() => _api.delete('${facilityImagesPath(facilityId)}/$photoId'));
+
+  @override
+  Future<void> setFacilityThumbnail(String facilityId, String photoId) =>
+      _run(() => _api.patch('${facilityImagesPath(facilityId)}/$photoId/thumbnail'));
+
+  @override
+  Future<void> updateFacilityAmenities(String facilityId, List<String> amenityIds) =>
+      _run(() => _api.put(facilityAmenitiesPath(facilityId), body: {'amenityIds': amenityIds}));
+
 
   /// PUT /facilities/{id} là cập nhật từng phần: chỉ gửi recurringDiscountPercent (không gửi isBulkDiscountEnabled,
   /// không gửi amenityIds/imageUrls vì mảng rỗng = xoá hết). Đọc lại cơ sở để có trạng thái duyệt mới.

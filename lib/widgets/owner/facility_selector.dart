@@ -4,13 +4,22 @@ import '../../core/strings/owner_strings.dart';
 import '../../models/facility.dart';
 import '../../theme/app_colors.dart';
 
-/// Nút chọn cơ sở trên AppBar Chủ sân. [selectedId] `null` = tất cả cơ sở.
+/// Nút chọn cơ sở trên AppBar Chủ sân. [selectedId] `null` = tất cả cơ sở (chỉ khi [allowAll]).
 class FacilitySelector extends StatelessWidget {
   final List<Facility> facilities;
   final String? selectedId;
   final ValueChanged<String?> onChanged;
 
-  const FacilitySelector({super.key, required this.facilities, required this.selectedId, required this.onChanged});
+  /// Có dòng "Tất cả cơ sở". Khung vận hành Chủ sân tắt (như Web: luôn quản lý một cơ sở).
+  final bool allowAll;
+
+  const FacilitySelector({
+    super.key,
+    required this.facilities,
+    required this.selectedId,
+    required this.onChanged,
+    this.allowAll = true,
+  });
 
   String get _label => facilities.where((f) => f.id == selectedId).firstOrNull?.name ?? OwnerStrings.allFacilities;
 
@@ -30,7 +39,7 @@ class FacilitySelector extends StatelessWidget {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textMain),
               ),
             ),
-            _option(sheetContext, '', OwnerStrings.allFacilities, null, selectedId == null),
+            if (allowAll) _option(sheetContext, '', OwnerStrings.allFacilities, null, selectedId == null),
             for (final f in facilities) _option(sheetContext, f.id, f.name, f.address, selectedId == f.id),
             const SizedBox(height: 8),
           ],

@@ -46,6 +46,9 @@ class ApiClient {
   /// Gọi khi phiên đăng nhập hết hạn (app đăng xuất và về màn đăng nhập).
   void Function()? onUnauthorized;
 
+  /// Câu `message` của lần gọi thành công gần nhất (vd. quét QR: BE mô tả kết quả check-in).
+  String? lastMessage;
+
   /// Lượt refresh đang chạy: nhiều request cùng bị 401 thì dùng chung một lượt.
   Future<bool>? _refreshing;
 
@@ -90,6 +93,8 @@ class ApiClient {
 
   Future<dynamic> put(String path, {Map<String, dynamic>? query, Object? body, bool auth = true}) =>
       _send('PUT', path, query: query, body: body, auth: auth);
+
+  Future<dynamic> patch(String path, {Object? body, bool auth = true}) => _send('PATCH', path, body: body, auth: auth);
 
   Future<dynamic> delete(String path, {Object? body, bool auth = true}) =>
       _send('DELETE', path, body: body, auth: auth);
@@ -240,6 +245,8 @@ class ApiClient {
     final code = (envelope?['statusCode'] as num?)?.toInt() ?? status;
 
     if (status >= 200 && status < 300 && code < 400) {
+      final message = envelope?['message'];
+      lastMessage = message is String && message.trim().isNotEmpty ? message.trim() : null;
       return envelope != null ? envelope['data'] : body;
     }
     final map = body is Map<String, dynamic> ? body : null;

@@ -99,7 +99,8 @@ void main() {
         start: DateTime(2026, 10, 15, 16),
         end: DateTime(2026, 10, 15, 18),
       )),
-      error(OwnerFacilityStrings.closureBlocked(2)),
+      // Ngày 15/10 Thiên Triều có 4 đơn mẫu còn hiệu lực (MockOwnerBookingData).
+      error(OwnerFacilityStrings.closureBlocked(4)),
     );
     expect(await repo.getOrganizedTournaments(), hasLength(1));
   });

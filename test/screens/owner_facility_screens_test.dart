@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/owner_facility_strings.dart';
+import 'package:test1/core/strings/owner_slot_strings.dart';
 import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_owner_repository.dart';
-import 'package:test1/models/court_type.dart';
 import 'package:test1/models/owner_facility.dart';
-import 'package:test1/models/sport.dart';
-import 'package:test1/screens/owner/court_pricing_screen.dart';
 import 'package:test1/screens/owner/facility_form_screen.dart';
 import 'package:test1/screens/owner/owner_facilities_screen.dart';
 import 'package:test1/screens/owner/owner_facility_detail_screen.dart';
@@ -42,189 +40,136 @@ void main() {
     expect(find.text(OwnerFacilityStrings.addFacility), findsOneWidget);
   });
 
-  testWidgets('hồ sơ bị từ chối: xem lý do, sửa & nộp lại thành chờ duyệt', (tester) async {
+  testWidgets('hồ sơ bị từ chối: thấy lý do, sửa thông tin được như Web', (tester) async {
     final rejected = await AppRepositories.owner.getOwnerFacility('f-own-rejected');
     await pump(tester, OwnerFacilityDetailScreen(facility: rejected));
+    expect(find.text(OwnerFacilityStrings.badgeRejected), findsOneWidget);
     expect(find.textContaining('Ảnh giấy phép bị mờ'), findsOneWidget);
-    expect(find.text(OwnerFacilityStrings.lockedUntilApproved), findsOneWidget);
-
-    await tester.tap(find.text(OwnerFacilityStrings.resubmit));
-    await tester.pumpAndSettle();
-    expect(find.text(OwnerFacilityStrings.resubmitTitle), findsOneWidget);
-    await tester.enterText(find.widgetWithText(TextFormField, OwnerFacilityStrings.licenseNumber), '0319999888');
-    await tester.tap(find.text(OwnerFacilityStrings.submit));
-    await tester.pumpAndSettle();
-
-    expect(find.text(OwnerFacilityStrings.pendingBanner), findsOneWidget);
-    expect(find.text(OwnerFacilityStrings.resubmit), findsNothing);
-    expect(find.text('0319999888'), findsOneWidget);
+    expect(find.text(OwnerFacilityStrings.editTitle), findsOneWidget);
+    expect(find.text(OwnerFacilityStrings.closeButton), findsOneWidget);
   });
 
-  testWidgets('đăng cơ sở mới thiếu thông tin thì báo lỗi từng mục', (tester) async {
+  testWidgets('tạo cơ sở: thiếu tên báo lỗi; đủ tên + tỉnh + phường + số nhà thì tạo, chờ duyệt', (tester) async {
     await pump(tester, const FacilityFormScreen());
-    await tester.tap(find.text(OwnerFacilityStrings.submit));
+    expect(find.text(OwnerFacilityStrings.createHint), findsOneWidget);
+    await tester.tap(find.text(OwnerFacilityStrings.createSubmit));
     await tester.pumpAndSettle();
+    expect(find.text(OwnerFacilityStrings.errName), findsOneWidget);
 
-    expect(find.text(OwnerFacilityStrings.required), findsWidgets);
-    expect(find.text(OwnerFacilityStrings.missingLocation), findsOneWidget);
-    expect(find.text(OwnerFacilityStrings.missingCourt), findsOneWidget);
-    expect(find.text(OwnerFacilityStrings.missingPhoto), findsOneWidget);
-    expect(find.text(OwnerFacilityStrings.missingLicenseImage), findsOneWidget);
-    expect((await AppRepositories.owner.getOwnerFacilities()), hasLength(4));
+    await tester.enterText(find.widgetWithText(TextField, OwnerFacilityStrings.fName), 'Sân Mới');
+    await tester.tap(find.text(OwnerFacilityStrings.createSubmit));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerFacilityStrings.errAddress), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, OwnerFacilityStrings.fProvince));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Hồ Chí Minh').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, OwnerFacilityStrings.fWard));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Phường Sài Gòn').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, OwnerFacilityStrings.fStreet), '1 Lê Lợi');
+    await tester.enterText(find.widgetWithText(TextField, OwnerFacilityStrings.fDiscount), '60');
+    await tester.tap(find.text(OwnerFacilityStrings.createSubmit));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerFacilityStrings.errDiscount), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, OwnerFacilityStrings.fDiscount), '10');
+    await tester.tap(find.text('Wifi'));
+    await tester.tap(find.text(OwnerFacilityStrings.createSubmit));
+    await tester.pumpAndSettle();
+    final all = await AppRepositories.owner.getOwnerFacilities();
+    expect(all, hasLength(5));
+    expect(all.first.profile.address, '1 Lê Lợi, Phường Sài Gòn, Hồ Chí Minh');
+    expect(all.first.status, ApprovalStatus.pending);
+    expect(all.first.amenityItems.single.name, 'Wifi');
   });
 
-  testWidgets('yêu cầu đổi thông tin chỉ có tên / địa chỉ / giấy phép', (tester) async {
+  testWidgets('sửa thông tin: form điền sẵn, lưu thẳng không chờ duyệt lại', (tester) async {
     final hoaLu = await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu');
     await pump(tester, OwnerFacilityDetailScreen(facility: hoaLu));
-    await tester.tap(find.text(OwnerFacilityStrings.requestChange));
+    await tester.tap(find.text(OwnerFacilityStrings.editTitle));
     await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'Sân Bóng Hoa Lư'), findsOneWidget);
+    expect(find.text('Hồ Chí Minh'), findsOneWidget, reason: 'tỉnh điền sẵn theo tên');
 
-    expect(find.text(OwnerFacilityStrings.changeTitle), findsOneWidget);
-    expect(find.text(OwnerFacilityStrings.formCourts), findsNothing);
-    expect(find.text(OwnerFacilityStrings.formPhotos), findsNothing);
-    await tester.enterText(find.widgetWithText(TextFormField, OwnerFacilityStrings.name), 'Hoa Lư Arena');
-    await tester.tap(find.text(OwnerFacilityStrings.submitChange));
+    await tester.enterText(find.widgetWithText(TextField, OwnerFacilityStrings.fName), 'Hoa Lư Arena');
+    // Phường cũ không có trong danh mục mới: phải chọn lại mới lưu được (như Web).
+    await tester.tap(find.text(OwnerFacilityStrings.saveInfo));
     await tester.pumpAndSettle();
-
-    expect(find.text(OwnerFacilityStrings.changePendingBanner), findsOneWidget);
-    expect(find.text('Sân Bóng Hoa Lư'), findsWidgets); // vẫn tên cũ khi chờ duyệt
+    expect(find.text(OwnerFacilityStrings.errAddress), findsOneWidget);
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, OwnerFacilityStrings.fWard));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Phường Tân Định').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(OwnerFacilityStrings.saveInfo));
+    await tester.pumpAndSettle();
+    expect(find.text('Hoa Lư Arena'), findsWidgets);
+    expect(find.text(OwnerFacilityStrings.badgeApproved), findsOneWidget);
   });
 
-  testWidgets('cài giá cho loại sân chưa có giá', (tester) async {
-    final hoaLu = await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu');
-    final half = hoaLu.courtFor(Sport.basketball, CourtType.basketballHalf)!;
-    await pump(tester, CourtPricingScreen(facility: hoaLu, court: half));
-
-    expect(find.text(OwnerFacilityStrings.preview), findsNothing);
-    final prices = find.widgetWithText(TextFormField, OwnerFacilityStrings.normalPrice);
-    final peaks = find.widgetWithText(TextFormField, OwnerFacilityStrings.peakPrice);
-    await tester.enterText(prices.first, '150000');
-    await tester.enterText(peaks.first, '200000');
-    await tester.enterText(prices.last, '170000');
-    await tester.enterText(peaks.last, '220000');
-    await tester.pumpAndSettle();
-    expect(find.text(OwnerFacilityStrings.preview), findsOneWidget);
-    expect(find.text('17:00 - 18:00'), findsNWidgets(2));
-
-    await tester.tap(find.text(OwnerFacilityStrings.save));
-    await tester.pumpAndSettle();
-    final saved = (await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu'))
-        .courtFor(Sport.basketball, CourtType.basketballHalf)!;
-    expect(saved.pricing!.weekdayPrice, 150000);
-    expect(saved.pricing!.weekendPeakPrice, 220000);
-  });
-
-  testWidgets('khóa loại sân rồi mở khóa lại', (tester) async {
+  testWidgets('tiện ích: chọn rồi Lưu tiện ích; Hoàn tác bỏ thay đổi', (tester) async {
     final hoaLu = await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu');
     await pump(tester, OwnerFacilityDetailScreen(facility: hoaLu));
-    await tester.tap(find.textContaining('Sân đầy đủ 5x5'));
+    await tester.tap(find.text('Wifi'));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerFacilityStrings.undo), findsOneWidget);
+    await tester.tap(find.text(OwnerFacilityStrings.saveAmenities));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerFacilityStrings.amenitiesSaved), findsOneWidget);
+    expect((await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu')).operations.amenities, contains('Wifi'));
+  });
+
+  testWidgets('đóng cơ sở có hộp thoại xác nhận', (tester) async {
+    final pending = await AppRepositories.owner.getOwnerFacility('f-own-pending');
+    await pump(tester, OwnerFacilityDetailScreen(facility: pending));
+    await tester.tap(find.text(OwnerFacilityStrings.closeButton));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerFacilityStrings.closeConfirm(pending.profile.name)), findsOneWidget);
+    await tester.tap(find.text(OwnerFacilityStrings.confirm));
+    await tester.pumpAndSettle();
+    expect((await AppRepositories.owner.getOwnerFacilities()).any((f) => f.id == 'f-own-pending'), isFalse);
+  });
+
+  testWidgets('bố cục form cơ sở và chi tiết cơ sở: nhiều cỡ máy + chữ phóng to không tràn', (tester) async {
+    final hoaLu = await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu');
+    final problems = [
+      ...await collectLayoutProblems(tester, 'Form tạo', () => const FacilityFormScreen()),
+      ...await collectLayoutProblems(tester, 'Form sửa', () => FacilityFormScreen(facility: hoaLu)),
+      ...await collectLayoutProblems(tester, 'Chi tiết', () => OwnerFacilityDetailScreen(facility: hoaLu)),
+    ];
+    expect(problems, isEmpty, reason: problems.join('\n'));
+  });
+
+  testWidgets('chi tiết cơ sở có "Sân & giá" và "Ca sân" như web', (tester) async {
+    final tt = await AppRepositories.owner.getOwnerFacility('f-hcm-thientrieu');
+    await pump(tester, OwnerFacilityDetailScreen(facility: tt));
+    expect(find.text(OwnerSlotStrings.courtsEntry), findsOneWidget);
+    expect(find.text(OwnerSlotStrings.slotsEntry), findsOneWidget);
+
+    await tester.tap(find.text(OwnerSlotStrings.courtsEntry));
+    await tester.pumpAndSettle();
+    expect(find.text(OwnerSlotStrings.tabZones), findsOneWidget);
+    expect(find.text(OwnerSlotStrings.zoneTotal(3)), findsOneWidget);
+    await tester.pageBack();
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(OwnerFacilityStrings.lockCourt));
+    await tester.tap(find.text(OwnerSlotStrings.slotsEntry));
     await tester.pumpAndSettle();
-    expect(find.textContaining('cho tới khi bạn mở khóa'), findsOneWidget);
-    await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text(OwnerFacilityStrings.lockCourt)));
-    await tester.pumpAndSettle();
-
-    expect(find.text(OwnerFacilityStrings.locked), findsOneWidget);
-    await tester.tap(find.textContaining('Sân đầy đủ 5x5'));
-    await tester.pumpAndSettle();
-    expect(find.text(OwnerFacilityStrings.pricingTitle), findsNothing); // đang khóa thì không mở màn sửa
-
-    await tester.tap(find.text(OwnerFacilityStrings.unlock));
-    await tester.pumpAndSettle();
-    expect(find.text(OwnerFacilityStrings.locked), findsNothing);
-    final court = (await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu'))
-        .courtFor(Sport.basketball, CourtType.basketballFull)!;
-    expect(court.isLocked, isFalse);
+    expect(find.text(OwnerSlotStrings.weekTitle), findsOneWidget);
+    expect(find.text(OwnerSlotStrings.generateTitle), findsOneWidget);
   });
 
   testWidgets('chi tiết cơ sở đã duyệt: có lịch tạm đóng và mở lại được', (tester) async {
     final hoaLu = await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu');
     await pump(tester, OwnerFacilityDetailScreen(facility: hoaLu));
     expect(find.text('Thay mặt cỏ sân 11 người'), findsOneWidget);
-    expect(find.text(OwnerFacilityStrings.noPricing), findsOneWidget);
 
     await tester.tap(find.text(OwnerFacilityStrings.reopen));
     await tester.pumpAndSettle();
     expect(find.text(OwnerFacilityStrings.noClosures), findsOneWidget);
     expect((await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu')).closures, isEmpty);
     expect(hoaLu.status, ApprovalStatus.approved);
-  });
-
-  group('giảm giá gói định kỳ', () {
-    Finder field() => find.widgetWithText(TextField, OwnerFacilityStrings.discountLabel);
-    Finder save() => find.widgetWithText(ElevatedButton, OwnerFacilityStrings.discountSave);
-    bool saveEnabled(WidgetTester tester) => tester.widget<ElevatedButton>(save()).onPressed != null;
-
-    Future<void> enter(WidgetTester tester, String text) async {
-      await tester.ensureVisible(field());
-      await tester.enterText(field(), text);
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('chưa giảm: gợi ý 10%, nhập ngoài 0–50 bị chặn, lưu 15% rồi về 0 (không giảm)', (tester) async {
-      final hoaLu = await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu');
-      expect(hoaLu.recurringDiscountPercent, 0);
-      await pump(tester, OwnerFacilityDetailScreen(facility: hoaLu));
-
-      expect(find.text(OwnerFacilityStrings.discountCurrent(0)), findsOneWidget);
-      expect(tester.widget<TextField>(field()).controller!.text, '10');
-      expect(saveEnabled(tester), isTrue);
-
-      await enter(tester, '51');
-      expect(find.text(OwnerFacilityStrings.discountInvalid), findsOneWidget);
-      expect(saveEnabled(tester), isFalse);
-
-      await enter(tester, '15');
-      await tester.tap(save());
-      await tester.pumpAndSettle();
-      expect(find.text(OwnerFacilityStrings.discountCurrent(15)), findsOneWidget);
-      expect((await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu')).recurringDiscountPercent, 15);
-      expect(saveEnabled(tester), isFalse); // chưa đổi gì so với mức đang áp dụng
-
-      await enter(tester, '0');
-      await tester.tap(save());
-      await tester.pumpAndSettle();
-      expect(find.text(OwnerFacilityStrings.discountCurrent(0)), findsOneWidget);
-      expect((await AppRepositories.owner.getOwnerFacility('f-hcm-hoalu')).recurringDiscountPercent, 0);
-    });
-
-    testWidgets('cơ sở bị từ chối: hỏi lại trước khi lưu; lưu xong chuyển về chờ duyệt', (tester) async {
-      final rejected = await AppRepositories.owner.getOwnerFacility('f-own-rejected');
-      await pump(tester, OwnerFacilityDetailScreen(facility: rejected));
-      await enter(tester, '20');
-
-      await tester.tap(save());
-      await tester.pumpAndSettle();
-      expect(find.text(OwnerFacilityStrings.discountRejectedTitle), findsOneWidget);
-      await tester.tap(find.text(OwnerFacilityStrings.cancel));
-      await tester.pumpAndSettle();
-      expect((await AppRepositories.owner.getOwnerFacility('f-own-rejected')).status, ApprovalStatus.rejected);
-
-      await tester.tap(save());
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(OwnerFacilityStrings.discountRejectedConfirm));
-      await tester.pumpAndSettle();
-      final saved = await AppRepositories.owner.getOwnerFacility('f-own-rejected');
-      expect(saved.recurringDiscountPercent, 20);
-      expect(saved.status, ApprovalStatus.pending);
-      expect(find.text(OwnerFacilityStrings.pendingBanner), findsOneWidget);
-    });
-
-    testWidgets('bố cục ô giảm giá: nhiều cỡ máy + chữ phóng to không tràn', (tester) async {
-      final rejected = await AppRepositories.owner.getOwnerFacility('f-own-rejected');
-      final problems = await collectLayoutProblems(
-        tester,
-        'Chi tiết cơ sở (ô giảm giá)',
-        () => OwnerFacilityDetailScreen(facility: rejected),
-        // ListView chỉ dựng phần đang hiện: cuộn tới ô giảm giá để kiểm đúng chỗ.
-        interact: (tester) async {
-          await tester.scrollUntilVisible(field(), 200, scrollable: find.byType(Scrollable).first);
-          await tester.pump();
-        },
-      );
-      expect(problems, isEmpty, reason: problems.join('\n'));
-    });
   });
 }

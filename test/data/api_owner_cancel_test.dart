@@ -62,18 +62,17 @@ void main() {
       'vouchersIssued': 1,
     });
 
-    final result = await repo.cancelBooking('b1', reason: ' Sân hỏng đèn ', lockSlot: true);
-    expect(server.requests.single.data, {'reason': 'Sân hỏng đèn', 'lockSlotAfterCancel': true});
+    final result = await repo.cancelBooking('b1', reasonCode: 6, reason: ' Sân hỏng đèn ', lockSlot: true);
+    expect(server.requests.single.data, {'cancelReasonId': 6, 'reason': 'Sân hỏng đèn', 'lockSlotAfterCancel': true});
     expect(result.penaltyAmount, 60000);
     expect(result.fairPlayPenalty, 10);
     expect(result.refundAmount, 300000);
-    expect(result.lateCancel, isTrue);
   });
 
-  test('không nhập lý do thì không gửi reason (BE tự dùng lý do mặc định); lỗi BE giữ nguyên câu', () async {
+  test('không chọn lý do thì gửi null (BE tự dùng lý do mặc định); lỗi BE giữ nguyên câu', () async {
     server.ok('POST', ApiOwnerRepository.cancelBookingPath('b2'), {'ownerPenaltyAmount': 30000, 'lateCancel': false});
     final result = await repo.cancelBooking('b2', reason: '  ');
-    expect(server.requests.single.data, {'lockSlotAfterCancel': false});
+    expect(server.requests.single.data, {'cancelReasonId': null, 'reason': null, 'lockSlotAfterCancel': false});
     expect(result.fairPlayPenalty, 0);
 
     server.fail('POST', ApiOwnerRepository.cancelBookingPath('b3'), 400, 'Đơn đã bị hủy');
@@ -90,5 +89,9 @@ void main() {
     expect(OwnerCancelRules.penaltyFor(300000, late: true), 60000);
     expect(OwnerCancelRules.penaltyFor(300000, late: false), 30000);
     expect(OwnerCancelRules.penaltyFor(125005, late: false), 12501);
+    expect(OwnerCancelRules.penaltyFor(300000, late: true, walkIn: true), 0, reason: 'vãng lai không phạt');
+    expect(OwnerCancelRules.fairPlayFor(late: true, walkIn: true), 0);
+    expect(OwnerCancelRules.fairPlayFor(late: true), 10);
+    expect(OwnerCancelRules.fairPlayFor(late: false), 0);
   });
 }

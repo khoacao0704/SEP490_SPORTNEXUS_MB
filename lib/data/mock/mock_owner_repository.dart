@@ -8,10 +8,13 @@ import '../../core/strings/owner_facility_strings.dart';
 import '../../core/strings/owner_finance_strings.dart';
 import '../../core/strings/owner_review_strings.dart';
 import '../../core/strings/owner_strings.dart';
-import '../../models/court_session.dart';
+import '../../models/booking.dart' show CancelReason;
+import '../../models/owner_booking.dart';
+import '../../models/owner_court.dart';
 import '../../models/court_type.dart';
 import '../../models/facility.dart';
 import '../../models/facility_review.dart';
+import '../../models/geo_point.dart';
 import '../../models/owner_facility.dart';
 import '../../models/owner_finance.dart';
 import '../../models/sport.dart';
@@ -19,6 +22,7 @@ import '../../models/wallet_transaction.dart';
 import '../repositories/owner_repository.dart';
 import '../repositories/wallet_repository.dart';
 import 'mock_auth_repository.dart';
+import 'mock_owner_booking_data.dart';
 import 'mock_owner_facility_data.dart';
 import 'mock_owner_finance_data.dart';
 import 'mock_owner_review_data.dart';
@@ -27,14 +31,13 @@ import 'mock_wallet_repository.dart';
 /// Bản giả lập [OwnerRepository].
 ///
 /// - Chủ sân demo có Thiên Triều, Hoa Lư (đã duyệt), một hồ sơ chờ duyệt và một hồ sơ bị từ chối.
-/// - Lượt sân mẫu tạo theo giờ hiện tại (đủ các trạng thái). Tất cả chỉ lưu trong bộ nhớ.
+/// - Đơn và lưới ca mẫu ở [MockOwnerBookingData], tạo theo giờ hiện tại. Tất cả chỉ lưu trong bộ nhớ.
 /// - Admin duyệt trên Web nên bản giả lập không tự duyệt: hồ sơ mới nộp nằm ở "Chờ duyệt".
-/// - Check-out giải ngân và Điểm phạt vắng mặt cộng vào Ví điểm giả lập của Chủ sân ([wallet]).
+/// - Lệ phí giải đấu cộng vào Ví điểm giả lập của Chủ sân ([wallet]).
 /// - Chưa nối với phía Player (tìm sân / đặt sân): khi có BE, cả hai cùng đọc một nguồn.
 class MockOwnerRepository implements OwnerRepository {
   final Duration latency;
   final DateTime Function() _now;
-  List<CourtSession>? _sessions;
 
   /// ownerId -> cơ sở của chủ sân đó.
   final Map<String, List<OwnerFacility>> _facilities = {};
@@ -46,8 +49,6 @@ class MockOwnerRepository implements OwnerRepository {
   final MockWalletRepository wallet;
   List<RevenueItem>? _revenue;
 
-  /// Lượt vắng mặt đã ghi nhận Điểm phạt.
-  final Set<String> _settledNoShows = {};
 
   /// billId -> thời điểm trả.
   Map<String, DateTime>? _paidFees;
@@ -67,131 +68,221 @@ class MockOwnerRepository implements OwnerRepository {
     return (await _mine()).where((f) => f.isApproved).map((f) => f.toFacility()).toList();
   }
 
-  @override
-  Future<List<Map<String, dynamic>>> getAmenities() async {
-    return [
-      {
-        'id': 'mock-amenity-1',
-        'name': 'Parking',
-        'iconCode': 'parking',
-      },
-      {
-        'id': 'mock-amenity-2',
-        'name': 'Changing Room',
-        'iconCode': 'changing-room',
-      },
-      {
-        'id': 'mock-amenity-3',
-        'name': 'Shower',
-        'iconCode': 'shower',
-      },
-    ];
+  // ---------------- Vận hành: đơn, lịch, check-in ----------------
+
+  /// Đơn + lưới ca giả lập (chỉ trong bộ nhớ).
+  late final MockOwnerBookingData ops = MockOwnerBookingData(_now);
+
+  Future<void> _requireFacility(String facilityId) async {
+    if (!(await _myFacilityIds()).contains(facilityId)) throw const OwnerException(OwnerFacilityStrings.notFound);
+  }
+
+  Future<OwnerBooking> _myBooking(String bookingId) async {
+    final b = ops.find(bookingId);
+    await _requireFacility(b.facilityId);
+    return b;
   }
 
   @override
-  Future<List<CourtSession>> getSessions({required DateTime day, String? facilityId}) async {
-    await _delay();
-    final ids = await _myFacilityIds();
-    await _settleNoShows(ids);
-    return _all()
-        .where((s) => ids.contains(s.facilityId))
-        .where((s) => facilityId == null || s.facilityId == facilityId)
-        .where((s) => s.start.year == day.year && s.start.month == day.month && s.start.day == day.day)
-        .toList()
-      ..sort((a, b) => a.start.compareTo(b.start));
-  }
-
-  @override
-  Future<CourtSession> getSession(String sessionId) async {
-    await _delay();
-    return _find(sessionId, await _myFacilityIds());
-  }
-
-  @override
-  Future<TicketLookup> lookupTicket(String code) async {
-    await _delay();
-    final ids = await _myFacilityIds();
-    final normalized = code.trim().toUpperCase();
-    for (final s in _all().where((s) => ids.contains(s.facilityId))) {
-      for (final p in s.players) {
-        if (p.ticketCode.toUpperCase() == normalized) return TicketLookup(session: s, player: p);
-      }
-    }
-    throw const OwnerException(OwnerStrings.ticketNotFound);
-  }
-
-
-  @override
-  Future<void> scanQr({
+  Future<OwnerBookingPage> getBookings({
     required String facilityId,
-    required String qrCode,
+    DateTime? date,
+    DateTime? from,
+    DateTime? to,
+    String? status,
+    String? search,
+    int page = 1,
+    int pageSize = 15,
   }) async {
-    throw const OwnerException(
-      'Quét QR trực tiếp qua API chưa được bật trong mock.',
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.page(
+      facilityId: facilityId,
+      date: date,
+      from: from,
+      to: to,
+      status: status,
+      search: search,
+      page: page,
+      pageSize: pageSize,
     );
   }
 
   @override
-  Future<CourtSession> checkIn({required String sessionId, required String userId}) async {
+  Future<OwnerBooking> getBooking(String bookingId) async {
     await _delay();
-    final session = _find(sessionId, await _myFacilityIds());
-    final now = _now();
-    final player = session.players.where((p) => p.userId == userId).firstOrNull;
-    if (player == null) throw const OwnerException(OwnerStrings.ticketNotFound);
-
-    final block = session.checkInBlock(player, now);
-    if (block != null) throw OwnerException(OwnerStrings.checkInBlocked(session, block));
-
-    // Sân con do người chơi chọn lúc đặt: check-in chỉ ghi nhận giờ vào sân.
-    final updated = session.copyWith(
-      players: [
-        for (final p in session.players) p.userId == userId ? p.copyWith(checkedInAt: now) : p,
-      ],
-    );
-    _replace(updated);
-    return updated;
+    return _myBooking(bookingId);
   }
 
   @override
-  Future<CourtSession> checkOut(String sessionId) async {
+  Future<FacilityDaySchedule> getDaySchedule(String facilityId, DateTime date) async {
     await _delay();
-    final session = _find(sessionId, await _myFacilityIds());
-    final now = _now();
-    final status = session.status(now);
-    if (status == SessionStatus.cancelled) throw const OwnerException(OwnerStrings.sessionCancelled);
-    if (status == SessionStatus.completed) throw const OwnerException(OwnerStrings.sessionCompleted);
-    if (!session.canCheckOut(now)) throw const OwnerException(OwnerStrings.checkOutNeedsCheckIn);
+    await _requireFacility(facilityId);
+    return ops.daySchedule(facilityId, date);
+  }
 
-    final updated = session.copyWith(checkedOutAt: now);
-    _replace(updated);
-    _revenueItems().add(_courtFeeItem(updated));
-    if (updated.paidViaApp > 0) {
-      await wallet.credit(
-        type: TransactionType.escrowRelease,
-        amount: updated.paidViaApp,
-        description: 'Giải ngân ${updated.facilityName} • ${updated.sportLabel}',
-        reference: updated.id,
-      );
-    }
-    return updated;
+  @override
+  Future<void> createWalkIn(WalkInRequest request) async {
+    await _delay();
+    ops.walkIn(request);
+  }
+
+  @override
+  Future<void> checkInBooking(String bookingId) async {
+    await _delay();
+    await _myBooking(bookingId);
+    ops.checkIn(bookingId);
+  }
+
+  @override
+  Future<void> endBooking(String bookingId) async {
+    await _delay();
+    await _myBooking(bookingId);
+    ops.end(bookingId);
+  }
+
+  @override
+  Future<void> setSlotLocked(String slotId, {required bool locked}) async {
+    await _delay();
+    ops.setLocked(slotId, locked);
+  }
+
+  @override
+  Future<void> setSlotPrice(String slotId, int price) async {
+    await _delay();
+    ops.setPrice(slotId, price);
+  }
+
+  @override
+  Future<ScanResult> scanQr({required String facilityId, required String qrCode}) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.scan(facilityId, qrCode);
+  }
+
+  @override
+  Future<List<CancelReason>> getCancelReasons() async {
+    await _delay();
+    return MockOwnerBookingData.cancelReasons;
   }
 
   /// Bản giả lập: đánh dấu hủy và trả Điểm phạt tính theo [OwnerCancelRules]; không trừ ví giả lập.
   @override
-  Future<OwnerCancelResult> cancelBooking(String sessionId, {String? reason, bool lockSlot = false}) async {
+  Future<OwnerCancelResult> cancelBooking(String bookingId, {int? reasonCode, String? reason, bool lockSlot = false}) async {
     await _delay();
-    final session = _find(sessionId, await _myFacilityIds());
-    final now = _now();
-    if (session.cancelledAt != null) throw const OwnerException(OwnerStrings.sessionCancelled);
-    if (session.checkedOutAt != null) throw const OwnerException(OwnerStrings.sessionCompleted);
-    final late = session.isLateOwnerCancel(now);
-    _replace(session.copyWith(cancelledAt: now));
-    return OwnerCancelResult(
-      penaltyAmount: session.ownerCancelPenalty(now),
-      fairPlayPenalty: late ? OwnerCancelRules.lateFairPlayPenalty : 0,
-      refundAmount: session.paidViaApp,
-      lateCancel: late,
-    );
+    await _myBooking(bookingId);
+    return ops.cancel(bookingId, reason: reason, lockSlot: lockSlot);
+  }
+
+  // ---------------- Sân & giá, Ca sân ----------------
+
+  @override
+  Future<List<SportCategory>> getSports() async {
+    await _delay();
+    return MockOwnerBookingData.sports;
+  }
+
+  @override
+  Future<List<OwnerCourt>> getCourts(String facilityId) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.courts(facilityId);
+  }
+
+  @override
+  Future<OwnerCourt> getCourt(String facilityId, String courtId) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.court(facilityId, courtId);
+  }
+
+  @override
+  Future<void> createCourt(String facilityId, CourtInput input) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    ops.createCourt(facilityId, input);
+  }
+
+  @override
+  Future<void> updateCourt(String facilityId, OwnerCourt previous, CourtInput input) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    ops.updateCourt(facilityId, previous.id, input);
+  }
+
+  @override
+  Future<int> deleteCourt(String facilityId, String courtId) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.deleteCourt(facilityId, courtId);
+  }
+
+  @override
+  Future<void> regenerateCourtSlots(String courtId) async => _delay();
+
+  @override
+  Future<void> updateOpenHours(String facilityId, {required String openTime, required String closeTime}) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    ops.setHours(facilityId, openTime, closeTime);
+  }
+
+  @override
+  Future<SlotsRange> getSlotsRange(String facilityId, {required DateTime from, required DateTime to}) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.range(facilityId, from, to);
+  }
+
+  @override
+  Future<FacilityAvailability> getAvailability(String facilityId, DateTime date) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.availability(facilityId, date);
+  }
+
+  @override
+  Future<List<GenerateResultRow>> generateSlots(
+    String facilityId,
+    GenerateSlotsRequest request, {
+    Map<String, String> courtNames = const {},
+  }) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.generate(facilityId, request);
+  }
+
+  @override
+  Future<BulkSlotResult> bulkSlots(String facilityId, BulkSlotRequest request) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.bulk(facilityId, request);
+  }
+
+  @override
+  Future<void> deleteSlot(String slotId) async {
+    await _delay();
+    ops.deleteSlot(slotId);
+  }
+
+  @override
+  Future<List<PricePeriod>> getPricePeriods(String facilityId, {DateTime? from, DateTime? to}) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.periods(facilityId, from: from);
+  }
+
+  @override
+  Future<PricePeriodResult> savePricePeriod(String facilityId, PricePeriod period) async {
+    await _delay();
+    await _requireFacility(facilityId);
+    return ops.savePeriod(facilityId, period);
+  }
+
+  @override
+  Future<void> deletePricePeriod(String facilityId, String periodId) async {
+    await _delay();
+    ops.deletePeriod(facilityId, periodId);
   }
 
   // ---------------- Quản lý cơ sở & sân ----------------
@@ -208,70 +299,217 @@ class MockOwnerRepository implements OwnerRepository {
     return _facility(await _mine(), facilityId);
   }
 
+  // ---------------- Cơ sở của tôi (giống Web) ----------------
+
+  static const List<FacilityAmenity> amenities = [
+    FacilityAmenity(id: 'am-parking', name: 'Bãi đỗ xe'),
+    FacilityAmenity(id: 'am-shower', name: 'Phòng tắm'),
+    FacilityAmenity(id: 'am-locker', name: 'Tủ đồ'),
+    FacilityAmenity(id: 'am-wifi', name: 'Wifi'),
+    FacilityAmenity(id: 'am-canteen', name: 'Căn tin'),
+  ];
+
+  static const List<AreaOption> provinces = [
+    AreaOption(code: '79', name: 'Hồ Chí Minh'),
+    AreaOption(code: '01', name: 'Hà Nội'),
+    AreaOption(code: '48', name: 'Đà Nẵng'),
+  ];
+
+  static const Map<String, List<AreaOption>> wards = {
+    '79': [
+      AreaOption(code: '26734', name: 'Phường Sài Gòn'),
+      AreaOption(code: '26737', name: 'Phường Tân Định'),
+      AreaOption(code: '26740', name: 'Phường Thạnh Mỹ Tây'),
+      AreaOption(code: '26743', name: 'Phường Tân Sơn Hòa'),
+      AreaOption(code: '26746', name: 'Phường Hòa Hưng'),
+    ],
+    '01': [AreaOption(code: '00004', name: 'Phường Ba Đình'), AreaOption(code: '00008', name: 'Phường Hoàn Kiếm')],
+    '48': [AreaOption(code: '20194', name: 'Phường Hải Châu'), AreaOption(code: '20197', name: 'Phường Sơn Trà')],
+  };
+
+
   @override
-  Future<OwnerFacility> submitFacility(FacilitySubmission submission) async {
+  Future<List<FacilityAmenity>> getAmenities() async {
     await _delay();
-    _validateSubmission(submission);
+    return amenities;
+  }
+
+  @override
+  Future<List<AreaOption>> getProvinces() async {
+    await _delay();
+    return provinces;
+  }
+
+  @override
+  Future<List<AreaOption>> getWards(String provinceCode) async {
+    await _delay();
+    return wards[provinceCode] ?? const [];
+  }
+
+  static String _nameOf(List<AreaOption> list, String code) =>
+      list.where((a) => a.code == code).firstOrNull?.name ?? '—';
+
+  OwnerFacility _withInput(OwnerFacility base, FacilityInput input) {
+    final city = _nameOf(provinces, input.provinceCode);
+    final ward = _nameOf(wards[input.provinceCode] ?? const [], input.wardCode);
+    final location = input.latitude != null && input.longitude != null
+        ? GeoPoint(input.latitude!, input.longitude!)
+        : base.profile.location;
+    return OwnerFacility(
+      id: base.id,
+      status: base.status,
+      profile: FacilityProfile(
+        name: input.name,
+        city: city,
+        ward: ward,
+        address: '${input.streetAddress}, $ward, $city',
+        location: location,
+        licenseNumber: base.profile.licenseNumber,
+        licenseImages: base.profile.licenseImages,
+      ),
+      operations: FacilityOperations(
+        phone: input.phone ?? '',
+        openMinutes: parseMinutes(input.openTime),
+        closeMinutes: parseMinutes(input.closeTime),
+        description: input.description ?? '',
+        amenities: base.operations.amenities,
+        rules: (input.rules ?? '').split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList(),
+        images: base.operations.images,
+      ),
+      courts: base.courts,
+      closures: base.closures,
+      submittedAt: base.submittedAt,
+      rejectReason: base.rejectReason,
+      rating: base.rating,
+      reviewCount: base.reviewCount,
+      recurringDiscountPercent: input.recurringDiscountPercent,
+      isSuspended: base.isSuspended,
+      streetAddress: input.streetAddress,
+      provinceCode: input.provinceCode,
+      wardCode: input.wardCode,
+      autoGenerateSlots: input.autoGenerateSlots,
+      isLocked: base.isLocked,
+      lockedReason: base.lockedReason,
+      photos: base.photos,
+      amenityItems: base.amenityItems,
+      courtCount: base.courtCount,
+    );
+  }
+
+  void _validateInput(FacilityInput input) {
+    if (input.name.trim().isEmpty) throw const OwnerException(OwnerFacilityStrings.errName);
+    if (input.streetAddress.trim().isEmpty || input.provinceCode.isEmpty || input.wardCode.isEmpty) {
+      throw const OwnerException(OwnerFacilityStrings.errAddress);
+    }
+    if (parseMinutes(input.closeTime) <= parseMinutes(input.openTime)) {
+      throw const OwnerException(OwnerFacilityStrings.errHours);
+    }
+  }
+
+  @override
+  Future<OwnerFacility> createFacility(FacilityInput input) async {
+    await _delay();
+    _validateInput(input);
     final mine = await _mine();
-    final created = OwnerFacility(
+    final blank = OwnerFacility(
       id: 'f-own-${_now().millisecondsSinceEpoch}-${++_counter}',
       status: ApprovalStatus.pending,
-      profile: submission.profile,
-      operations: submission.operations,
-      courts: [for (final c in submission.courts) CourtConfig(sport: c.sport, courtType: c.courtType, courtCount: c.courtCount)],
+      profile: const FacilityProfile(
+        name: '',
+        city: '',
+        ward: '',
+        address: '',
+        location: GeoPoint(10.7769, 106.7009),
+        licenseNumber: '',
+        licenseImages: [],
+      ),
+      operations: const FacilityOperations(phone: '', openMinutes: 360, closeMinutes: 1320),
+      courts: const [],
       submittedAt: _now(),
+    );
+    final created = _withInput(blank, input).copyWith(
+      amenityItems: [for (final a in amenities) if (input.amenityIds.contains(a.id)) a],
     );
     mine.insert(0, created);
     return created;
   }
 
   @override
-  Future<OwnerFacility> resubmitFacility(String facilityId, FacilitySubmission submission) async {
+  Future<OwnerFacility> updateFacility(String facilityId, FacilityInput input) async {
+    await _delay();
+    _validateInput(input);
+    final mine = await _mine();
+    return _save(mine, _withInput(_facility(mine, facilityId), input));
+  }
+
+  @override
+  Future<void> deleteFacility(String facilityId) async {
+    await _delay();
+    final mine = await _mine();
+    _facility(mine, facilityId);
+    final upcoming = ops.activeBookingsIn(facilityId, _now(), DateTime(9999));
+    if (upcoming > 0) throw OwnerException(OwnerFacilityStrings.closeBlocked(upcoming));
+    mine.removeWhere((f) => f.id == facilityId);
+  }
+
+  List<FacilityPhoto> _photosOf(OwnerFacility f) => f.photos.isNotEmpty
+      ? f.photos
+      : [
+          for (var i = 0; i < f.operations.images.length; i++)
+            FacilityPhoto(id: '${f.id}-img-$i', url: f.operations.images[i], isThumbnail: i == 0),
+        ];
+
+  OwnerFacility _savePhotos(List<OwnerFacility> mine, OwnerFacility f, List<FacilityPhoto> photos) {
+    final list = [...photos];
+    if (list.isNotEmpty && !list.any((p) => p.isThumbnail)) {
+      list[0] = FacilityPhoto(id: list[0].id, url: list[0].url, isThumbnail: true);
+    }
+    return _save(
+      mine,
+      f.copyWith(photos: list, operations: f.operations.copyWithImages([for (final p in list) p.url])),
+    );
+  }
+
+  @override
+  Future<void> uploadFacilityPhotos(String facilityId, List<String> filePaths) async {
     await _delay();
     final mine = await _mine();
     final f = _facility(mine, facilityId);
-    if (f.status != ApprovalStatus.rejected) throw const OwnerException(OwnerFacilityStrings.notRejected);
-    _validateSubmission(submission);
-    return _save(
-      mine,
-      f.copyWith(
-        status: ApprovalStatus.pending,
-        profile: submission.profile,
-        operations: submission.operations,
-        courts: [for (final c in submission.courts) CourtConfig(sport: c.sport, courtType: c.courtType, courtCount: c.courtCount)],
-        submittedAt: _now(),
-        clearRejectReason: true,
-      ),
-    );
-  }
-
-  @override
-  Future<OwnerFacility> requestProfileChange(String facilityId, FacilityProfile profile) async {
-    await _delay();
-    final mine = await _mine();
-    final f = _requireApproved(mine, facilityId);
-    if (f.hasPendingChange) throw const OwnerException(OwnerFacilityStrings.changeAlreadyPending);
-    _validateProfile(profile);
-    return _save(
-      mine,
-      f.copyWith(change: ProfileChange(profile: profile, status: ApprovalStatus.pending, submittedAt: _now())),
-    );
-  }
-
-  @override
-  Future<OwnerFacility> updateOperations(String facilityId, FacilityOperations operations) async {
-    await _delay();
-    final mine = await _mine();
-    final f = _requireApproved(mine, facilityId);
-    _validateOperations(operations);
-    // Giờ mở cửa mới phải còn chứa giờ cao điểm của các loại sân đã cài giá.
-    for (final c in f.courts) {
-      final p = c.pricing;
-      if (p != null && (p.peakStart < operations.openMinutes || p.peakEnd > operations.closeMinutes)) {
-        throw const OwnerException(OwnerFacilityStrings.invalidPeak);
-      }
+    final photos = _photosOf(f);
+    if (photos.length + filePaths.length > OwnerFacilityStrings.maxPhotos) {
+      throw OwnerException(OwnerFacilityStrings.tooManyPhotos(OwnerFacilityStrings.maxPhotos));
     }
-    return _save(mine, f.copyWith(operations: operations));
+    _savePhotos(mine, f, [
+      ...photos,
+      for (final p in filePaths) FacilityPhoto(id: 'img-${++_counter}', url: p),
+    ]);
+  }
+
+  @override
+  Future<void> deleteFacilityPhoto(String facilityId, String photoId) async {
+    await _delay();
+    final mine = await _mine();
+    final f = _facility(mine, facilityId);
+    _savePhotos(mine, f, _photosOf(f).where((p) => p.id != photoId).toList());
+  }
+
+  @override
+  Future<void> setFacilityThumbnail(String facilityId, String photoId) async {
+    await _delay();
+    final mine = await _mine();
+    final f = _facility(mine, facilityId);
+    _savePhotos(mine, f, [
+      for (final p in _photosOf(f)) FacilityPhoto(id: p.id, url: p.url, isThumbnail: p.id == photoId),
+    ]);
+  }
+
+  @override
+  Future<void> updateFacilityAmenities(String facilityId, List<String> amenityIds) async {
+    await _delay();
+    final mine = await _mine();
+    final f = _facility(mine, facilityId);
+    final items = [for (final a in amenities) if (amenityIds.contains(a.id)) a];
+    _save(mine, f.copyWith(amenityItems: items, operations: f.operations.copyWithAmenities([for (final a in items) a.name])));
   }
 
   @override
@@ -313,18 +551,6 @@ class MockOwnerRepository implements OwnerRepository {
       }
     }
 
-    // Không giảm số sân con dưới sân con đang được lượt sân sắp tới / đang chơi sử dụng.
-    final now = _now();
-    final highestInUse = _all()
-        .where((s) =>
-            s.facilityId == facilityId &&
-            s.sport == court.sport &&
-            s.courtType == court.courtType &&
-            _stillActive(s, now))
-        .map((s) => int.tryParse(s.assignedCourt.replaceAll(RegExp(r'\D'), '')) ?? 0)
-        .fold(0, (a, b) => a > b ? a : b);
-    if (court.courtCount < highestInUse) throw const OwnerException(OwnerFacilityStrings.courtInUse);
-
     final exists = f.courtFor(court.sport, court.courtType) != null;
     return _save(
       mine,
@@ -346,13 +572,7 @@ class MockOwnerRepository implements OwnerRepository {
     if (court.isLocked) throw const OwnerException(OwnerFacilityStrings.courtLocked);
 
     final now = _now();
-    final upcoming = _all()
-        .where((s) =>
-            s.facilityId == facilityId &&
-            s.sport == sport &&
-            s.courtType == courtType &&
-            _stillActive(s, now))
-        .length;
+    final upcoming = ops.activeBookingsIn(facilityId, now, DateTime(9999), sportLabel: sport.label);
     if (upcoming > 0) throw OwnerException(OwnerFacilityStrings.lockBlocked(upcoming));
 
     return _save(
@@ -397,14 +617,12 @@ class MockOwnerRepository implements OwnerRepository {
       to: DateTime(to.year, to.month, to.day),
       reason: reason.trim(),
     );
-    // Chặn nếu trong khoảng đó đã có lượt đặt còn hiệu lực.
-    final booked = _all()
-        .where((s) =>
-            s.facilityId == facilityId &&
-            s.cancelledAt == null &&
-            s.checkedOutAt == null &&
-            closure.blocks(s.sport, s.courtType, s.start, s.end))
-        .length;
+    final booked = ops.activeBookingsIn(
+      facilityId,
+      closure.from,
+      DateTime(closure.to.year, closure.to.month, closure.to.day + 1),
+      sportLabel: sport?.label,
+    );
     if (booked > 0) throw OwnerException(OwnerFacilityStrings.closureBlocked(booked));
     return _save(mine, f.copyWith(closures: [...f.closures, closure]));
   }
@@ -423,7 +641,6 @@ class MockOwnerRepository implements OwnerRepository {
   Future<MonthlyRevenue> getMonthlyRevenue(DateTime month, {String? facilityId}) async {
     await _delay();
     final ids = await _myFacilityIds();
-    await _settleNoShows(ids);
     return MonthlyRevenue(
       month: DateTime(month.year, month.month, 1),
       items: _revenueItems()
@@ -541,7 +758,6 @@ class MockOwnerRepository implements OwnerRepository {
 
   List<RevenueItem> _revenueItems() => _revenue ??= [
         ...MockOwnerFinanceData.seed(_now()),
-        for (final s in _all().where((s) => s.checkedOutAt != null)) _courtFeeItem(s),
       ];
 
   /// Mặc định: phí tháng đầu tiên đã trả, các tháng sau chưa trả.
@@ -574,43 +790,6 @@ class MockOwnerRepository implements OwnerRepository {
       ));
     }
     return bills.reversed.toList();
-  }
-
-  RevenueItem _courtFeeItem(CourtSession s) => RevenueItem(
-        id: 'rv-${s.id}',
-        date: s.start,
-        facilityId: s.facilityId,
-        facilityName: s.facilityName,
-        kind: RevenueKind.courtFee,
-        amount: s.totalPrice,
-        viaApp: s.paidViaApp,
-        description: s.sportLabel,
-      );
-
-  /// Vắng mặt: Điểm đã trả qua app về chủ sân như Điểm phạt (BE tự làm khi đánh vắng).
-  Future<void> _settleNoShows(Set<String> facilityIds) async {
-    final now = _now();
-    for (final s in _all()) {
-      if (!facilityIds.contains(s.facilityId) || _settledNoShows.contains(s.id)) continue;
-      if (s.status(now) != SessionStatus.noShow || s.paidViaApp <= 0) continue;
-      _settledNoShows.add(s.id);
-      _revenueItems().add(RevenueItem(
-        id: 'rv-noshow-${s.id}',
-        date: s.start,
-        facilityId: s.facilityId,
-        facilityName: s.facilityName,
-        kind: RevenueKind.penalty,
-        amount: s.paidViaApp,
-        viaApp: s.paidViaApp,
-        description: 'Vắng mặt • ${s.sportLabel}',
-      ));
-      await wallet.credit(
-        type: TransactionType.penaltyIncome,
-        amount: s.paidViaApp,
-        description: 'Vắng mặt ${s.facilityName} • ${s.sportLabel}',
-        reference: s.id,
-      );
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -652,187 +831,5 @@ class MockOwnerRepository implements OwnerRepository {
   OwnerFacility _save(List<OwnerFacility> mine, OwnerFacility updated) {
     mine[mine.indexWhere((f) => f.id == updated.id)] = updated;
     return updated;
-  }
-
-  void _validateProfile(FacilityProfile p) {
-    if ([p.name, p.city, p.ward, p.address, p.licenseNumber].any((s) => s.trim().isEmpty)) {
-      throw const OwnerException(OwnerFacilityStrings.missingInfo);
-    }
-    if (p.licenseImages.isEmpty) throw const OwnerException(OwnerFacilityStrings.missingLicenseImage);
-  }
-
-  void _validateOperations(FacilityOperations o) {
-    if (o.phone.trim().isEmpty) throw const OwnerException(OwnerFacilityStrings.missingInfo);
-    if (o.closeMinutes <= o.openMinutes) throw const OwnerException(OwnerFacilityStrings.invalidHours);
-    if (o.images.isEmpty) throw const OwnerException(OwnerFacilityStrings.missingPhoto);
-  }
-
-  void _validateSubmission(FacilitySubmission s) {
-    _validateProfile(s.profile);
-    _validateOperations(s.operations);
-    if (s.courts.isEmpty) throw const OwnerException(OwnerFacilityStrings.missingCourt);
-    if (s.courts.any((c) => c.courtCount < 1)) throw const OwnerException(OwnerFacilityStrings.invalidCourtCount);
-    final kinds = s.courts.map((c) => '${c.sport.apiValue}/${c.courtType.apiValue}').toSet();
-    if (kinds.length != s.courts.length) throw const OwnerException(OwnerFacilityStrings.duplicateCourt);
-  }
-
-  /// Lượt sân còn giữ sân: chưa hủy, chưa check-out và chưa kết thúc (hoặc đã check-in, chờ check-out).
-  static bool _stillActive(CourtSession s, DateTime now) =>
-      s.cancelledAt == null && s.checkedOutAt == null && (s.end.isAfter(now) || s.checkedInCount > 0);
-
-  CourtSession _find(String sessionId, Set<String> myFacilityIds) {
-    final s = _all().where((s) => s.id == sessionId && myFacilityIds.contains(s.facilityId)).firstOrNull;
-    if (s == null) throw const OwnerException(OwnerStrings.ticketNotFound);
-    return s;
-  }
-
-  void _replace(CourtSession updated) {
-    final list = _all();
-    list[list.indexWhere((s) => s.id == updated.id)] = updated;
-  }
-
-  List<CourtSession> _all() => _sessions ??= _seed(_now());
-
-  /// Lượt sân mẫu quanh giờ hiện tại để có đủ trạng thái khi demo.
-  static List<CourtSession> _seed(DateTime now) {
-    DateTime at(int minutes) => now.add(Duration(minutes: minutes));
-    final tomorrow = DateTime(now.year, now.month, now.day + 1);
-    const tt = 'f-hcm-thientrieu';
-    const ttName = 'Sân Cầu Lông Thiên Triều';
-    const hl = 'f-hcm-hoalu';
-    const hlName = 'Sân Bóng Hoa Lư';
-
-    SessionPlayer bookingPlayer(String id, String name, {DateTime? checkedInAt}) =>
-        SessionPlayer(userId: 'u-$id', name: name, ticketCode: 'SPN-BK-$id', checkedInAt: checkedInAt);
-    SessionPlayer lfgPlayer(String match, String user, String name, {DateTime? checkedInAt}) =>
-        SessionPlayer(userId: user, name: name, ticketCode: 'SPN-LFG-$match-$user', checkedInAt: checkedInAt);
-
-    return [
-      // Đã check-out sáng nay.
-      CourtSession(
-        id: 'OW1005',
-        kind: SessionKind.booking,
-        facilityId: tt,
-        facilityName: ttName,
-        sport: Sport.pickleball,
-        start: at(-240),
-        end: at(-180),
-        totalPrice: 150000,
-        paidViaApp: 150000,
-        players: [bookingPlayer('OW1005', 'Lê Hoàng Nam', checkedInAt: at(-245))],
-        assignedCourt: 'Sân 1',
-        checkedOutAt: at(-178),
-      ),
-      // Hết giờ, đang chờ chủ sân check-out.
-      CourtSession(
-        id: 'OW1003',
-        kind: SessionKind.booking,
-        facilityId: hl,
-        facilityName: hlName,
-        sport: Sport.football,
-        courtType: CourtType.football7,
-        start: at(-120),
-        end: at(-30),
-        totalPrice: 800000,
-        paidViaApp: 800000,
-        players: [bookingPlayer('OW1003', 'Trần Quốc Bảo', checkedInAt: at(-125))],
-        assignedCourt: 'Sân 1',
-      ),
-      // Quá T+15 không ai check-in: hệ thống đánh vắng.
-      CourtSession(
-        id: 'OW1004',
-        kind: SessionKind.booking,
-        facilityId: hl,
-        facilityName: hlName,
-        sport: Sport.football,
-        courtType: CourtType.football5,
-        start: at(-60),
-        end: at(0),
-        totalPrice: 500000,
-        paidViaApp: 125000,
-        players: [bookingPlayer('OW1004', 'Phạm Đức Huy')],
-        assignedCourt: 'Sân 2',
-      ),
-      // Kèo LFG đang chơi: 3/4 check-in, 1 người vắng.
-      CourtSession(
-        id: 'LFGOW1',
-        kind: SessionKind.lfg,
-        facilityId: tt,
-        facilityName: ttName,
-        sport: Sport.badminton,
-        start: at(-30),
-        end: at(30),
-        totalPrice: 160000,
-        paidViaApp: 160000,
-        players: [
-          lfgPlayer('LFGOW1', 'u-lfg-11', 'Võ Thanh Tùng', checkedInAt: at(-35)),
-          lfgPlayer('LFGOW1', 'u-lfg-12', 'Ngô Mỹ Linh', checkedInAt: at(-33)),
-          lfgPlayer('LFGOW1', 'u-lfg-13', 'Đặng Gia Huy', checkedInAt: at(-28)),
-          lfgPlayer('LFGOW1', 'u-lfg-14', 'Bùi Khánh Vy'),
-        ],
-        assignedCourt: 'Sân 2',
-      ),
-      // Đang trong khung check-in, đặt cọc 1/4.
-      CourtSession(
-        id: 'OW1001',
-        kind: SessionKind.booking,
-        facilityId: tt,
-        facilityName: ttName,
-        sport: Sport.badminton,
-        start: at(20),
-        end: at(80),
-        totalPrice: 160000,
-        paidViaApp: 40000,
-        players: [bookingPlayer('OW1001', 'Nguyễn Minh Anh')],
-        assignedCourt: 'Sân 3',
-      ),
-      // Kèo Team vs Team chiều nay, chưa mở check-in.
-      CourtSession(
-        id: 'LFGOW2',
-        kind: SessionKind.lfg,
-        facilityId: hl,
-        facilityName: hlName,
-        sport: Sport.football,
-        courtType: CourtType.football5,
-        start: at(180),
-        end: at(270),
-        totalPrice: 500000,
-        paidViaApp: 500000,
-        players: [
-          lfgPlayer('LFGOW2', 'u-lfg-21', 'Đội FC Sao Mai (Hùng)'),
-          lfgPlayer('LFGOW2', 'u-lfg-22', 'Đội Q1 United (Khoa)'),
-        ],
-        assignedCourt: 'Sân 1',
-      ),
-      // Ngày mai.
-      CourtSession(
-        id: 'OW1006',
-        kind: SessionKind.booking,
-        facilityId: tt,
-        facilityName: ttName,
-        sport: Sport.badminton,
-        start: tomorrow.add(const Duration(hours: 18)),
-        end: tomorrow.add(const Duration(hours: 19)),
-        totalPrice: 160000,
-        paidViaApp: 160000,
-        players: [bookingPlayer('OW1006', 'Hồ Thị Thu')],
-        assignedCourt: 'Sân 1',
-      ),
-      CourtSession(
-        id: 'OW1007',
-        kind: SessionKind.booking,
-        facilityId: hl,
-        facilityName: hlName,
-        sport: Sport.basketball,
-        courtType: CourtType.basketballHalf,
-        start: tomorrow.add(const Duration(hours: 17)),
-        end: tomorrow.add(const Duration(hours: 18)),
-        totalPrice: 150000,
-        paidViaApp: 38000,
-        players: [bookingPlayer('OW1007', 'Lý Minh Khang')],
-        assignedCourt: 'Sân 1',
-        cancelledAt: now,
-      ),
-    ];
   }
 }
