@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/owner/owner_shell.dart';
 
 import '../../core/strings/owner_strings.dart';
 import '../../theme/app_colors.dart';
@@ -57,6 +58,7 @@ class _OwnerScheduleScreenState extends State<OwnerScheduleScreen> with SingleTi
         backgroundColor: AppColors.white,
         elevation: 0.5,
         automaticallyImplyLeading: false,
+        leading: const OwnerMenuButton(),
         title: widget.facilitySelector,
         bottom: TabBar(
           controller: _tabs,

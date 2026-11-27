@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/owner/owner_shell.dart';
 
 import '../../core/strings/owner_dashboard_strings.dart';
 import '../../core/strings/owner_strings.dart';
@@ -189,6 +190,7 @@ class _OwnerOverviewScreenState extends State<OwnerOverviewScreen> {
         backgroundColor: AppColors.white,
         elevation: 0.5,
         automaticallyImplyLeading: false,
+        leading: const OwnerMenuButton(),
         title: widget.facilitySelector,
         actions: [?widget.notificationBell],
       ),

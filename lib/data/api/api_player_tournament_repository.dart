@@ -123,6 +123,7 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
       fullName: _str(m['fullName']),
       teamName: _opt(m['teamName']),
       qrCode: _str(m['qrCode']),
+      isCheckedIn: m['isCheckedIn'] == true || m['checkedInAt'] != null,
     );
   }
 
@@ -240,13 +241,26 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
       endDate: _date(m['endDate']),
       registrationDeadline: _date(m['registrationDeadline']),
       isRegistrationOpen: m['isRegistrationOpen'] == true,
+      organizerName: _str(m['organizerName'] ?? m['ownerName'] ?? m['createdByName'] ?? m['hostName']),
+      description: _str(m['description']),
+      format: _str(m['format']),
+      minRating: _intOrNull(m['minRating']),
+      maxRating: _intOrNull(m['maxRating']),
+      minRatedMatches: _intOrNull(m['minRatedMatches']),
     );
   }
 
-  static List<TournamentPrizeItem> _prizes(Object? raw) => _maps(raw)
-      .map((p) => TournamentPrizeItem(position: _int(p['position']), amount: _int(p['rewardAmount'])))
-      .toList()
-    ..sort((a, b) => a.position.compareTo(b.position));
+  static int? _intOrNull(Object? v) => v is num
+      ? v.round()
+      : v == null
+      ? null
+      : num.tryParse('$v')?.round();
+
+  static List<TournamentPrizeItem> _prizes(Object? raw) =>
+      _maps(raw)
+          .map((p) => TournamentPrizeItem(position: _int(p['position']), amount: _int(p['rewardAmount'])))
+          .toList()
+        ..sort((a, b) => a.position.compareTo(b.position));
 
   static TournamentDivision divisionFromApi(Map<String, dynamic> m) => TournamentDivision(
     id: _str(m['id']),
@@ -261,6 +275,10 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
     phase: TournamentPhase.fromApi(_opt(m['status'])),
     isRegistrationOpen: m['isRegistrationOpen'] == true,
     prizes: _prizes(m['prizes']),
+    registeredCount: _int(
+      m['registeredCount'] ?? m['currentParticipants'] ?? m['participantCount'] ?? m['totalParticipants'],
+    ),
+    isFull: m['isFull'] == true,
   );
 
   static TournamentDetails detailsFromApi(Map<String, dynamic> m) {
@@ -335,6 +353,7 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
       registrationDeadline: _date(m['registrationDeadline']),
       isRegistrationOpen: m['isRegistrationOpen'] == true,
       imageUrl: _opt(m['imageUrl']),
+      isCheckedIn: m['isCheckedIn'] == true || m['checkedInAt'] != null,
     );
   }
 
@@ -352,6 +371,9 @@ class ApiPlayerTournamentRepository implements PlayerTournamentRepository {
     mySide: _str(m['mySideName']),
     opponent: _str(m['opponentName']).isEmpty ? BracketMatch.unknownSide : _str(m['opponentName']),
     winner: _opt(m['winnerName']),
+    resultAt:
+        _date(m['completedAt'] ?? m['resultAt'] ?? m['finishedAt']) ??
+        (_opt(m['winnerName']) == null ? null : _date(m['endTime'])),
   );
 
   static Iterable<Map<String, dynamic>> _maps(Object? raw) =>

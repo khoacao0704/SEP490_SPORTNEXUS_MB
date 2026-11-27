@@ -863,6 +863,32 @@ void main() {
       expect((await SessionStore.readUser())!.hasPassword, isTrue);
     });
 
+    test('đăng xuất mọi thiết bị: gọi logout-all rồi xóa phiên trên máy (không gọi /logout nữa)', () async {
+      server.routes['POST /api/auth/logout-all'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
+      await repo.logoutAllDevices();
+      expect(server.requests.map((r) => r.path), ['/api/auth/logout-all']);
+      expect(await tokens.read(), isNull);
+      expect(await SessionStore.readUser(), isNull);
+    });
+
+    test('đăng xuất mọi thiết bị lỗi: báo câu của BE, phiên vẫn giữ', () async {
+      server.routes['POST /api/auth/logout-all'] = (500, {'statusCode': 500, 'message': 'Lỗi máy chủ', 'data': null});
+      await expectLater(repo.logoutAllDevices(), authError('Lỗi máy chủ'));
+      expect(await tokens.read(), validToken);
+    });
+
+    test('xác thực email: gửi OTP (body rỗng, đọc devOtp nếu có) rồi verify {otpCode}; mã sai báo câu của BE', () async {
+      server.routes['POST /api/auth/me/email/send-otp'] = (200, {'statusCode': 200, 'message': 'OK', 'data': {'devOtp': '654321'}});
+      server.routes['POST /api/auth/me/email/verify'] = (200, {'statusCode': 200, 'message': 'OK', 'data': null});
+      expect(await repo.sendEmailOtp(), '654321');
+      await repo.verifyEmail(' 654321 ');
+      expect(server.requests[0].data, <String, dynamic>{});
+      expect(server.requests[1].data, {'otpCode': '654321'});
+
+      server.routes['POST /api/auth/me/email/verify'] = (400, {'statusCode': 400, 'message': 'Mã OTP không đúng.', 'data': null});
+      await expectLater(repo.verifyEmail('000000'), authError('Mã OTP không đúng.'));
+    });
+
     test('đặt mật khẩu khi đã có mật khẩu: hiện câu của BE', () async {
       const message = 'Tài khoản đã có mật khẩu. Vui lòng dùng chức năng đổi mật khẩu.';
       server.routes['POST /api/auth/set-password'] = (400, {'statusCode': 400, 'message': message, 'data': null});

@@ -7,17 +7,17 @@ import '../repositories/identity_repository.dart';
 import 'api_client.dart';
 
 /// eKYC theo BE (AI đọc code BE 22/11/2026), dùng chung Owner và Player:
-/// - GET  /api/v1/owner/verification → hồ sơ gần nhất, `data = null` khi chưa gửi.
-/// - POST /api/v1/owner/verification/images (multipart `file`, JPG/PNG/WEBP ≤5MB) → url; kho riêng tư, KHÔNG dùng /uploads/images.
-/// - POST /api/v1/owner/verification {fullName, idNumber (12 số), dateOfBirth (≥18 tuổi), address?,
+/// - GET  /api/v1/me/verification → hồ sơ gần nhất, `data = null` khi chưa gửi.
+/// - POST /api/v1/me/verification/images (multipart `file`, JPG/PNG/WEBP ≤5MB) → url; kho riêng tư, KHÔNG dùng /uploads/images.
+/// - POST /api/v1/me/verification {fullName, idNumber (12 số), dateOfBirth (≥18 tuổi), address?,
 ///   idFrontImageUrl, idBackImageUrl, selfieImageUrl}. Đang PENDING gửi lại → 400. Admin duyệt tay.
 class ApiIdentityRepository implements IdentityRepository {
   final ApiClient _api;
 
   ApiIdentityRepository({required this._api});
 
-  static const String verificationPath = '/api/v1/owner/verification';
-  static const String imagesPath = '/api/v1/owner/verification/images';
+  static const String verificationPath = '/api/v1/me/verification';
+  static const String imagesPath = '/api/v1/me/verification/images';
 
   @override
   Future<IdentityVerification?> getMyVerification() async {

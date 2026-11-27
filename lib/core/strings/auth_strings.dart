@@ -102,7 +102,7 @@ class AuthStrings {
   static const String passwordMismatch = 'Mật khẩu không khớp';
 
   // Checklist điều kiện mật khẩu (hiện dưới ô mật khẩu, chuyển xanh khi đạt)
-  static const String pwRuleLength = 'Ít nhất 8 ký tự';
+  static const String pwRuleLength = 'Ít nhất 6 ký tự';
   static const String pwRuleLetter = 'Có chữ cái';
   static const String pwRuleDigit = 'Có ít nhất 1 chữ số';
   static const String pwRuleSpecial = 'Có ít nhất 1 ký tự đặc biệt';

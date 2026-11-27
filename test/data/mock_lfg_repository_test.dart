@@ -10,6 +10,7 @@ import 'package:test1/data/mock/mock_wallet_repository.dart';
 import 'package:test1/data/repositories/lfg_repository.dart';
 import 'package:test1/models/court_type.dart';
 import 'package:test1/models/lfg_match.dart';
+import 'package:test1/models/player_survey.dart' show SkillLevel;
 import 'package:test1/models/sport.dart';
 import 'package:test1/models/time_slot.dart';
 
@@ -249,6 +250,74 @@ void main() {
       expect(five, isEmpty);
     });
 
+    test('kèo cần duyệt: người xin vào chỉ gửi yêu cầu (chưa trừ Điểm), rút được yêu cầu', () async {
+      final match = await _createMatch(repo, clock, requireApproval: true);
+      expect(match.requireApproval, isTrue);
+
+      // Người khác xin vào (ví giả lập dùng chung máy nên số dư không được đổi).
+      await MockAuthRepository(latency: Duration.zero).login('owner@sportnexus.vn', 'Owner@123');
+      final before = await wallet.getBalance();
+      final claim = await repo.claimSlot(match.id);
+      final sent = await repo.confirmClaim(claim.claimId);
+      expect(sent.myStatus, LfgMyStatus.pendingApproval);
+      expect(sent.members.length, 1);
+      expect(await wallet.getBalance(), before);
+      expect((await repo.getMyMatches()).map((m) => m.id), contains(match.id));
+      await expectLater(repo.claimSlot(match.id), lfgError(LfgStrings.alreadyJoined));
+      // Không phải chủ kèo thì không duyệt được.
+      await expectLater(repo.approveRequest(match.id, 'u-guest-1'), lfgError(LfgStrings.hostOnly));
+
+      expect(await repo.leaveMatch(match.id), 0);
+      expect((await repo.getMatch(match.id)).myStatus, isNull);
+
+      await loginAs('player@sportnexus.vn');
+      final hostView = await repo.getMatch(match.id);
+      expect(hostView.pendingMembers, isEmpty);
+      expect(hostView.pastMembers.single.status, LfgMemberStatus.cancelled);
+    });
+
+    test('chủ kèo duyệt / từ chối người chờ, loại người đã vào (mở lại suất), sửa kèo', () async {
+      final match = await _createMatch(repo, clock, requireApproval: true);
+      await repo.simulatePlayerJoined(match.id);
+      await repo.simulatePlayerJoined(match.id);
+      var m = await repo.getMatch(match.id);
+      expect(m.pendingMembers.map((p) => p.userId), ['u-guest-1', 'u-guest-2']);
+      expect(m.members.length, 1);
+
+      m = await repo.approveRequest(match.id, 'u-guest-1');
+      expect(m.members.map((x) => x.userId), contains('u-guest-1'));
+      m = await repo.rejectRequest(match.id, 'u-guest-2');
+      expect(m.pendingMembers, isEmpty);
+      expect(m.pastMembers.single.status, LfgMemberStatus.rejected);
+      await expectLater(repo.rejectRequest(match.id, 'u-guest-2'), lfgError(LfgStrings.requestNotFound));
+
+      final slotsBefore = m.slotsLeft;
+      m = await repo.removeMember(match.id, 'u-guest-1');
+      expect(m.isMember('u-guest-1'), isFalse);
+      expect(m.slotsLeft, slotsBefore + 1);
+      expect(m.pastMembers.map((p) => p.status), [LfgMemberStatus.rejected, LfgMemberStatus.removed]);
+
+      m = await repo.updateMatch(
+        match.id,
+        const LfgMatchUpdate(slotsNeeded: 2, skillLevel: SkillLevel.beginner, note: ' Vui là chính ', requireApproval: false),
+      );
+      expect(m.totalSlots, 3);
+      expect(m.skillLevel, SkillLevel.beginner);
+      expect(m.note, 'Vui là chính');
+      expect(m.requireApproval, isFalse);
+      // Tắt duyệt: người sau vào thẳng kèo.
+      m = await repo.simulatePlayerJoined(match.id);
+      expect(m.members.length, 2);
+      await expectLater(
+        repo.updateMatch(match.id, const LfgMatchUpdate(slotsNeeded: 0)),
+        lfgError(LfgStrings.slotsBelowJoined),
+      );
+
+      // Tới giờ chơi thì không quản lý kèo được nữa.
+      clock = m.start;
+      await expectLater(repo.removeMember(match.id, 'u-guest-3'), lfgError(LfgStrings.alreadyEnded));
+    });
+
     test('hình thức phải hợp với môn', () async {
       expect(
         () => _createMatch(repo, clock, format: LfgFormat.teamVsTeam),
@@ -263,6 +332,7 @@ Future<LfgMatch> _createMatch(
   DateTime now, {
   Duration startIn = const Duration(days: 3),
   LfgFormat format = LfgFormat.doubles,
+  bool requireApproval = false,
 }) {
   final facility = MockFacilityData.facilities.firstWhere((f) => f.id == 'f-hcm-thientrieu');
   final start = DateTime(now.year, now.month, now.day, now.hour).add(startIn);
@@ -280,5 +350,6 @@ Future<LfgMatch> _createMatch(
     hold: SlotHold(holdId: 'hold-test', slots: [slot], expiresAt: now.add(const Duration(minutes: 10))),
     facility: facility,
     format: format,
+    requireApproval: requireApproval,
   );
 }

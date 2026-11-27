@@ -107,7 +107,9 @@ class ApiClient {
   Future<dynamic> upload(String path, {required String filePath, String field = 'file', Map<String, dynamic>? query}) async {
     final subtype = await imageSubtypeOf(filePath);
     final file = subtype == null
-        ? await MultipartFile.fromFile(filePath)
+        ? (filePath.toLowerCase().endsWith('.pdf')
+              ? await MultipartFile.fromFile(filePath, contentType: DioMediaType('application', 'pdf'))
+              : await MultipartFile.fromFile(filePath))
         : await MultipartFile.fromFile(
             filePath,
             filename: 'upload_${DateTime.now().millisecondsSinceEpoch}.${subtype == 'jpeg' ? 'jpg' : subtype}',

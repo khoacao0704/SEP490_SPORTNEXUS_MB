@@ -526,6 +526,73 @@ void main() {
     ]);
   });
 
+  test('kèo cần duyệt: đọc requireApproval, người chờ duyệt và người đã rời / bị loại / từ chối; bỏ host trùng', () {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final m = ApiLfgRepository.matchFromApi(
+      _card(hostId: _me, remaining: 1, extra: {
+        'requireApproval': true,
+        'participants': [
+          {'userId': _me, 'fullName': 'Khoa Cao', 'fairPlayScore': 90.0, 'status': 'ACCEPTED'},
+          {'userId': 'u-a', 'fullName': 'An', 'fairPlayScore': 88.0, 'status': 'ACCEPTED', 'joinedAt': now},
+          {'userId': 'u-p', 'fullName': 'Phúc', 'fairPlayScore': 75.0, 'status': 'PENDING', 'joinedAt': now},
+          {'userId': 'u-b', 'fullName': 'Bình', 'fairPlayScore': 70.0, 'status': 'LEFT'},
+          {'userId': 'u-r', 'fullName': 'Rin', 'fairPlayScore': 60.0, 'status': 'REMOVED'},
+          {'userId': 'u-x', 'fullName': 'Xuân', 'fairPlayScore': 65.0, 'status': 'REJECTED'},
+        ],
+      }),
+      myId: _me,
+    )!;
+    expect(m.requireApproval, isTrue);
+    expect(m.members.map((x) => x.name), ['Chủ Kèo', 'An']);
+    expect(m.pendingMembers.map((x) => x.userId), ['u-p']);
+    expect(m.pendingCount, 1);
+    expect(m.pastMembers.map((x) => x.status),
+        [LfgMemberStatus.left, LfgMemberStatus.removed, LfgMemberStatus.rejected]);
+    expect(m.canManage(DateTime.now()), isTrue);
+  });
+
+  test('tạo kèo gửi requireApproval; duyệt / từ chối / loại / sửa kèo gọi đúng API', () async {
+    server.ok('GET', ApiLfgRepository.cardPath('c1'), _card());
+    server.ok('POST', ApiLfgRepository.approvePath('c1', 'u-p'), null);
+    server.ok('POST', ApiLfgRepository.rejectPath('c1', 'u-x'), null);
+    server.ok('DELETE', ApiLfgRepository.participantPath('c1', 'u-a'), null);
+    server.ok('PUT', ApiLfgRepository.cardPath('c1'), null);
+
+    await repo.approveRequest('c1', 'u-p');
+    await repo.rejectRequest('c1', 'u-x');
+    await repo.removeMember('c1', 'u-a');
+    await repo.updateMatch(
+      'c1',
+      const LfgMatchUpdate(slotsNeeded: 2, skillLevel: SkillLevel.advanced, note: '  Đánh vui  ', requireApproval: true),
+    );
+    await repo.updateMatch('c1', const LfgMatchUpdate());
+
+    final writes = server.requests.where((r) => r.method != 'GET').toList();
+    expect(writes.map((r) => '${r.method} ${r.path}'), [
+      'POST ${ApiLfgRepository.approvePath('c1', 'u-p')}',
+      'POST ${ApiLfgRepository.rejectPath('c1', 'u-x')}',
+      'DELETE ${ApiLfgRepository.participantPath('c1', 'u-a')}',
+      'PUT ${ApiLfgRepository.cardPath('c1')}',
+      'PUT ${ApiLfgRepository.cardPath('c1')}',
+    ]);
+    expect(writes[3].data, {
+      'totalSlots': 2,
+      'skillLevelTag': SkillLevel.advanced.apiValue,
+      'description': 'Đánh vui',
+      'requireApproval': true,
+    });
+    // Kèo đội: không gửi số người; mọi trình độ = null.
+    expect(writes[4].data, {'skillLevelTag': null, 'description': '', 'requireApproval': false});
+  });
+
+  test('duyệt bị BE chặn (hết chỗ / người xin vào thiếu Điểm): hiện câu của BE', () async {
+    server.fail('POST', ApiLfgRepository.approvePath('c1', 'u-p'), 400, 'Người chơi không đủ số dư.');
+    await expectLater(
+      repo.approveRequest('c1', 'u-p'),
+      throwsA(isA<LfgException>().having((e) => e.message, 'message', 'Người chơi không đủ số dư.')),
+    );
+  });
+
   test('vé: người vào kèo dùng vé LFG; host dùng vé của đơn đặt sân', () async {
     final m = ApiLfgRepository.matchFromApi(_card(), myId: _me)!;
     server.ok('GET', ApiLfgRepository.ticketPath('c1'), {'lfgCardId': 'c1', 'qrCode': 'LFG_c1_u-me'});

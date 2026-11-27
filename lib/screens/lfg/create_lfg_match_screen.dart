@@ -19,6 +19,7 @@ import '../../widgets/facility/court_type_selector.dart';
 import '../../widgets/facility/slot_picker.dart';
 import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/lfg/lfg_actions.dart';
+import '../../widgets/lfg/lfg_approval.dart';
 import '../../widgets/lfg/team_picker.dart';
 import '../../widgets/review/fair_play_guard.dart';
 import 'lfg_match_detail_screen.dart';
@@ -145,6 +146,9 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
 
   /// Trình độ kèo; `null` = mọi trình độ.
   SkillLevel? _skill;
+
+  /// Kèo cần duyệt người (mặc định tắt như Web). Kèo Đội vs Đội không dùng: BE cho đội nhận kèo vào ngay.
+  bool _requireApproval = false;
 
   /// Số ca liên tiếp muốn gộp (từ ca đã chọn, cùng sân con).
   int _slotCount = 1;
@@ -392,6 +396,7 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
             skillLevel: _skill,
             hostTeamId: _isTeamMatch ? team?.id : null,
             sideSize: _isTeamMatch ? _sideSize : null,
+            requireApproval: !_isTeamMatch && _requireApproval,
           ),
           onRelease: () => AppRepositories.lfgFacility.releaseHold(hold.holdId),
         ),
@@ -626,6 +631,10 @@ class _CreateLfgMatchScreenState extends State<CreateLfgMatchScreen> {
                   _chip(label: l.label, selected: _skill == l, onTap: () => setState(() => _skill = l)),
               ],
             ),
+            if (!_isTeamMatch) ...[
+              const SizedBox(height: 18),
+              LfgApprovalSwitch(value: _requireApproval, onChanged: (v) => setState(() => _requireApproval = v)),
+            ],
             const SizedBox(height: 18),
             _title(LfgStrings.stepNote),
             TextField(

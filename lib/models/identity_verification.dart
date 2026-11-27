@@ -15,7 +15,7 @@ enum IdentityStatus {
       };
 }
 
-/// Hồ sơ eKYC gần nhất của tài khoản (BE: GET /api/v1/owner/verification, dùng chung Owner và Player).
+/// Hồ sơ eKYC gần nhất của tài khoản (BE: GET /api/v1/me/verification, dùng chung Owner và Player).
 class IdentityVerification {
   final IdentityStatus status;
   final String fullName;

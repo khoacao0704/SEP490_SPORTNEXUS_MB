@@ -259,6 +259,25 @@ class ApiAuthRepository implements AuthRepository {
     await logout(revoke: false);
   }
 
+  /// POST /api/auth/logout-all: BE thu hồi mọi phiên → xóa luôn phiên trên máy (không gọi /logout nữa).
+  @override
+  Future<void> logoutAllDevices() async {
+    await _call(() => _api.post('/api/auth/logout-all'));
+    await logout(revoke: false);
+  }
+
+  /// POST /api/auth/me/email/send-otp (body rỗng như Web).
+  @override
+  Future<String?> sendEmailOtp() async {
+    final data = await _call(() => _api.post('/api/auth/me/email/send-otp', body: const <String, dynamic>{}));
+    return data is Map ? data['devOtp']?.toString() : null;
+  }
+
+  /// POST /api/auth/me/email/verify {otpCode}.
+  @override
+  Future<void> verifyEmail(String otpCode) =>
+      _call(() => _api.post('/api/auth/me/email/verify', body: {'otpCode': otpCode.trim()}));
+
   /// Đặt xong vẫn ở lại phiên hiện tại; cập nhật hồ sơ đã lưu để Hồ sơ chuyển sang "Đổi mật khẩu".
   @override
   Future<void> setPassword({required String newPassword, required String confirmPassword}) async {

@@ -78,9 +78,6 @@ class RecurringBookingRules {
 
   static const int minSessions = 4;
 
-  /// Số tuần tối đa cho chọn. BE sinh sẵn khung giờ trước ~35 ngày nên tuần xa có thể "chưa mở lịch".
-  static const int maxSessions = 8;
-
   static const Duration interval = Duration(days: 7);
 
   /// Chủ sân đặt % giảm trong khoảng 0–[maxDiscountPercent] (BE trả 400 nếu ngoài khoảng); gợi ý sẵn [suggestedDiscountPercent].

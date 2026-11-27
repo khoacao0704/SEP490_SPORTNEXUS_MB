@@ -9,7 +9,6 @@ import '../../theme/app_colors.dart';
 import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/tournament/tournament_actions.dart';
 import '../../widgets/tournament/tournament_list_card.dart';
-import 'tournament_bracket_screen.dart';
 import 'tournament_register_screen.dart';
 
 /// Chi tiết một giải: thông tin chung, từng nội dung (đăng ký / vé / rút / sơ đồ / người tham gia),
@@ -27,6 +26,9 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
   TournamentDetails? _details;
   List<TournamentParticipant> _participants = [];
   List<TournamentRegistrationItem> _mine = [];
+
+  /// Các trận đã xếp sân / giờ (lịch các trận; màn người chơi không hiện sơ đồ, như luồng 26/11).
+  List<BracketMatch> _matches = [];
   String? _error;
 
   @override
@@ -43,12 +45,15 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
       final results = await Future.wait<Object>([
         repo.getParticipants(details.info.id).catchError((_) => <TournamentParticipant>[]),
         repo.getMyRegistrations().catchError((_) => <TournamentRegistrationItem>[]),
+        repo.getBracket(details.info.id).catchError((_) => <BracketMatch>[]),
       ]);
       if (!mounted) return;
       setState(() {
         _details = details;
         _participants = results[0] as List<TournamentParticipant>;
         _mine = results[1] as List<TournamentRegistrationItem>;
+        _matches = (results[2] as List<BracketMatch>).where((m) => m.start != null || m.courtName.isNotEmpty).toList()
+          ..sort((a, b) => (a.start ?? DateTime(9999)).compareTo(b.start ?? DateTime(9999)));
       });
     } catch (e) {
       if (mounted) setState(() => _error = e is TournamentException ? e.message : PlayerTournamentStrings.loadError);
@@ -112,8 +117,9 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
                 padding: const EdgeInsets.only(bottom: 24),
                 children: [
                   _buildHeader(d.info),
+                  _section(PlayerTournamentStrings.infoTitle, _buildInfo(d)),
                   _section(
-                    PlayerTournamentStrings.divisions,
+                    d.divisions.length == 1 ? PlayerTournamentStrings.registerSection : PlayerTournamentStrings.divisions,
                     d.divisions.isEmpty
                         ? const Text(
                             PlayerTournamentStrings.noDivisions,
@@ -121,7 +127,15 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
                           )
                         : Column(children: [for (final division in d.divisions) _buildDivision(d, division)]),
                   ),
-                  if (d.prizes.isNotEmpty) _section(PlayerTournamentStrings.prizes, _PrizeList(prizes: d.prizes)),
+                  _section(
+                    '${PlayerTournamentStrings.prizes} ${PlayerTournamentStrings.prizesNote}',
+                    _prizesOf(d).isEmpty
+                        ? const Text(PlayerTournamentStrings.noPrizes, style: TextStyle(color: AppColors.textSecondary))
+                        : _PrizeList(prizes: _prizesOf(d)),
+                  ),
+                  if (d.info.description.isNotEmpty)
+                    _section(PlayerTournamentStrings.introTitle, _paragraph(d.info.description)),
+                  _section(PlayerTournamentStrings.scheduleTitle, _buildSchedule()),
                   if (d.rules.isNotEmpty) _section(PlayerTournamentStrings.rules, _paragraph(d.rules)),
                   if (d.sportRules.isNotEmpty) _section(PlayerTournamentStrings.sportRules, _paragraph(d.sportRules)),
                 ],
@@ -217,10 +231,115 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
     child: Text(text, style: const TextStyle(fontSize: 13, height: 1.5)),
   );
 
+  List<TournamentPrizeItem> _prizesOf(TournamentDetails d) =>
+      d.prizes.isNotEmpty ? d.prizes : (d.divisions.length == 1 ? d.divisions.first.prizes : const []);
+
+  /// Đủ các ô của form tạo giải (trừ file PDF gửi Admin), như màn chi tiết của Web.
+  Widget _buildInfo(TournamentDetails d) {
+    final t = d.info;
+    final division = d.divisions.length == 1 ? d.divisions.first : null;
+    var registered = 0;
+    if (division != null) {
+      final groups = TournamentEntryGroup.group(_participants.where((p) => p.divisionId == division.id)).length;
+      registered = groups > division.registeredCount ? groups : division.registeredCount;
+    }
+    final rows = <(String, String)>[
+      (PlayerTournamentStrings.organizer, t.organizerName),
+      (PlayerTournamentStrings.venue, [t.facilityName, t.facilityAddress].where((x) => x.isNotEmpty).join(' · ')),
+      (
+        PlayerTournamentStrings.playTime,
+        t.startDate == null && t.endDate == null
+            ? PlayerTournamentStrings.notAnnounced
+            : PlayerTournamentStrings.dateRange(t.startDate, t.endDate),
+      ),
+      (
+        PlayerTournamentStrings.regDeadline,
+        t.registrationDeadline == null
+            ? PlayerTournamentStrings.notAnnounced
+            : Formatters.dateTime(t.registrationDeadline!),
+      ),
+      (PlayerTournamentStrings.tierTitle, t.tier?.label ?? ''),
+      (PlayerTournamentStrings.purposeTitle, t.purpose?.label ?? ''),
+      if (division != null)
+        (
+          PlayerTournamentStrings.registrationType,
+          [
+            division.typeLabel,
+            if (division.type.needsTeam) PlayerTournamentStrings.teamRange(division.minTeamSize, division.maxTeamSize),
+          ].join(', '),
+        ),
+      if (division != null)
+        (PlayerTournamentStrings.playersTitle, PlayerTournamentStrings.playersCount(registered, division.maxEntries)),
+      (PlayerTournamentStrings.formatTitle, PlayerTournamentStrings.formatLabel(t.format)),
+      if (division != null) (PlayerTournamentStrings.entryFee, PlayerTournamentStrings.fee(division.entryFee)),
+      if (t.hasEloCondition)
+        (
+          PlayerTournamentStrings.eloTitle,
+          PlayerTournamentStrings.eloCondition(t.minRating, t.maxRating, t.minRatedMatches),
+        ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final (label, value) in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                Text(
+                  value.isEmpty ? '—' : value,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMain),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Trận đã xếp sân: ai gặp ai, vòng, sân, giờ.
+  Widget _buildSchedule() {
+    if (_matches.isEmpty) {
+      return const Text(PlayerTournamentStrings.noSchedule, style: TextStyle(color: AppColors.textSecondary));
+    }
+    return Column(
+      children: [
+        for (final m in _matches)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.cardBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${m.sideA} vs ${m.sideB}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  [
+                    if (m.roundName.isNotEmpty) m.roundName,
+                    if (m.courtName.isNotEmpty) m.courtName,
+                    if (m.start != null) Formatters.dateTime(m.start!),
+                  ].join(' · '),
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildDivision(TournamentDetails d, TournamentDivision division) {
     final groups = TournamentEntryGroup.group(_participants.where((p) => p.divisionId == division.id));
     final mine = _mine.where((r) => r.divisionId == division.id).firstOrNull;
-    final full = division.maxEntries > 0 && groups.length >= division.maxEntries;
+    final registered = groups.length > division.registeredCount ? groups.length : division.registeredCount;
+    final full = division.isFull || (division.maxEntries > 0 && registered >= division.maxEntries);
 
     final Widget action;
     if (mine != null) {
@@ -285,7 +404,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
                   if (division.type.needsTeam)
                     PlayerTournamentStrings.teamSize(division.minTeamSize, division.maxTeamSize),
                   if (division.maxEntries > 0)
-                    PlayerTournamentStrings.entries(groups.length, division.maxEntries, division.type),
+                    PlayerTournamentStrings.entries(registered, division.maxEntries, division.type),
                 ].join(' • '),
                 style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
               ),
@@ -303,19 +422,6 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> {
               ],
               const SizedBox(height: 10),
               action,
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TournamentBracketScreen(divisionId: division.id, title: division.name),
-                    ),
-                  ),
-                  icon: const Icon(Icons.account_tree_outlined, size: 18),
-                  label: const Text(PlayerTournamentStrings.bracket, maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-              ),
               _ParticipantsTile(groups: groups),
             ],
           ),
@@ -352,12 +458,16 @@ class _PrizeList extends StatelessWidget {
                     style: TextStyle(fontSize: compact ? 12 : 14),
                   ),
                 ),
-                Text(
-                  Formatters.vnd(p.amount),
-                  style: TextStyle(
-                    fontSize: compact ? 12 : 14,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryGreen,
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    Formatters.vnd(p.amount),
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      fontSize: compact ? 12 : 14,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primaryGreen,
+                    ),
                   ),
                 ),
               ],

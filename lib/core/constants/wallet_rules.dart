@@ -16,10 +16,36 @@ class WalletRules {
 }
 
 /// Luật đổi Điểm ra tiền của từng vai trò.
+/// Điều kiện rút do BE trả (GET /wallet/withdrawals/config): mức tối thiểu, phí, số dư, có rút được không và lý do.
+class WithdrawalConfig {
+  final int minAmount;
+
+  /// Phí mỗi lệnh, TRỪ VÀO số rút (thực nhận = số rút − phí).
+  final int fee;
+  final int balance;
+  final bool canWithdraw;
+
+  /// KYC_REQUIRED, NO_BANK_ACCOUNT, FACILITY_SUSPENDED, PENDING_REQUEST, NEGATIVE_BALANCE, INSUFFICIENT_BALANCE.
+  final String? blockedCode;
+  final String? blockedReason;
+
+  const WithdrawalConfig({
+    required this.minAmount,
+    required this.fee,
+    required this.balance,
+    required this.canWithdraw,
+    this.blockedCode,
+    this.blockedReason,
+  });
+
+  static const String kycRequired = 'KYC_REQUIRED';
+  static const String noBankAccount = 'NO_BANK_ACCOUNT';
+}
+
 class WithdrawalPolicy {
   final int minAmount;
 
-  /// Phí xử lý mỗi lệnh, trừ THÊM vào ví ngoài số đổi (ví bị trừ số đổi + phí).
+  /// Phí xử lý mỗi lệnh, TRỪ VÀO số đổi (BE 27/11: thực nhận = số đổi − phí; ví chỉ bị trừ đúng số đổi).
   final int fee;
 
   /// Phải eKYC được duyệt mới đổi được.
@@ -31,9 +57,8 @@ class WithdrawalPolicy {
   static const WithdrawalPolicy owner =
       WithdrawalPolicy(minAmount: WalletRules.minWithdrawal, fee: WalletRules.withdrawalFee);
 
-  /// Người chơi (thẻ 41) — TẠM, BE CHƯA làm (22/11/2026): Player vẫn 403, chưa có phí, tối thiểu vẫn 50.000, chưa chặn eKYC.
-  /// Nhóm chưa chốt: phí trừ vào số rút hay cộng thêm (đang để cộng thêm), chờ duyệt eKYC có được rút không (đang để
-  /// phải ĐÃ duyệt). Nút đổi ra tiền của Player chỉ hiện khi ví hỗ trợ (bản API đang tắt).
+  /// Người chơi (BE 27/11/2026): tối thiểu 200.000, phí 5.000 trừ vào số rút, eKYC phải được Admin duyệt.
+  /// Bản API đọc lại các số này từ [WithdrawalConfig] của BE.
   static const WithdrawalPolicy player = WithdrawalPolicy(minAmount: 200000, fee: 5000, requiresIdentity: true);
 }
 

@@ -17,7 +17,9 @@ import 'api_facility_repository.dart';
 /// - Host tạo kèo = đặt cả sân (trả 100% giá sân, BE tạo luôn đơn đặt sân); người vào kèo trả `pricePerPerson`,
 ///   tiền tạm giữ rồi chuyển cho host khi check-in / sau giờ chơi.
 /// - `totalSlots` / `remainingSlots` của BE KHÔNG tính host → app cộng thêm 1 chỗ của host.
-/// - Kèo tạo trên app luôn ghép lẻ (không chia phe), không cần duyệt; Team vs Team = 1 vs 1 giữa 2 đại diện.
+/// - Kèo tạo trên app ghép lẻ (không chia phe) hoặc Đội vs Đội. Kèo cần duyệt (`requireApproval`): người nhận suất
+///   ở PENDING, chưa bị giữ Điểm; chủ kèo duyệt (giữ Điểm, vào kèo) / từ chối; chủ kèo loại được người đã vào
+///   (hoàn 100%, mở lại 1 suất). Chủ kèo sửa được số người cần tìm, trình độ, mô tả, chế độ duyệt (PUT /lfgs/{id}).
 /// - Rời kèo: đã vào kèo thì BE bắt buộc lý do. Trước T−48h hoàn 100%; sau đó vẫn rời được tới giờ chơi nhưng
 ///   không hoàn: tiền tạm giữ của người rời chuyển thẳng vào Balance của host (2 giao dịch LFG_FORFEIT) và người rời
 ///   bị −10 Fair Play (BE 24/11/2026: chỉ còn một mốc 48h, bỏ mốc 24h). Host không rời được, chỉ hủy kèo
@@ -39,6 +41,10 @@ class ApiLfgRepository implements LfgRepository {
   static String ticketPath(String id) => '/api/v1/lfgs/$id/qr-ticket';
   static const String leaveReasonsPath = '/api/v1/lfgs/cancel-reasons';
   static const String recommendedPath = '/api/v1/lfgs/recommended';
+  static String participantPath(String id, String userId) => '/api/v1/lfgs/$id/participants/$userId';
+  static String approvePath(String id, String userId) => '${participantPath(id, userId)}/approve';
+  static String rejectPath(String id, String userId) => '${participantPath(id, userId)}/reject';
+
   /// Lý do cuối trong danh sách của BE: chọn thì người dùng tự nhập lý do.
   static const String otherReasonLabel = 'lý do khác';
   static String bookingTicketPath(String bookingId) => '/api/v1/bookings/$bookingId/qr-ticket';
@@ -214,6 +220,7 @@ class ApiLfgRepository implements LfgRepository {
     SkillLevel? skillLevel,
     String? hostTeamId,
     int? sideSize,
+    bool requireApproval = false,
   }) async {
     final slots = [...hold.slots]..sort((a, b) => a.start.compareTo(b.start));
     if (slots.isEmpty || slots.length > maxSlotsPerMatch) throw const LfgException(LfgStrings.singleSlotOnly);
@@ -237,7 +244,7 @@ class ApiLfgRepository implements LfgRepository {
           // Kèo đội: BE tự tính số chỗ (2×sideSize − 1) và giá mỗi người (giá sân ÷ 2×sideSize).
           if (hostTeamId == null) 'slotsNeeded': format.totalSlots - 1,
           if (hostTeamId != null) ...{'hostTeamId': hostTeamId, 'sideSize': sideSize},
-          'requireApproval': false,
+          'requireApproval': requireApproval,
           'skillLevelTag': ?skillLevel?.apiValue,
           if (text.isNotEmpty) 'description': text,
         })) as Map<String, dynamic>;
@@ -278,6 +285,44 @@ class ApiLfgRepository implements LfgRepository {
   @override
   Future<LfgMatch> cancelMatch(String matchId) async {
     await _call(() => _api.post(cancelPath(matchId), body: const <String, dynamic>{}));
+    return getMatch(matchId);
+  }
+
+  // ---------------- Chủ kèo: duyệt / từ chối / loại người, sửa kèo ----------------
+
+  @override
+  Future<LfgMatch> approveRequest(String matchId, String userId) async {
+    await _call(() => _api.post(approvePath(matchId, userId)));
+    return getMatch(matchId);
+  }
+
+  @override
+  Future<LfgMatch> rejectRequest(String matchId, String userId) async {
+    await _call(() => _api.post(rejectPath(matchId, userId)));
+    return getMatch(matchId);
+  }
+
+  @override
+  Future<LfgMatch> removeMember(String matchId, String userId) async {
+    await _call(() => _api.delete(participantPath(matchId, userId)));
+    return getMatch(matchId);
+  }
+
+  /// PUT /lfgs/{id} {totalSlots (số người cần tìm, không tính chủ kèo), skillLevelTag, description, requireApproval}.
+  /// Giảm dưới số người đã vào / tắt duyệt khi còn người chờ: để BE chặn và hiện câu lỗi của BE.
+  @override
+  Future<LfgMatch> updateMatch(String matchId, LfgMatchUpdate update) async {
+    await _call(
+      () => _api.put(
+        cardPath(matchId),
+        body: {
+          'totalSlots': ?update.slotsNeeded,
+          'skillLevelTag': update.skillLevel?.apiValue,
+          'description': update.note.trim(),
+          'requireApproval': update.requireApproval,
+        },
+      ),
+    );
     return getMatch(matchId);
   }
 
@@ -341,20 +386,37 @@ class ApiLfgRepository implements LfgRepository {
     );
     final participants = (json['participants'] as List?)?.cast<Map<String, dynamic>>();
     final List<LfgMember> others;
+    final pending = <LfgMember>[];
+    final past = <LfgMember>[];
     var held = 0;
     if (participants != null) {
-      others = [
-        for (final p in participants)
-          if ((p['status'] as String? ?? '').toUpperCase() == 'ACCEPTED')
-            LfgMember(
-              userId: p['userId'].toString(),
-              name: p['fullName'] as String? ?? '',
-              fairPlayScore: _money(p['fairPlayScore']),
-              joinedAt: _time(p['joinedAt']) ?? createdAt,
-              side: (p['side'] as String?)?.toUpperCase(),
-            ),
-      ];
-      held = participants.where((p) => (p['status'] as String? ?? '').toUpperCase() == 'INVITED').length;
+      others = [];
+      for (final p in participants) {
+        final raw = (p['status'] as String? ?? '').toUpperCase();
+        if (raw == 'INVITED') {
+          held++;
+          continue;
+        }
+        final status = LfgMemberStatus.fromApi(raw);
+        final userId = p['userId']?.toString() ?? '';
+        if (status == null || userId.isEmpty || userId == json['hostId']?.toString()) continue;
+        final member = LfgMember(
+          userId: userId,
+          name: p['fullName'] as String? ?? '',
+          fairPlayScore: _money(p['fairPlayScore']),
+          joinedAt: _time(p['joinedAt']) ?? createdAt,
+          side: (p['side'] as String?)?.toUpperCase(),
+          status: status,
+        );
+        switch (status) {
+          case LfgMemberStatus.accepted:
+            others.add(member);
+          case LfgMemberStatus.pending:
+            pending.add(member);
+          case _:
+            past.add(member);
+        }
+      }
     } else {
       final count = (players - 1 - remaining).clamp(0, players - 1);
       final meIn = (json['myStatus'] as String? ?? '').toUpperCase() == 'ACCEPTED';
@@ -400,6 +462,10 @@ class ApiLfgRepository implements LfgRepository {
           ? null
           : LfgTeamRef(id: challengerTeamId, name: json['challengerTeamName'] as String? ?? ''),
       sideSize: sideSize,
+      requireApproval: json['requireApproval'] == true,
+      pendingMembers: pending,
+      pastMembers: past,
+      pendingCountOverride: (json['pendingCount'] as num?)?.toInt(),
     );
   }
 

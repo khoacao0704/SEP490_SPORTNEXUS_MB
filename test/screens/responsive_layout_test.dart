@@ -184,6 +184,18 @@ void main() {
     await check(tester, 'Đổi SĐT', () => const ChangePhoneScreen(currentPhone: '0901234567'));
   });
 
+  testWidgets('Hồ sơ thể thao: màn xem + bấm Sửa', (tester) async {
+    await check(
+      tester,
+      'Hồ sơ thể thao',
+      () => const PlayerSurveyScreen(),
+      interact: (tester) async {
+        await tester.tap(find.text(SurveyStrings.edit));
+        await settle(tester);
+      },
+    );
+  });
+
   testWidgets('Khảo sát người chơi: đủ 4 bước', (tester) async {
     await check(
       tester,

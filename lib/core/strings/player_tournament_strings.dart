@@ -8,8 +8,8 @@ class PlayerTournamentStrings {
   // Danh sách
   static const String title = 'Giải Đấu';
   static const String tabExplore = 'Khám phá';
-  static const String tabMine = 'Đã đăng ký';
-  static const String tabMatches = 'Lịch đấu';
+  static const String tabMine = 'Giải của tôi';
+  static const String tabMatches = 'Lịch thi đấu';
   static const String searchHint = 'Tìm theo tên giải';
   static const String allSports = 'Tất cả môn';
   static const String registrationOpenOnly = 'Đang nhận đăng ký';
@@ -48,8 +48,44 @@ class PlayerTournamentStrings {
       '$count/$max ${type.needsTeam ? 'đội' : 'người'}';
   static const String register = 'Đăng ký';
   static const String registered = 'Đã đăng ký';
-  static const String registrationClosed = 'Hết hạn đăng ký';
-  static const String full = 'Hết suất';
+  static const String registrationClosed = 'Đã đóng đăng ký';
+  static const String full = 'Đã đủ người';
+
+  // ---- Chi tiết giải 1 tầng (luồng 26/11, như Web) ----
+  static const String infoTitle = 'Thông tin giải';
+  static const String organizer = 'Ban tổ chức';
+  static const String venue = 'Cơ sở thi đấu';
+  static const String playTime = 'Thời gian thi đấu';
+  static const String regDeadline = 'Hạn đăng ký';
+  static const String tierTitle = 'Cấp giải';
+  static const String purposeTitle = 'Mục đích';
+  static const String registrationType = 'Hình thức đăng ký';
+  static String teamRange(int min, int max) => 'đội $min–$max người';
+  static const String playersTitle = 'Số người tham gia';
+  static String playersCount(int registered, int capacity) =>
+      capacity > 0 ? '$registered/$capacity đã đăng ký' : '$registered đã đăng ký';
+  static const String formatTitle = 'Thể thức thi đấu';
+  static String formatLabel(String code) => switch (code.toUpperCase().replaceAll('-', '_')) {
+        'SINGLE_ELIMINATION' || 'KNOCKOUT' => 'Loại trực tiếp',
+        'ROUND_ROBIN' => 'Vòng tròn',
+        'GROUP_STAGE_KNOCKOUT' || 'GROUP_KNOCKOUT' || 'GROUP_STAGE' => 'Vòng bảng + loại trực tiếp',
+        '' => '—',
+        _ => code,
+      };
+  static const String eloTitle = 'Điều kiện Elo';
+  static String eloCondition(int? min, int? max, int? matches) => [
+        if (min != null) 'từ $min',
+        if (max != null) 'đến $max',
+        if (matches != null) 'ít nhất $matches trận giải',
+      ].join(', ');
+  static const String notAnnounced = 'Chưa công bố';
+  static const String prizesNote = '(Ban tổ chức tự trao ngoài hệ thống)';
+  static const String noPrizes = 'Không có giải thưởng.';
+  static const String introTitle = 'Giới thiệu giải';
+  static const String scheduleTitle = 'Lịch các trận';
+  static const String noSchedule = 'Chưa có trận nào được xếp sân.';
+  static const String registerSection = 'Đăng ký tham gia';
+  static const String attended = 'Đã điểm danh';
   static const String bracket = 'Sơ đồ thi đấu';
   static const String bracketEmpty = 'Chưa bốc thăm. Sơ đồ sẽ hiện khi ban tổ chức xếp cặp.';
   static const String matchesTab = 'Các trận';

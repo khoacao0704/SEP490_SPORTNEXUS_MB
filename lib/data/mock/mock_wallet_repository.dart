@@ -261,6 +261,10 @@ class MockWalletRepository implements WalletRepository, SandboxPaymentSimulator 
     return tx;
   }
 
+  /// Bản giả lập không có cấu hình rút: màn rút dùng luật trong [WithdrawalPolicy].
+  @override
+  Future<WithdrawalConfig?> getWithdrawalConfig() async => null;
+
   @override
   Future<void> cancelWithdrawal(WalletTransaction withdrawal) async {
     await _delay();

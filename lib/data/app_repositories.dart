@@ -18,6 +18,21 @@ import 'api/token_store.dart';
 import 'api/api_owner_repository.dart';
 import 'api/api_player_profile_repository.dart';
 import 'api/api_rating_repository.dart';
+import 'api/api_report_repository.dart';
+import 'api/api_player_shop_repository.dart';
+import 'api/api_court_recommendation_repository.dart';
+import 'api/api_community_repository.dart';
+import 'api/api_host_tournament_repository.dart';
+import 'mock/mock_host_tournament_repository.dart';
+import 'repositories/host_tournament_repository.dart';
+import 'mock/mock_community_repository.dart';
+import 'repositories/community_repository.dart';
+import 'mock/mock_court_recommendation_repository.dart';
+import 'repositories/court_recommendation_repository.dart';
+import 'mock/mock_player_shop_repository.dart';
+import 'repositories/player_shop_repository.dart';
+import 'mock/mock_report_repository.dart';
+import 'repositories/report_repository.dart';
 import 'push/push_platform.dart';
 import 'push/push_service.dart';
 import 'mock/mock_ai_chat_repository.dart';
@@ -84,13 +99,32 @@ class AppRepositories {
   /// Sân mà luồng tạo kèo LFG tìm, xem khung giờ và giữ chỗ (cùng dữ liệu với [facility]).
   static FacilityRepository lfgFacility = ApiConfig.useMockAuth ? _mockFacility : _apiFacility;
 
-  /// Ví người chơi: số dư, lịch sử, nạp Điểm PayOS. KHÔNG đổi Điểm ra tiền (BE từ 07/11/2026 chỉ cho Chủ sân rút, Player 403).
-  static WalletRepository wallet =
-      ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api, supportsWithdrawal: false);
+  /// Ví người chơi: số dư, lịch sử, nạp Điểm PayOS, đổi Điểm ra tiền (BE 27/11/2026: Player rút được khi eKYC đã
+  /// duyệt, tối thiểu 200.000, phí 5.000 trừ vào số rút; điều kiện đọc từ GET /wallet/withdrawals/config).
+  static WalletRepository wallet = ApiConfig.useMockAuth ? _mockWallet : ApiWalletRepository(api: api);
 
   /// Xác minh danh tính eKYC (chụp CCCD + chân dung), dữ liệu thật; dùng chung Owner và Player.
   static IdentityRepository identity =
       ApiConfig.useMockAuth ? MockIdentityRepository() : ApiIdentityRepository(api: api);
+
+  /// Khiếu nại đơn đặt sân / báo cáo người chơi phía Player (dữ liệu thật).
+  static ReportRepository report = ApiConfig.useMockAuth ? MockReportRepository() : ApiReportRepository(api: api);
+
+  /// Shop tại sân phía người chơi + lịch sử check-in (dữ liệu thật; cùng một lớp API).
+  static final ApiPlayerShopRepository _apiPlayerShop = ApiPlayerShopRepository(api: api);
+  static final MockPlayerShopRepository _mockPlayerShop = MockPlayerShopRepository();
+  static PlayerShopRepository playerShop = ApiConfig.useMockAuth ? _mockPlayerShop : _apiPlayerShop;
+  static CheckInHistoryRepository checkInHistory = ApiConfig.useMockAuth ? _mockPlayerShop : _apiPlayerShop;
+
+  /// Bảng tin cộng đồng (dữ liệu thật).
+  static CommunityRepository community = ApiConfig.useMockAuth
+      ? MockCommunityRepository(lfg: () => lfg)
+      : ApiCommunityRepository(api: api, facility: _apiFacility);
+
+  /// Ca sân trống trong giờ rảnh (Trang chủ, dữ liệu thật).
+  static CourtRecommendationRepository courtRecommendation = ApiConfig.useMockAuth
+      ? MockCourtRecommendationRepository(facility: _mockFacility)
+      : ApiCourtRecommendationRepository(api: api);
 
   /// Mã giảm giá của người chơi (chỉ xem, dữ liệu thật).
   static VoucherRepository voucher = ApiConfig.useMockAuth ? MockVoucherRepository() : ApiVoucherRepository(api: api);
@@ -103,6 +137,11 @@ class AppRepositories {
   static WalletRepository bookingWallet = ApiConfig.useMockAuth ? _mockWallet : wallet;
   /// Đánh giá cơ sở, chấm người chơi cùng trận, Fair Play: dữ liệu thật.
   /// Giải đấu phía người chơi (dữ liệu thật). [tournament] bên dưới vẫn là bản giả lập dùng chung với phần Chủ sân.
+  /// Tổ chức giải (giải 1 tầng): người chơi làm Ban tổ chức (dữ liệu thật).
+  static HostTournamentRepository hostTournament = ApiConfig.useMockAuth
+      ? MockHostTournamentRepository()
+      : ApiHostTournamentRepository(api: api);
+
   static PlayerTournamentRepository playerTournament = ApiConfig.useMockAuth
       ? MockPlayerTournamentRepository(teams: _mockTeams)
       : ApiPlayerTournamentRepository(api: api, facility: _apiFacility);

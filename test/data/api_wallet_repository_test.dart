@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:test1/core/constants/wallet_rules.dart';
 import 'package:test1/core/strings/wallet_strings.dart';
 import 'package:test1/data/api/api_client.dart';
 import 'package:test1/data/api/api_wallet_repository.dart';
@@ -376,6 +377,27 @@ void main() {
       repo = ApiWalletRepository(api: api, supportsWithdrawal: false);
       expect(await repo.getPendingWithdrawalAmount(), 0);
       expect(server.requests, isEmpty);
+    });
+
+    test('cấu hình rút: đọc mức tối thiểu, phí, có rút được không + lý do chặn của BE', () async {
+      server.routes['GET ${ApiWalletRepository.withdrawalConfigPath}'] = (
+        200,
+        ok({
+          'minAmount': 200000,
+          'fee': 5000,
+          'balance': 350000,
+          'canWithdraw': false,
+          'blockedCode': 'KYC_REQUIRED',
+          'blockedReason': 'Bạn cần xác minh danh tính (eKYC) và được Quản trị viên duyệt trước khi rút tiền',
+        }),
+      );
+      final c = (await repo.getWithdrawalConfig())!;
+      expect(c.minAmount, 200000);
+      expect(c.fee, 5000);
+      expect(c.balance, 350000);
+      expect(c.canWithdraw, isFalse);
+      expect(c.blockedCode, WithdrawalConfig.kycRequired);
+      expect(c.blockedReason, startsWith('Bạn cần xác minh'));
     });
 
     test('hủy yêu cầu rút: tìm lệnh PENDING (id lệnh rút) rồi POST cancel', () async {

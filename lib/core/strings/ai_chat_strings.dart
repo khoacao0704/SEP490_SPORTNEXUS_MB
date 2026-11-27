@@ -38,7 +38,7 @@ class AiChatStrings {
   static String entryFeeFrom(String fee) => 'Lệ phí từ $fee';
   static const String freeEntry = 'Miễn phí tham gia';
   static String tierLabel(String tier) => switch (tier.toUpperCase()) {
-    'AMATEUR' => 'Nghiệp dư',
+    'AMATEUR' => 'Phong trào',
     'SEMI_PRO' => 'Bán chuyên',
     'PRO' => 'Chuyên nghiệp',
     _ => '',

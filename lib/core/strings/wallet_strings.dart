@@ -79,7 +79,8 @@ class WalletStrings {
   static const String noBankAccount = 'Chưa có tài khoản nhận tiền';
   static String minWithdrawalNote(String min, String fee) => 'Tối thiểu $min • Phí đổi: $fee';
   static String playerWithdrawalNote(String min, String fee) => 'Số tiền tối thiểu $min • Phí xử lý $fee/lần';
-  static String withdrawTotalDeduct(String total) => 'Tổng trừ ví (gồm phí): $total';
+  /// Phí trừ vào số rút (BE 27/11): thực nhận = số rút − phí.
+  static String withdrawReceive(String receive, String fee) => 'Thực nhận: $receive (đã trừ phí $fee)';
   static const String identityRequiredTitle = 'Cần xác minh danh tính';
   static const String identityRequired =
       'Bạn cần xác minh danh tính (chụp CCCD) và được duyệt trước khi đổi Điểm ra tiền.';

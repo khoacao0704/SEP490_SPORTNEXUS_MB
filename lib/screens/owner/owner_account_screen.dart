@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/owner/owner_shell.dart';
 
 import '../../core/strings/common_strings.dart';
 import '../../core/strings/owner_strings.dart';
@@ -13,7 +14,6 @@ import 'owner_notifications.dart';
 import 'owner_promotions_screen.dart';
 import 'owner_reviews_screen.dart';
 import 'owner_shop_screen.dart';
-import 'owner_tournaments_screen.dart';
 
 /// Tài khoản Chủ sân: thông tin, các mục sẽ làm ở bước sau, đăng xuất.
 class OwnerAccountScreen extends StatelessWidget {
@@ -39,7 +39,6 @@ class OwnerAccountScreen extends StatelessWidget {
       (Icons.report_outlined, OwnerStrings.menuComplaints, () => const OwnerComplaintsScreen()),
       (Icons.campaign_outlined, OwnerStrings.menuPromotions, () => const OwnerPromotionsScreen()),
       (Icons.storefront_outlined, OwnerStrings.menuShop, () => const OwnerShopScreen()),
-      (Icons.emoji_events_outlined, OwnerStrings.menuTournaments, () => const OwnerTournamentsScreen()),
       (
         Icons.notifications_outlined,
         OwnerStrings.menuNotifications,
@@ -53,6 +52,7 @@ class OwnerAccountScreen extends StatelessWidget {
         backgroundColor: AppColors.white,
         elevation: 0.5,
         automaticallyImplyLeading: false,
+        leading: const OwnerMenuButton(),
         title: const Text(
           OwnerStrings.accountTitle,
           style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 18),

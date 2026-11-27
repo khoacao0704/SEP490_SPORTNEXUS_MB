@@ -106,6 +106,9 @@ class ShopOrder {
   final String? note;
   final DateTime createdAt;
 
+  /// Cơ sở bán (đơn của người chơi: GET /shop/orders/me).
+  final String? facilityName;
+
   const ShopOrder({
     required this.id,
     required this.productId,
@@ -117,6 +120,7 @@ class ShopOrder {
     this.customerName,
     this.customerPhone,
     this.note,
+    this.facilityName,
   });
 
   ShopOrder copyWith({ShopOrderStatus? status}) => ShopOrder(
@@ -130,6 +134,7 @@ class ShopOrder {
         customerName: customerName,
         customerPhone: customerPhone,
         note: note,
+        facilityName: facilityName,
       );
 
   factory ShopOrder.fromJson(Map<String, dynamic> j) => ShopOrder(
@@ -143,5 +148,18 @@ class ShopOrder {
         status: ShopOrderStatus.fromApi(j['status']),
         note: _str(j['note']),
         createdAt: DateTime.tryParse('${j['createdAt']}')?.toLocal() ?? DateTime.now(),
+        facilityName: _str(j['facilityName']),
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'productId': productId,
+        'productName': productName,
+        'quantity': quantity,
+        'totalAmount': totalAmount,
+        'status': status.apiValue,
+        'note': note,
+        'createdAt': createdAt.toIso8601String(),
+        'facilityName': facilityName,
+      };
 }

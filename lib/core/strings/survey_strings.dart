@@ -22,6 +22,14 @@ class SurveyStrings {
   static const String saved = 'Đã lưu hồ sơ thể thao';
   static const String completed = 'Cảm ơn bạn đã hoàn thành khảo sát!';
 
+  // Màn xem (đã làm khảo sát)
+  static const String edit = 'SỬA HỒ SƠ';
+  static const String viewSports = 'Môn & trình độ';
+  static const String viewAvailability = 'Lịch rảnh trong tuần';
+  static const String locationNotSet = 'Chưa lưu vị trí';
+  static const String genderShort = 'Giới tính';
+  static const String notChosen = 'Chưa chọn';
+
   // Bước 1: môn
   static const String sportsTitle = 'Bạn chơi môn nào?';
   static const String sportsHint = 'Chọn ít nhất 1 môn, rồi chọn trình độ của bạn ở từng môn.';

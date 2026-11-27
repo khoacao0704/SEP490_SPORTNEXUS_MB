@@ -28,11 +28,14 @@ import '../team/my_teams_screen.dart';
 import '../wallet/my_vouchers_screen.dart';
 import '../wallet/transaction_history_screen.dart';
 import '../wallet/withdraw_screen.dart';
-import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
 import 'identity_verification_screen.dart';
 import 'player_survey_screen.dart';
 import 'top_up_wallet_screen.dart';
+import '../../core/strings/report_strings.dart';
+import '../report/support_center_screen.dart';
+import '../../core/strings/security_strings.dart';
+import 'security_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -107,7 +110,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     // Tài khoản Google / Facebook chưa có mật khẩu: "Đặt mật khẩu" thay cho "Đổi mật khẩu".
-    final hasPassword = _user?.hasPassword ?? true;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -181,14 +183,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               screen: const MyTeamsScreen(),
             ),
             _menuTile(
+              icon: Icons.support_agent_outlined,
+              title: ReportStrings.menu,
+              screen: const SupportCenterScreen(),
+            ),
+            _menuTile(
               icon: Icons.badge_outlined,
               title: IdentityStrings.menu,
               screen: const IdentityVerificationScreen(),
             ),
+            // Gom đổi / đặt mật khẩu, xác thực email, đăng xuất mọi thiết bị (như mục Bảo mật của Web).
             _menuTile(
               icon: Icons.lock_outline,
-              title: hasPassword ? ProfileStrings.changePassword : ProfileStrings.setPassword,
-              screen: ChangePasswordScreen(hasPassword: hasPassword),
+              title: SecurityStrings.menu,
+              screen: const SecurityScreen(),
             ),
           ],
         ),
@@ -353,7 +361,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
-              // BE chỉ cho Chủ sân đổi Điểm ra tiền: ví người chơi không có nút Đổi Điểm ra tiền.
+              // Người chơi đổi Điểm ra tiền khi eKYC đã duyệt (BE 27/11); BE chặn thêm theo cấu hình rút.
               if (AppRepositories.wallet.supportsWithdrawal) ...[
                 const SizedBox(width: 16),
                 Expanded(

@@ -45,6 +45,20 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
 
   WithdrawalPolicy get _policy => widget.policy;
 
+  /// Điều kiện rút của BE; `null` (bản giả lập / lỗi tải) thì dùng [_policy].
+  WithdrawalConfig? _config;
+
+  int get _minAmount => _config?.minAmount ?? _policy.minAmount;
+  int get _fee => _config?.fee ?? _policy.fee;
+
+  /// BE chặn rút vì lý do khác eKYC / chưa có tài khoản nhận (hai lý do này có ô riêng trên màn).
+  String? get _blockedReason {
+    final c = _config;
+    if (c == null || c.canWithdraw) return null;
+    if (c.blockedCode == WithdrawalConfig.kycRequired || c.blockedCode == WithdrawalConfig.noBankAccount) return null;
+    return c.blockedReason;
+  }
+
   int get _amount => ThousandsInputFormatter.parse(_amountController.text);
 
   @override
@@ -68,9 +82,16 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       final balance = await _wallet.getBalance();
       final accounts = await _wallet.getBankAccounts();
       final identity = _policy.requiresIdentity ? await AppRepositories.identity.getMyVerification() : null;
+      WithdrawalConfig? config;
+      try {
+        config = await _wallet.getWithdrawalConfig();
+      } catch (_) {
+        config = null; // vẫn cho xem màn; BE kiểm lại khi gửi lệnh
+      }
       if (!mounted) return;
       setState(() {
         _identity = identity;
+        _config = config;
         _balance = balance;
         _accounts = accounts;
         _selectedAccount ??= accounts.isEmpty ? null : accounts.first;
@@ -94,10 +115,12 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   String? _validateAmount() {
     final amount = _amount;
     if (amount <= 0) return WalletStrings.invalidAmount;
-    if (amount < _policy.minAmount) {
-      return WalletStrings.belowMinWithdrawal(Formatters.vnd(_policy.minAmount));
+    if (amount < _minAmount) {
+      return WalletStrings.belowMinWithdrawal(Formatters.vnd(_minAmount));
     }
-    if (amount + _policy.fee > _balance) return WalletStrings.insufficientBalance;
+    // Phí trừ vào số rút (BE 27/11): ví chỉ bị trừ đúng số rút.
+    if (amount <= _fee) return WalletStrings.invalidAmount;
+    if (amount > _balance) return WalletStrings.insufficientBalance;
     return null;
   }
 
@@ -121,6 +144,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
       MaterialPageRoute(builder: (_) => AddBankAccountScreen(wallet: widget.wallet)),
     );
     if (account == null || !mounted) return;
+    _load(); // BE có thể đã hết chặn "chưa có tài khoản nhận"
     setState(() {
       // Chỉ một tài khoản: tài khoản mới thay cho tài khoản cũ.
       _accounts = _wallet.singleBankAccount ? [account] : [..._accounts, account];
@@ -234,6 +258,10 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (_blockedReason != null) ...[
+                  _buildBlockedBanner(_blockedReason!),
+                  const SizedBox(height: 16),
+                ],
                 if (_policy.requiresIdentity && !(_identity?.isApproved ?? false)) ...[
                   _buildIdentityBanner(),
                   const SizedBox(height: 16),
@@ -258,7 +286,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
                 child: SizedBox(
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _isSubmitting || _selectedAccount == null ? null : _submit,
+                    onPressed: _isSubmitting || _selectedAccount == null || _blockedReason != null ? null : _submit,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.authPrimary,
                       foregroundColor: Colors.white,
@@ -274,6 +302,20 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
             ),
     );
   }
+
+  Widget _buildBlockedBanner(String reason) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.block, color: Colors.red.shade700),
+            const SizedBox(width: 10),
+            Expanded(child: Text(reason, style: TextStyle(fontSize: 13, color: Colors.red.shade700))),
+          ],
+        ),
+      );
 
   Widget _buildIdentityBanner() {
     final pending = _identity?.status == IdentityStatus.pending;
@@ -369,11 +411,11 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
   }
 
   Widget _buildAmountCard() {
-    final fee = _policy.fee == 0 ? WalletStrings.free : Formatters.vnd(_policy.fee);
+    final fee = _fee == 0 ? WalletStrings.free : Formatters.vnd(_fee);
     // Người chơi: ghi đúng chữ thẻ 41, số tiền chuyển khoản thật nên dùng "đ".
     final note = _policy.requiresIdentity
-        ? WalletStrings.playerWithdrawalNote(Formatters.bankVnd(_policy.minAmount), Formatters.bankVnd(_policy.fee))
-        : WalletStrings.minWithdrawalNote(Formatters.vnd(_policy.minAmount), fee);
+        ? WalletStrings.playerWithdrawalNote(Formatters.bankVnd(_minAmount), Formatters.bankVnd(_fee))
+        : WalletStrings.minWithdrawalNote(Formatters.vnd(_minAmount), fee);
     return _card(
       title: WalletStrings.withdrawAmountLabel,
       child: Column(
@@ -410,7 +452,7 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
               ),
               ActionChip(
                 label: const Text(WalletStrings.withdrawAll),
-                onPressed: () => _setAmount((_balance - _policy.fee).clamp(0, _balance)),
+                onPressed: () => _setAmount(_balance),
                 backgroundColor: AppColors.lightGreen,
                 side: const BorderSide(color: AppColors.primaryGreen),
               ),
@@ -418,10 +460,10 @@ class _WithdrawScreenState extends State<WithdrawScreen> {
           ),
           const SizedBox(height: 10),
           Text(note, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-          if (_policy.fee > 0 && _amount > 0) ...[
+          if (_fee > 0 && _amount > _fee) ...[
             const SizedBox(height: 4),
             Text(
-              WalletStrings.withdrawTotalDeduct(Formatters.vnd(_amount + _policy.fee)),
+              WalletStrings.withdrawReceive(Formatters.bankVnd(_amount - _fee), Formatters.bankVnd(_fee)),
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textMain),
             ),
           ],

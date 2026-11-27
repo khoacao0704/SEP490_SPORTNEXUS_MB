@@ -156,14 +156,16 @@ void main() {
     expect(profiles.gets, 3);
   });
 
-  testWidgets('sửa từ Hồ sơ: hiện dữ liệu cũ, lưu thì đóng màn', (tester) async {
-    profiles.current = PlayerSurvey(
-      isCompleted: true,
-      sports: const [SurveySport(sport: Sport.football, level: SkillLevel.beginner, formats: ['7'])],
-      availability: [AvailabilityWindow(dayOfWeek: 0, start: DayTime.hm(7, 0), end: DayTime.hm(9, 0))],
-      goal: PlayGoal.exchange,
-      frequency: PlayFrequency.rarely,
-    );
+  PlayerSurvey completedSurvey() => PlayerSurvey(
+    isCompleted: true,
+    sports: const [SurveySport(sport: Sport.football, level: SkillLevel.beginner, formats: ['7'])],
+    availability: [AvailabilityWindow(dayOfWeek: 0, start: DayTime.hm(7, 0), end: DayTime.hm(9, 0))],
+    goal: PlayGoal.exchange,
+    frequency: PlayFrequency.rarely,
+  );
+
+  testWidgets('mở từ Hồ sơ: thấy màn xem với lựa chọn cũ; Sửa → 4 bước điền sẵn → Lưu thì về màn xem', (tester) async {
+    profiles.current = completedSurvey();
     bool? result;
     await tester.pumpWidget(
       MaterialApp(
@@ -182,15 +184,78 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(SurveyStrings.editTitle), findsOneWidget);
     expect(find.text(SurveyStrings.logout), findsNothing);
-    expect(find.text('Sân 7'), findsOneWidget);
+    // Màn xem: chỉ đọc, chưa có bước / nút Tiếp.
+    expect(find.text(SurveyStrings.viewSports), findsOneWidget);
+    expect(find.text(Sport.football.label), findsOneWidget);
+    expect(find.textContaining('Sân 7'), findsOneWidget);
+    expect(find.text('CN 07:00–09:00'), findsOneWidget);
+    expect(find.textContaining(PlayGoal.exchange.label, findRichText: true), findsOneWidget);
+    expect(find.textContaining(SurveyStrings.notChosen, findRichText: true), findsOneWidget); // giới tính
+    expect(find.text(SurveyStrings.next), findsNothing);
+    expect(find.byType(FilterChip), findsNothing);
 
+    await tester.tap(find.text(SurveyStrings.edit));
+    await tester.pumpAndSettle();
+    expect(find.text(SurveyStrings.step(1, 4)), findsOneWidget);
+    expect(find.widgetWithText(FilterChip, 'Sân 7'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ChoiceChip, SkillLevel.advanced.label));
+    await tester.pumpAndSettle();
     for (var i = 0; i < 3; i++) {
       await tester.tap(find.text(SurveyStrings.next));
       await tester.pumpAndSettle();
     }
     await tester.tap(find.text(SurveyStrings.save));
     await tester.pumpAndSettle();
-    expect(result, isTrue);
+    expect(result, isNull); // vẫn ở màn, về màn xem
     expect(profiles.saved!.availability.single.label, 'CN 07:00–09:00');
+    expect(profiles.saved!.sports.single.level, SkillLevel.advanced);
+    expect(find.text(SurveyStrings.viewSports), findsOneWidget);
+    expect(find.textContaining(SkillLevel.advanced.label), findsOneWidget);
+    expect(find.text(SurveyStrings.edit), findsOneWidget);
+  });
+
+  testWidgets('đang sửa mà quay lại ở bước 1 thì bỏ thay đổi, về màn xem', (tester) async {
+    profiles.current = completedSurvey();
+    await tester.pumpWidget(const MaterialApp(home: PlayerSurveyScreen()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(SurveyStrings.edit));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, SkillLevel.advanced.label));
+    await tester.tap(find.text(SurveyStrings.next));
+    await tester.pumpAndSettle();
+    // Bước 2 → bước 1 → màn xem.
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    expect(find.text(SurveyStrings.step(1, 4)), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    expect(find.text(SurveyStrings.viewSports), findsOneWidget);
+    expect(find.textContaining(SkillLevel.beginner.label), findsOneWidget);
+    expect(profiles.saved, isNull);
+  });
+
+  testWidgets('mở từ Hồ sơ khi chưa làm khảo sát: đi 4 bước như bắt buộc, không có màn xem', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.push<bool>(
+              context,
+              MaterialPageRoute(builder: (_) => const PlayerSurveyScreen()),
+            ),
+            child: const Text('mở'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('mở'));
+    await tester.pumpAndSettle();
+    expect(find.text(SurveyStrings.step(1, 4)), findsOneWidget);
+    expect(find.text(SurveyStrings.edit), findsNothing);
+    await tester.tap(find.widgetWithText(FilterChip, Sport.badminton.label));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(SurveyStrings.next));
+    await tester.pumpAndSettle();
+    expect(find.text(SurveyStrings.availabilityTitle), findsOneWidget);
   });
 }

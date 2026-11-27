@@ -17,7 +17,6 @@ class RatingStrings {
   static const String provisional = 'Tạm tính';
   static const String provisionalNote = 'Elo tạm tính thay đổi nhanh hơn trong 10 trận đầu.';
   static const String takeAssessment = 'Làm khảo sát trình độ';
-  static const String retakeAssessment = 'Xem / làm lại khảo sát';
   static const String leaderboard = 'Bảng xếp hạng';
   static const String sportsWithoutRating = 'Môn chưa có Elo';
   static String sportUnavailable(String sport) => 'Môn $sport chưa có trên hệ thống.';

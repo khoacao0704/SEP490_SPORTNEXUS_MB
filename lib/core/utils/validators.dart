@@ -16,8 +16,6 @@ class Validators {
   static final RegExp _email = RegExp(r'^[\w.+-]+@[\w-]+(\.[\w-]+)+$');
   // Số di động Việt Nam: 0 hoặc +84, theo sau là đầu số 3/5/7/8/9 và 8 chữ số.
   static final RegExp _phone = RegExp(r'^(0|\+84)[35789]\d{8}$');
-  static final RegExp _hasLetter = RegExp(r'[A-Za-z]');
-  static final RegExp _hasDigit = RegExp(r'\d');
 
   static bool isEmail(String value) => _email.hasMatch(value.trim());
 
@@ -59,14 +57,14 @@ class Validators {
   /// Bật khi BE bắt buộc ký tự đặc biệt. Swagger hiện chỉ ghi newPassword 6-64 ký tự (không đòi
   /// ký tự đặc biệt), nên đang tắt để mobile không chặn mật khẩu mà BE / Web vẫn chấp nhận.
   static const bool requireSpecialChar = false;
+  /// BE (AccountRules / AuthService, 27/11/2026): mọi luồng chỉ kiểm độ dài 6–64, không bắt chữ / số / ký tự đặc biệt.
+  static const int passwordMinLength = 6;
   static const int passwordMaxLength = 64;
   static final RegExp _hasSpecial = RegExp(r'[^A-Za-z0-9\s]');
 
   /// Các điều kiện mật khẩu, theo thứ tự hiển thị trong checklist dưới ô mật khẩu.
   static final List<PasswordRule> passwordRules = [
-    PasswordRule(AuthStrings.pwRuleLength, (v) => v.length >= 8),
-    PasswordRule(AuthStrings.pwRuleLetter, _hasLetter.hasMatch),
-    PasswordRule(AuthStrings.pwRuleDigit, _hasDigit.hasMatch),
+    PasswordRule(AuthStrings.pwRuleLength, (v) => v.length >= passwordMinLength),
     if (requireSpecialChar) PasswordRule(AuthStrings.pwRuleSpecial, _hasSpecial.hasMatch),
   ];
 
