@@ -9,6 +9,11 @@ import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/lfg/lfg_actions.dart';
 import '../../widgets/lfg/lfg_match_card.dart';
 import '../../widgets/lfg/lfg_ticket_qr.dart';
+import '../../widgets/lfg/lfg_approval.dart';
+import 'edit_lfg_match_screen.dart';
+import '../../core/strings/community_strings.dart';
+import '../../data/repositories/community_repository.dart';
+import '../community/community_screen.dart';
 
 class LfgMatchDetailScreen extends StatefulWidget {
   final String matchId;
@@ -236,12 +241,88 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
         _snack(LfgStrings.declinedMessage);
       });
 
+  // ---- Chủ kèo: duyệt / từ chối / loại người, sửa kèo ----
+
+  Future<void> _approve(LfgMember p) => _run(() async {
+        await AppRepositories.lfg.approveRequest(_match!.id, p.userId);
+        _snack(LfgStrings.approvedMessage(p.name));
+      });
+
+  Future<void> _reject(LfgMember p) => _run(() async {
+        await AppRepositories.lfg.rejectRequest(_match!.id, p.userId);
+        _snack(LfgStrings.rejectedMessage(p.name));
+      });
+
+  Future<void> _remove(LfgMember p) async {
+    if (!await _confirm(LfgStrings.removeTitle, LfgStrings.removeMessage(p.name), LfgStrings.remove)) return;
+    await _run(() async {
+      await AppRepositories.lfg.removeMember(_match!.id, p.userId);
+      _snack(LfgStrings.removedMessage(p.name));
+    });
+  }
+
+  Future<void> _edit() async {
+    final updated = await Navigator.push<LfgMatch>(
+      context,
+      MaterialPageRoute(builder: (_) => EditLfgMatchScreen(match: _match!)),
+    );
+    if (updated == null || !mounted) return;
+    setState(() => _match = updated);
+    _snack(LfgStrings.editSaved);
+    _load();
+  }
+
+  /// Soạn sẵn câu như Web, hỏi xác nhận rồi đăng bài kèm thẻ kèo.
+  Future<void> _shareToFeed() async {
+    final m = _match!;
+    final place = [?m.courtName, m.facilityName].where((s) => s.isNotEmpty).join(' - ');
+    final when = '${Formatters.time(m.start)} ngày ${Formatters.date(m.start)}';
+    final content = CommunityStrings.shareLfgContent(m.sport.label, m.slotsLeft, place, when);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(CommunityStrings.shareLfgTitle),
+        content: Text('“$content”'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(CommunityStrings.cancel)),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryGreen, foregroundColor: Colors.white),
+            child: const Text(CommunityStrings.post),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _isBusy = true);
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    try {
+      await AppRepositories.community.createPost(content: content, lfgCardId: m.id, sport: m.sport);
+      messenger.showSnackBar(SnackBar(
+        content: const Text(CommunityStrings.shared),
+        action: SnackBarAction(
+          label: CommunityStrings.viewFeed,
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityScreen())),
+        ),
+      ));
+    } on CommunityException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.red));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text(CommunityStrings.shareError), backgroundColor: Colors.red));
+    }
+    if (mounted) setState(() => _isBusy = false);
+  }
+
   Future<void> _simulateJoin() => _run(() async {
         await (AppRepositories.lfg as SandboxLfgSimulator).simulatePlayerJoined(_match!.id);
       });
 
+  /// Thông báo mới thay ngay thông báo cũ (chủ kèo duyệt / từ chối nhiều người liền tay).
   void _snack(String message) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -305,6 +386,10 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
                   _buildHeader(m, now),
                   const SizedBox(height: 14),
                   _buildMembers(m),
+                  if (_buildRequests(m) case final requests?) ...[
+                    const SizedBox(height: 14),
+                    requests,
+                  ],
                   if (_myId != null && m.isMember(_myId!) && _hasActiveTicket(m, now)) ...[
                     const SizedBox(height: 14),
                     _buildTicket(m),
@@ -406,7 +491,26 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          LfgStatusChip(match: m, now: now),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              LfgStatusChip(match: m, now: now),
+              if (m.requireApproval) const LfgApprovalChip(),
+            ],
+          ),
+          // Như Web: chủ kèo đăng kèo còn suất lên Bảng tin cộng đồng.
+          if (_isHostOf(m) && m.canManage(now) && m.slotsLeft > 0)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _isBusy ? null : _shareToFeed,
+                icon: const Icon(Icons.share_outlined, size: 18),
+                label: const Text(CommunityStrings.shareLfg),
+                style: TextButton.styleFrom(foregroundColor: AppColors.primaryGreen, visualDensity: VisualDensity.compact),
+              ),
+            ),
           const Divider(height: 20, color: AppColors.divider),
           _kv(LfgStrings.courtPrice, Formatters.vnd(m.courtPrice)),
           _kv(LfgStrings.depositPerSlot, Formatters.vnd(m.depositPerSlot), color: AppColors.primaryGreen),
@@ -422,8 +526,116 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
     );
   }
 
+  bool _isHostOf(LfgMatch m) => _myId != null && m.isHostedBy(_myId!);
+
+  /// Chủ kèo quản lý người được: kèo chưa hủy, chưa tới giờ chơi. Kèo Đội vs Đội vào / rời theo cả đội nên không có.
+  bool _canManagePeople(LfgMatch m) => _isHostOf(m) && !m.isTeamMatch && m.canManage(DateTime.now());
+
+  Widget _smallButton(String label, IconData icon, Color color, VoidCallback onPressed, {bool filled = false}) {
+    final style = ButtonStyle(
+      foregroundColor: WidgetStatePropertyAll(filled ? Colors.white : color),
+      backgroundColor: filled ? WidgetStatePropertyAll(color) : null,
+      side: filled ? null : WidgetStatePropertyAll(BorderSide(color: color)),
+      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
+      minimumSize: const WidgetStatePropertyAll(Size(0, 36)),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+    );
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
+    );
+    final onTap = _isBusy ? null : onPressed;
+    return filled
+        ? ElevatedButton(onPressed: onTap, style: style, child: child)
+        : OutlinedButton(onPressed: onTap, style: style, child: child);
+  }
+
+  /// Chủ kèo: người đang chờ duyệt (Duyệt / Từ chối) và người đã rời / bị loại / bị từ chối (chỉ xem).
+  Widget? _buildRequests(LfgMatch m) {
+    if (!_isHostOf(m) || (m.pendingMembers.isEmpty && m.pastMembers.isEmpty)) return null;
+    final manage = _canManagePeople(m);
+    Widget person(LfgMember p, {required bool pending}) => Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: pending ? AppColors.tagOrangeBg : AppColors.background,
+                    child: Text(
+                      p.name.isEmpty ? '?' : p.name.characters.first.toUpperCase(),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: pending ? AppColors.tagOrangeText : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.name.isEmpty ? LfgStrings.unnamedMember : p.name,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: pending ? AppColors.textMain : AppColors.textSecondary,
+                          ),
+                        ),
+                        Text(
+                          '${LfgStrings.fairPlay(p.fairPlayScore)} • ${LfgStrings.memberStatus(p.status)}',
+                          style: TextStyle(fontSize: 12, color: pending ? AppColors.tagOrangeText : AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (pending && manage)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 48),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _smallButton(LfgStrings.approve, Icons.check, AppColors.primaryGreen, () => _approve(p), filled: true),
+                      _smallButton(LfgStrings.reject, Icons.close, AppColors.textSecondary, () => _reject(p)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+
+    return _section(
+      m.pendingMembers.isEmpty ? LfgStrings.pastSection : '${LfgStrings.pendingSection} (${m.pendingMembers.length})',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final p in m.pendingMembers) person(p, pending: true),
+          if (m.pendingMembers.isNotEmpty && m.pastMembers.isNotEmpty) ...[
+            const Divider(height: 24, color: AppColors.divider),
+            const Text(
+              LfgStrings.pastSection,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+            ),
+          ],
+          for (final p in m.pastMembers) person(p, pending: false),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMembers(LfgMatch m) {
     if (m.isTeamMatch) return _buildTeamMembers(m);
+    final manage = _canManagePeople(m);
     final rows = <Widget>[];
     for (var i = 0; i < m.totalSlots; i++) {
       if (i < m.members.length) {
@@ -447,7 +659,9 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
           subtitle: member.name.isEmpty ? null : Text(LfgStrings.fairPlay(member.fairPlayScore)),
           trailing: member.isHost
               ? const Text(LfgStrings.host, style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen))
-              : null,
+              : manage && member.userId.isNotEmpty
+                  ? _smallButton(LfgStrings.remove, Icons.person_remove_outlined, Colors.red, () => _remove(member))
+                  : null,
         ));
       } else {
         final held = i < m.members.length + m.heldSlots;
@@ -581,14 +795,36 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
           SizedBox(width: double.infinity, child: _redButton(LfgStrings.withdrawRequest, _withdraw)),
         ],
       );
-    } else if (isMember && active && m.isHostedBy(_myId!) && !repo.hostCanLeave) {
-      // Host (BE): không rời được, hủy kèo được tới giờ chơi; dưới 48h là hủy đơn phương (bị phạt, xem _hostCancel).
-      if (m.canHostCancel(now)) button = _redButton(LfgStrings.cancelMatch, _hostCancel);
-    } else if (!isMember && m.isClaimable(now)) {
+    } else if (isMember && active && m.isHostedBy(_myId!)) {
+      final Widget? exit;
+      if (!repo.hostCanLeave) {
+        // Host (BE): không rời được, hủy kèo được tới giờ chơi; dưới 48h là hủy đơn phương (bị phạt, xem _hostCancel).
+        exit = m.canHostCancel(now) ? _redButton(LfgStrings.cancelMatch, _hostCancel) : null;
+      } else if (now.isBefore(m.leaveDeadline)) {
+        // Bản giả lập: host rời thì chuyển quyền host; còn một mình thì rời là hủy kèo.
+        exit = _redButton(m.members.length == 1 ? LfgStrings.cancelMatch : LfgStrings.leave, _leave);
+      } else {
+        exit = _lateActions(m, now);
+      }
+      // Sửa kèo cùng điều kiện với Web: kèo chưa hủy, chưa tới giờ chơi.
+      final edit = m.canManage(now) ? _editButton() : null;
+      button = exit != null && edit != null
+          ? Row(
+              children: [
+                Expanded(child: edit),
+                const SizedBox(width: 10),
+                Expanded(child: exit),
+              ],
+            )
+          : exit ?? edit;
+    } else if (!isMember && m.myStatus == null && m.isClaimable(now)) {
+      final asks = m.requireApproval && !m.isTeamMatch;
       button = ElevatedButton.icon(
         onPressed: _isBusy ? null : _claim,
-        icon: const Icon(Icons.flash_on, color: Colors.white),
-        label: Text('${LfgStrings.flashClaim} • ${Formatters.vnd(m.depositPerSlot)}',
+        icon: Icon(asks ? Icons.send : Icons.flash_on, color: Colors.white),
+        label: Text(
+            asks ? LfgStrings.sendRequestLong : '${LfgStrings.flashClaim} • ${Formatters.vnd(m.depositPerSlot)}',
+            textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold)),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.authPrimary,
@@ -632,6 +868,18 @@ class _LfgMatchDetailScreenState extends State<LfgMatchDetailScreen> {
       ],
     );
   }
+
+  Widget _editButton() => OutlinedButton.icon(
+        onPressed: _isBusy ? null : _edit,
+        icon: const Icon(Icons.edit_outlined, size: 18),
+        label: const Text(LfgStrings.editMatch, style: TextStyle(fontWeight: FontWeight.bold)),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primaryGreen,
+          side: const BorderSide(color: AppColors.primaryGreen),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
 
   Widget _redButton(String label, VoidCallback onPressed) => OutlinedButton(
         onPressed: _isBusy ? null : onPressed,

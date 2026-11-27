@@ -9,6 +9,8 @@ import '../core/strings/wallet_strings.dart';
 import '../screens/booking/split_payments_screen.dart';
 import '../screens/main/main_navigation_screen.dart';
 import '../screens/tournament/tournaments_screen.dart';
+import '../core/strings/community_strings.dart';
+import '../screens/community/community_screen.dart';
 
 class MainDrawer extends StatelessWidget {
   final int selectedIndex;
@@ -101,6 +103,19 @@ class MainDrawer extends StatelessWidget {
                         MaterialPageRoute(builder: (_) => const MainNavigationScreen(initialIndex: 1)),
                         (route) => false,
                       );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+
+                  // 3b. Cộng đồng (Bảng tin cộng đồng, như menu bên trái của Web)
+                  _buildDrawerItem(
+                    context: context,
+                    icon: Icons.forum_outlined,
+                    title: CommunityStrings.menu,
+                    index: 7,
+                    onTapCustom: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityScreen()));
                     },
                   ),
                   const SizedBox(height: 8),

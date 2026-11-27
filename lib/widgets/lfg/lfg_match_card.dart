@@ -6,6 +6,7 @@ import '../../models/lfg_match.dart';
 import '../../models/player_survey.dart' show SkillLevel;
 import '../../theme/app_colors.dart';
 import '../facility/sport_icon.dart';
+import 'lfg_approval.dart';
 
 String lfgStatusLabel(LfgMatch match, DateTime now) {
   if (match.cancelReason == null && match.end.isAfter(now)) {
@@ -143,6 +144,7 @@ class LfgMatchCard extends StatelessWidget {
     final isMine = myUserId != null && match.isHostedBy(myUserId!);
     final joined = myUserId != null && match.isMember(myUserId!);
     final status = match.status(now);
+    final asksApproval = match.requireApproval && !match.isTeamMatch;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -218,8 +220,16 @@ class LfgMatchCard extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textMain),
                     ),
                     if (match.skillLevel != null) LfgSkillChip(level: match.skillLevel!),
+                    if (match.requireApproval) const LfgApprovalChip(),
                   ],
                 ),
+                if (isMine && match.pendingCount > 0 && match.canManage(now)) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    LfgStrings.pendingCountLabel(match.pendingCount),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.tagOrangeText),
+                  ),
+                ],
                 if (matchScore != null || reasons.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   LfgReasons(score: matchScore, reasons: reasons),
@@ -275,14 +285,14 @@ class LfgMatchCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     if (isMine || joined)
                       _badge(isMine ? LfgStrings.yourMatch : LfgStrings.joined)
-                    else if (onClaim != null && match.isClaimable(now))
+                    else if (onClaim != null && match.myStatus == null && match.isClaimable(now))
                       // Flexible: chữ rất to trên máy hẹp thì nút co lại (chữ "…") thay vì tràn.
                       Flexible(
                         child: ElevatedButton.icon(
                           onPressed: onClaim,
-                          icon: const Icon(Icons.flash_on, size: 16, color: Colors.white),
-                          label: const Text(
-                            LfgStrings.flashClaim,
+                          icon: Icon(asksApproval ? Icons.send : Icons.flash_on, size: 16, color: Colors.white),
+                          label: Text(
+                            asksApproval ? LfgStrings.sendRequest : LfgStrings.flashClaim,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),

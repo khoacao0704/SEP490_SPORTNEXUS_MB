@@ -1,6 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../core/strings/organizer_strings.dart';
+import 'organized_tournaments_tab.dart';
+import 'referee_screens.dart';
+import '../../core/strings/match_strings.dart';
+import '../../models/match_scoring.dart';
+import '../../core/strings/report_strings.dart';
+import '../../models/player_report.dart';
+import '../report/support_center_screen.dart';
 import '../../core/strings/player_tournament_strings.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/app_repositories.dart';
@@ -25,8 +34,36 @@ class TournamentsScreen extends StatefulWidget {
   State<TournamentsScreen> createState() => _TournamentsScreenState();
 }
 
-class _TournamentsScreenState extends State<TournamentsScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this, initialIndex: widget.initialTab);
+class _TournamentsScreenState extends State<TournamentsScreen> with TickerProviderStateMixin {
+  late TabController _tabs = TabController(length: 4, vsync: this, initialIndex: widget.initialTab);
+
+  /// Trận tôi làm trọng tài: tab chỉ hiện khi có trận để chấm (luồng 26/11 mục 6).
+  List<StaffMatch> _staffMatches = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStaffMatches();
+  }
+
+  Future<void> _loadStaffMatches() async {
+    List<StaffMatch> list;
+    try {
+      list = await AppRepositories.hostTournament.getMyStaffMatches();
+    } catch (_) {
+      return; // Lỗi tải: không hiện tab trọng tài.
+    }
+    if (!mounted) return;
+    final length = list.isEmpty ? 4 : 5;
+    setState(() {
+      _staffMatches = list;
+      if (_tabs.length != length) {
+        final index = _tabs.index.clamp(0, length - 1);
+        _tabs.dispose();
+        _tabs = TabController(length: length, vsync: this, initialIndex: index);
+      }
+    });
+  }
 
   /// Tăng lên khi dữ liệu có thể đã đổi (đăng ký / rút) để các tab tải lại.
   int _revision = 0;
@@ -67,10 +104,14 @@ class _TournamentsScreenState extends State<TournamentsScreen> with SingleTicker
           unselectedLabelColor: AppColors.textSecondary,
           indicatorColor: AppColors.primaryGreen,
           labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          tabs: const [
-            Tab(text: PlayerTournamentStrings.tabExplore),
-            Tab(text: PlayerTournamentStrings.tabMine),
-            Tab(text: PlayerTournamentStrings.tabMatches),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs: [
+            const Tab(text: PlayerTournamentStrings.tabExplore),
+            const Tab(text: PlayerTournamentStrings.tabMine),
+            const Tab(text: PlayerTournamentStrings.tabMatches),
+            const Tab(text: OrganizerStrings.tabOrganized),
+            if (_staffMatches.isNotEmpty) Tab(text: MatchStrings.tabReferee),
           ],
         ),
       ),
@@ -80,6 +121,8 @@ class _TournamentsScreenState extends State<TournamentsScreen> with SingleTicker
           _ExploreTab(onOpen: _openTournament),
           _MyRegistrationsTab(key: ValueKey('mine-$_revision'), onOpen: _openTournament),
           _MyMatchesTab(key: ValueKey('matches-$_revision')),
+          const OrganizedTournamentsTab(),
+          if (_staffMatches.isNotEmpty) RefereeMatchesTab(matches: _staffMatches, onRefresh: _loadStaffMatches),
         ],
       ),
     );
@@ -512,6 +555,27 @@ class _MyMatchTile extends StatelessWidget {
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: won ? AppColors.primaryGreen : Colors.red),
             ),
           ],
+          // Khiếu nại kết quả trong 15 phút sau khi trận có kết quả (luồng 26/11).
+          if (m.canComplainAt(DateTime.now()))
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ReportContentScreen(
+                      target: ReportTarget.match,
+                      title: ReportStrings.matchComplaintTitle,
+                      subject: PlayerTournamentStrings.versus(m.mySide, m.opponent),
+                      objectId: m.matchId,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.gavel_outlined, size: 18),
+                label: const Text(ReportStrings.matchComplaint),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+              ),
+            ),
           if (m.canGiveFeedback(DateTime.now()))
             Align(
               alignment: Alignment.centerRight,

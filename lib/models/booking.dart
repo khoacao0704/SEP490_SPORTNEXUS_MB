@@ -77,6 +77,9 @@ class Booking {
   final String id;
   final String bookerId;
   final String facilityName;
+
+  /// Mã cơ sở; `null` khi BE / dữ liệu cũ không trả (khi đó so theo [facilityName]).
+  final String? facilityId;
   final String location;
 
   /// "Cầu Lông" hoặc "Bóng Đá • Sân 7 người".
@@ -122,6 +125,7 @@ class Booking {
     required this.id,
     required this.bookerId,
     required this.facilityName,
+    this.facilityId,
     required this.location,
     required this.sportLabel,
     this.courtName,
@@ -191,6 +195,13 @@ class Booking {
   bool canCancel(DateTime now, String userId) =>
       bookerId == userId && !isCheckedIn && status(now) == BookingStatus.upcoming && now.isBefore(start);
 
+  /// Shop tại sân chỉ mở cho người có đơn ở cơ sở đó: chưa hủy, đã trả đủ (không còn chờ góp), chưa check-in
+  /// và chưa hết giờ chơi. So theo mã cơ sở; BE không trả mã thì so theo tên cơ sở.
+  bool allowsShopAt({required String facilityId, required String facilityName, required DateTime now}) {
+    final sameFacility = this.facilityId != null ? this.facilityId == facilityId : this.facilityName == facilityName;
+    return sameFacility && !isCheckedIn && !awaitingPayment && status(now) == BookingStatus.upcoming;
+  }
+
   /// Mã QR check-in, tạo mới cho mỗi lần đặt; dùng tới khi chủ sân check-out.
   String get ticketCode => 'SPN-BK-$id';
 
@@ -198,6 +209,7 @@ class Booking {
         id: id,
         bookerId: bookerId,
         facilityName: facilityName,
+        facilityId: facilityId,
         location: location,
         sportLabel: sportLabel,
         courtName: courtName,
@@ -222,6 +234,7 @@ class Booking {
         id: json['id'] as String,
         bookerId: json['bookerId'] as String,
         facilityName: json['facilityName'] as String,
+        facilityId: json['facilityId'] as String?,
         location: json['location'] as String,
         sportLabel: json['sportLabel'] as String,
         courtName: json['courtName'] as String?,
@@ -242,6 +255,7 @@ class Booking {
         'id': id,
         'bookerId': bookerId,
         'facilityName': facilityName,
+        'facilityId': facilityId,
         'location': location,
         'sportLabel': sportLabel,
         'courtName': courtName,

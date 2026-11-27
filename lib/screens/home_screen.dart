@@ -6,6 +6,7 @@ import '../core/constants/vietnam_cities.dart';
 import '../core/strings/lfg_strings.dart';
 import '../data/app_repositories.dart';
 import '../models/lfg_match.dart';
+import '../widgets/home/recommended_courts_section.dart';
 import '../widgets/common/section_header.dart';
 import '../widgets/lfg/lfg_actions.dart';
 import '../widgets/lfg/lfg_match_card.dart';
@@ -126,6 +127,9 @@ class _HomeScreenState extends State<HomeScreen> {
             // 3. Nearby Recommended LFGs (Gợi Ý LFG Gần Bạn)
             _buildNearbyLfgSection(context),
             const SizedBox(height: 24),
+
+            // 4. Sân trống trong giờ rảnh (theo khảo sát người chơi); không có gợi ý thì ẩn
+            const RecommendedCourtsSection(),
           ],
         ),
       ),

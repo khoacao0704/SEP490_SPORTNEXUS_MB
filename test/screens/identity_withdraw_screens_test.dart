@@ -138,7 +138,7 @@ void main() {
       expect(await wallet.getPendingWithdrawalAmount(), 0);
     });
 
-    testWidgets('đã eKYC: chặn dưới 200.000, hiện tổng trừ ví gồm phí 5.000', (tester) async {
+    testWidgets('đã eKYC: chặn dưới 200.000; phí 5.000 trừ vào số rút (thực nhận = số rút − phí)', (tester) async {
       identity = MockIdentityRepository(
         latency: Duration.zero,
         initial: const IdentityVerification(status: IdentityStatus.approved),
@@ -155,7 +155,7 @@ void main() {
 
       await tester.enterText(find.byType(TextField), '300000');
       await tester.pump();
-      expect(find.text(WalletStrings.withdrawTotalDeduct(Formatters.vnd(305000))), findsOneWidget);
+      expect(find.text(WalletStrings.withdrawReceive(Formatters.bankVnd(295000), Formatters.bankVnd(5000))), findsOneWidget);
     });
 
     testWidgets('Chủ sân giữ luật cũ: không cần eKYC, tối thiểu 50.000, miễn phí', (tester) async {
@@ -175,4 +175,29 @@ void main() {
     ];
     expect(problems, isEmpty, reason: problems.join('\n'));
   });
+
+  testWidgets('BE chặn rút (đang có yêu cầu chờ): hiện lý do của BE, khóa nút; mức tối thiểu / phí lấy theo BE', (tester) async {
+    final blocked = _ConfigWallet(const WithdrawalConfig(
+      minAmount: 300000,
+      fee: 7000,
+      balance: 1000000,
+      canWithdraw: false,
+      blockedCode: 'PENDING_REQUEST',
+      blockedReason: 'Bạn đang có một yêu cầu rút tiền chờ xử lý.',
+    ));
+    await pump(tester, WithdrawScreen(wallet: blocked));
+    expect(find.text('Bạn đang có một yêu cầu rút tiền chờ xử lý.'), findsOneWidget);
+    final button = find.widgetWithText(ElevatedButton, WalletStrings.withdrawButton);
+    expect(tester.widget<ElevatedButton>(button).onPressed, isNull);
+    expect(find.text(WalletStrings.minWithdrawalNote(Formatters.vnd(300000), Formatters.vnd(7000))), findsOneWidget);
+  });
+}
+
+class _ConfigWallet extends MockWalletRepository {
+  final WithdrawalConfig config;
+
+  _ConfigWallet(this.config) : super(latency: Duration.zero, initialBalance: 1000000);
+
+  @override
+  Future<WithdrawalConfig?> getWithdrawalConfig() async => config;
 }

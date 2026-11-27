@@ -1,3 +1,4 @@
+import '../../core/constants/wallet_rules.dart';
 import '../../models/bank_account.dart';
 import '../../models/wallet_transaction.dart';
 
@@ -68,6 +69,9 @@ abstract class WalletRepository {
   });
 
   Future<void> removeBankAccount(String accountId);
+
+  /// Điều kiện rút của BE (mức tối thiểu, phí, có rút được không + lý do); `null` khi không có (bản giả lập).
+  Future<WithdrawalConfig?> getWithdrawalConfig();
 
   /// Gửi lệnh rút: trừ số dư ngay, trạng thái chờ xử lý. Nếu bị từ chối, BE hoàn lại tiền.
   Future<WalletTransaction> requestWithdrawal({required int amount, required BankAccount account});

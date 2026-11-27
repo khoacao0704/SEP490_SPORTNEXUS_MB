@@ -13,7 +13,10 @@ import '../../theme/app_colors.dart';
 /// Khảo sát người chơi 4 bước: môn + trình độ → lịch rảnh → khu vực & giá → mục tiêu.
 ///
 /// [mandatory]: người chơi chưa làm khảo sát (sau đăng nhập / BE báo ONBOARDING_REQUIRED) — không quay lại được,
-/// chỉ có Đăng xuất; xong thì gọi [onCompleted]. Không bắt buộc (sửa từ Hồ sơ): xong thì pop `true`.
+/// chỉ có Đăng xuất; xong thì gọi [onCompleted]. Không bắt buộc (mở từ Hồ sơ):
+/// - đã làm khảo sát → màn xem (chỉ đọc) 4 mục + nút Sửa; Sửa mở lại 4 bước đã điền sẵn, lưu xong về màn xem,
+///   quay lại ở bước 1 thì bỏ thay đổi;
+/// - chưa làm → đi 4 bước như bắt buộc, xong thì pop `true`.
 class PlayerSurveyScreen extends StatefulWidget {
   final bool mandatory;
   final void Function(BuildContext context)? onCompleted;
@@ -37,6 +40,14 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
   bool _locating = false;
   int _step = 0;
 
+  /// Đang ở màn xem (đã làm khảo sát, mở từ Hồ sơ).
+  bool _viewing = false;
+
+  /// Bản đã lưu lúc bấm Sửa từ màn xem (để huỷ sửa); `null` = không phải đang sửa từ màn xem.
+  PlayerSurvey? _beforeEdit;
+
+  bool get _editingFromView => _beforeEdit != null;
+
   @override
   void initState() {
     super.initState();
@@ -47,7 +58,12 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
     setState(() => _loadFailed = false);
     try {
       final survey = await AppRepositories.playerProfile.getSurvey();
-      if (mounted) setState(() => _survey = survey);
+      if (mounted) {
+        setState(() {
+          _survey = survey;
+          _viewing = !widget.mandatory && survey.isCompleted;
+        });
+      }
     } on PlayerProfileException {
       if (!mounted) return;
       // Bắt buộc: vẫn cho làm từ đầu; sửa từ Hồ sơ: báo lỗi, cho thử lại.
@@ -56,6 +72,23 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
   }
 
   void _update(PlayerSurvey survey) => setState(() => _survey = survey);
+
+  void _startEdit() => setState(() {
+    _beforeEdit = _survey;
+    _viewing = false;
+    _step = 0;
+  });
+
+  /// Quay lại: lùi một bước; ở bước 1 khi đang sửa từ màn xem thì bỏ thay đổi, về màn xem.
+  void _back() => setState(() {
+    if (_step > 0) {
+      _step--;
+    } else if (_editingFromView) {
+      _survey = _beforeEdit;
+      _beforeEdit = null;
+      _viewing = true;
+    }
+  });
 
   void _snack(String text, {bool error = false}) {
     ScaffoldMessenger.of(context)
@@ -79,11 +112,19 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
 
     setState(() => _saving = true);
     try {
-      await AppRepositories.playerProfile.saveSurvey(s);
+      final saved = await AppRepositories.playerProfile.saveSurvey(s);
       await OnboardingGate.markCompleted();
       if (!mounted) return;
       _snack(widget.mandatory ? SurveyStrings.completed : SurveyStrings.saved);
-      if (widget.onCompleted != null) {
+      if (_editingFromView) {
+        setState(() {
+          _saving = false;
+          _survey = saved;
+          _beforeEdit = null;
+          _viewing = true;
+          _step = 0;
+        });
+      } else if (widget.onCompleted != null) {
         widget.onCompleted!(context);
       } else {
         Navigator.pop(context, true);
@@ -109,9 +150,9 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
   Widget build(BuildContext context) {
     final survey = _survey;
     return PopScope(
-      canPop: !widget.mandatory && _step == 0,
+      canPop: !widget.mandatory && (_viewing || (_step == 0 && !_editingFromView)),
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _step > 0) setState(() => _step--);
+        if (!didPop && (_step > 0 || _editingFromView)) _back();
       },
       child: Scaffold(
         backgroundColor: AppColors.background,
@@ -119,7 +160,9 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
           backgroundColor: AppColors.white,
           elevation: 0.5,
           automaticallyImplyLeading: !widget.mandatory || _step > 0,
-          leading: _step > 0 ? IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => setState(() => _step--)) : null,
+          leading: !_viewing && (_step > 0 || _editingFromView)
+              ? IconButton(icon: const Icon(Icons.arrow_back), onPressed: _saving ? null : _back)
+              : null,
           iconTheme: const IconThemeData(color: AppColors.textMain),
           title: Text(
             widget.mandatory ? SurveyStrings.title : SurveyStrings.editTitle,
@@ -145,6 +188,8 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
                       )
                     : const CircularProgressIndicator(),
               )
+            : _viewing
+            ? _summary(survey)
             : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
@@ -173,6 +218,25 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
               ),
         bottomNavigationBar: survey == null
             ? null
+            : _viewing
+            ? SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SizedBox(
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: _startEdit,
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text(SurveyStrings.edit, style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.authPrimary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                ),
+              )
             : SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -202,6 +266,86 @@ class _PlayerSurveyScreenState extends State<PlayerSurveyScreen> {
       ),
     );
   }
+
+  // ---------------- Màn xem (chỉ đọc) ----------------
+
+  Widget _summary(PlayerSurvey s) {
+    const muted = TextStyle(color: AppColors.textSecondary);
+    final price = s.maxPricePerHour;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _viewSection(SurveyStrings.viewSports, [
+          for (final item in s.sports)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.sport.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text(
+                    [
+                      '${SurveyStrings.level}: ${item.level.label}',
+                      ...PlayFormat.optionsFor(item.sport).where((f) => item.formats.contains(f.apiValue)).map((f) => f.label),
+                    ].join(' · '),
+                    style: muted,
+                  ),
+                ],
+              ),
+            ),
+        ]),
+        _viewSection(SurveyStrings.viewAvailability, [
+          if (s.availability.isEmpty)
+            const Text(SurveyStrings.noWindows, style: muted)
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final w in s.availability) Chip(label: Text(w.label))],
+            ),
+        ]),
+        _viewSection(SurveyStrings.areaTitle, [
+          Text(s.hasLocation ? SurveyStrings.locationSet : SurveyStrings.locationNotSet),
+          Text(SurveyStrings.radius(s.radiusKm), style: muted),
+          Text(
+            '${SurveyStrings.maxPrice}: ${price == null ? SurveyStrings.noPriceLimit : Formatters.vnd(price)}',
+            style: muted,
+          ),
+        ]),
+        _viewSection(SurveyStrings.goalTitle, [
+          _viewLine(SurveyStrings.goal, s.goal?.label),
+          _viewLine(SurveyStrings.frequency, s.frequency?.label),
+          _viewLine(SurveyStrings.genderShort, s.gender?.label),
+        ]),
+      ],
+    );
+  }
+
+  Widget _viewSection(String title, List<Widget> children) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: _card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          ...children,
+        ],
+      ),
+    ),
+  );
+
+  Widget _viewLine(String label, String? value) => Padding(
+    padding: const EdgeInsets.only(bottom: 2),
+    child: Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: '$label: ', style: const TextStyle(color: AppColors.textSecondary)),
+          TextSpan(text: value ?? SurveyStrings.notChosen),
+        ],
+      ),
+    ),
+  );
 
   // ---------------- Bước 1: môn + trình độ ----------------
 

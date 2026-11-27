@@ -115,6 +115,22 @@ class TournamentRegistrationCard extends StatelessWidget {
                   style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 4),
+                if (r.isCheckedIn) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: AppColors.tagGreenBg, borderRadius: BorderRadius.circular(10)),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.how_to_reg, size: 14, color: AppColors.tagGreenText),
+                        SizedBox(width: 4),
+                        Text(PlayerTournamentStrings.attended,
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.tagGreenText)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
                 Text(
                   '${PlayerTournamentStrings.entryFee}: ${PlayerTournamentStrings.fee(r.entryFee)} • ${r.phase.label}',
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMain),

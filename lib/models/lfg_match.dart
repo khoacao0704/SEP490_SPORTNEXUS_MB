@@ -79,6 +79,31 @@ enum LfgMyStatus {
   invited,
 }
 
+/// Trạng thái một người trong kèo (BE LfgParticipant.status).
+enum LfgMemberStatus {
+  accepted('ACCEPTED'),
+
+  /// Đã xin vào kèo cần duyệt, chờ chủ kèo duyệt / từ chối.
+  pending('PENDING'),
+  rejected('REJECTED'),
+  left('LEFT'),
+
+  /// Bị chủ kèo loại (được hoàn 100%).
+  removed('REMOVED'),
+
+  /// Tự rút yêu cầu / kèo bị hủy.
+  cancelled('CANCELLED');
+
+  const LfgMemberStatus(this.apiValue);
+
+  final String apiValue;
+
+  static LfgMemberStatus? fromApi(Object? value) {
+    final v = value?.toString().toUpperCase();
+    return values.where((s) => s.apiValue == v).firstOrNull;
+  }
+}
+
 class LfgMember {
   final String userId;
 
@@ -91,6 +116,10 @@ class LfgMember {
   /// Phe trong kèo Đội vs Đội: 'A' = đội chủ kèo, 'B' = đội nhận kèo; `null` với kèo thường.
   final String? side;
 
+  /// Người trong [LfgMatch.members] luôn là [LfgMemberStatus.accepted]; [LfgMatch.pendingMembers] là pending,
+  /// [LfgMatch.pastMembers] là rejected / left / removed / cancelled.
+  final LfgMemberStatus status;
+
   const LfgMember({
     required this.userId,
     required this.name,
@@ -98,7 +127,18 @@ class LfgMember {
     required this.joinedAt,
     this.isHost = false,
     this.side,
+    this.status = LfgMemberStatus.accepted,
   });
+
+  LfgMember withStatus(LfgMemberStatus status) => LfgMember(
+        userId: userId,
+        name: name,
+        fairPlayScore: fairPlayScore,
+        joinedAt: joinedAt,
+        isHost: isHost,
+        side: side,
+        status: status,
+      );
 
   factory LfgMember.fromJson(Map<String, dynamic> json) => LfgMember(
         userId: json['userId'] as String,
@@ -106,6 +146,7 @@ class LfgMember {
         fairPlayScore: (json['fairPlayScore'] as num).toInt(),
         isHost: json['isHost'] as bool? ?? false,
         joinedAt: DateTime.parse(json['joinedAt'] as String),
+        status: LfgMemberStatus.fromApi(json['status']) ?? LfgMemberStatus.accepted,
       );
 
   Map<String, dynamic> toJson() => {
@@ -114,6 +155,7 @@ class LfgMember {
         'fairPlayScore': fairPlayScore,
         'isHost': isHost,
         'joinedAt': joinedAt.toIso8601String(),
+        if (status != LfgMemberStatus.accepted) 'status': status.apiValue,
       };
 }
 
@@ -191,6 +233,18 @@ class LfgMatch {
   /// Số người mỗi đội (kèo Đội vs Đội), vd. 5 với 5v5.
   final int? sideSize;
 
+  /// Kèo cần chủ kèo duyệt: người nhận suất chỉ gửi yêu cầu, được duyệt mới bị giữ Điểm và vào kèo.
+  final bool requireApproval;
+
+  /// Người đang chờ chủ kèo duyệt (BE chỉ trả cho chủ kèo).
+  final List<LfgMember> pendingMembers;
+
+  /// Người đã rời / bị loại / bị từ chối / tự rút yêu cầu (BE chỉ trả cho chủ kèo).
+  final List<LfgMember> pastMembers;
+
+  /// Số người chờ duyệt do BE đếm khi danh sách không kèm người tham gia.
+  final int? pendingCountOverride;
+
   const LfgMatch({
     required this.id,
     required this.facilityId,
@@ -221,7 +275,16 @@ class LfgMatch {
     this.hostTeam,
     this.challengerTeam,
     this.sideSize,
+    this.requireApproval = false,
+    this.pendingMembers = const [],
+    this.pastMembers = const [],
+    this.pendingCountOverride,
   });
+
+  int get pendingCount => pendingMembers.isNotEmpty ? pendingMembers.length : pendingCountOverride ?? 0;
+
+  /// Chủ kèo còn quản lý kèo được (duyệt / từ chối / loại người, sửa kèo): kèo chưa hủy và chưa tới giờ chơi.
+  bool canManage(DateTime now) => cancelReason == null && now.isBefore(start);
 
   /// Kèo Đội vs Đội: chỉ đội trưởng nhận kèo thay cả đội (người lẻ không vào được).
   bool get isTeamMatch => hostTeam != null;
@@ -288,11 +351,21 @@ class LfgMatch {
   /// Mã QR check-in riêng của từng người, dùng tới khi chủ sân check-out.
   String ticketCode(String userId) => 'SPN-LFG-$id-$userId';
 
+  static const Object _keep = Object();
+
+  /// [skillLevel] / [myStatus] / [totalSlotsOverride] nhận cả `null` (bỏ giá trị); không truyền thì giữ nguyên.
   LfgMatch copyWith({
     List<LfgMember>? members,
     int? heldSlots,
     LfgCancelReason? cancelReason,
     int? slotsLeftOverride,
+    String? note,
+    Object? skillLevel = _keep,
+    Object? myStatus = _keep,
+    Object? totalSlotsOverride = _keep,
+    bool? requireApproval,
+    List<LfgMember>? pendingMembers,
+    List<LfgMember>? pastMembers,
   }) =>
       LfgMatch(
         id: id,
@@ -311,19 +384,23 @@ class LfgMatch {
         members: members ?? this.members,
         createdAt: createdAt,
         heldSlots: heldSlots ?? this.heldSlots,
-        note: note,
+        note: note ?? this.note,
         cancelReason: cancelReason ?? this.cancelReason,
-        totalSlotsOverride: totalSlotsOverride,
+        totalSlotsOverride: identical(totalSlotsOverride, _keep) ? this.totalSlotsOverride : totalSlotsOverride as int?,
         slotsLeftOverride: slotsLeftOverride ?? this.slotsLeftOverride,
         pricePerPersonOverride: pricePerPersonOverride,
         formatLabelOverride: formatLabelOverride,
-        myStatus: myStatus,
+        myStatus: identical(myStatus, _keep) ? this.myStatus : myStatus as LfgMyStatus?,
         bookingId: bookingId,
-        skillLevel: skillLevel,
+        skillLevel: identical(skillLevel, _keep) ? this.skillLevel : skillLevel as SkillLevel?,
         hostCancelUntilOverride: hostCancelUntilOverride,
         hostTeam: hostTeam,
         challengerTeam: challengerTeam,
         sideSize: sideSize,
+        requireApproval: requireApproval ?? this.requireApproval,
+        pendingMembers: pendingMembers ?? this.pendingMembers,
+        pastMembers: pastMembers ?? this.pastMembers,
+        pendingCountOverride: pendingCountOverride,
       );
 
   factory LfgMatch.fromJson(Map<String, dynamic> json) => LfgMatch(
@@ -347,7 +424,15 @@ class LfgMatch {
         cancelReason: json['cancelReason'] == null ? null : LfgCancelReason.fromApi(json['cancelReason'] as String),
         skillLevel: SkillLevel.fromApi(json['skillLevel']),
         slotsLeftOverride: (json['slotsLeftOverride'] as num?)?.toInt(),
+        totalSlotsOverride: (json['totalSlotsOverride'] as num?)?.toInt(),
+        requireApproval: json['requireApproval'] as bool? ?? false,
+        pendingMembers: _membersFromJson(json['pendingMembers']),
+        pastMembers: _membersFromJson(json['pastMembers']),
       );
+
+  static List<LfgMember> _membersFromJson(Object? list) => list is List
+      ? list.map((e) => LfgMember.fromJson(Map<String, dynamic>.from(e as Map))).toList()
+      : const [];
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -370,7 +455,24 @@ class LfgMatch {
         if (cancelReason != null) 'cancelReason': cancelReason!.apiValue,
         if (skillLevel != null) 'skillLevel': skillLevel!.apiValue,
         if (slotsLeftOverride != null) 'slotsLeftOverride': slotsLeftOverride,
+        if (totalSlotsOverride != null) 'totalSlotsOverride': totalSlotsOverride,
+        if (requireApproval) 'requireApproval': true,
+        if (pendingMembers.isNotEmpty) 'pendingMembers': pendingMembers.map((m) => m.toJson()).toList(),
+        if (pastMembers.isNotEmpty) 'pastMembers': pastMembers.map((m) => m.toJson()).toList(),
       };
+}
+
+/// Những gì chủ kèo sửa được sau khi tạo kèo (BE UpdateLfgRequest). Sân, ca, thể thức, giá không đổi được.
+class LfgMatchUpdate {
+  /// Số người cần tìm thêm (không tính chủ kèo); `null` = giữ nguyên (kèo Đội vs Đội không đổi được).
+  final int? slotsNeeded;
+
+  /// `null` = mọi trình độ.
+  final SkillLevel? skillLevel;
+  final String note;
+  final bool requireApproval;
+
+  const LfgMatchUpdate({this.slotsNeeded, this.skillLevel, this.note = '', this.requireApproval = false});
 }
 
 /// Chỗ đang giữ 10 phút trong lúc người chơi thanh toán cọc Flash Claim.

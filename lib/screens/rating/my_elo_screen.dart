@@ -13,6 +13,7 @@ import 'leaderboard_screen.dart';
 import 'skill_assessment_screen.dart';
 
 /// Elo của tôi theo môn (cá nhân + đội), môn chưa có Elo (làm khảo sát trình độ), lối vào bảng xếp hạng.
+/// Môn đã có Elo thì không làm lại khảo sát (Elo chỉ đổi theo kết quả thi đấu).
 class MyEloScreen extends StatefulWidget {
   const MyEloScreen({super.key});
 
@@ -127,7 +128,7 @@ class _MyEloScreenState extends State<MyEloScreen> {
             padding: EdgeInsets.only(bottom: 8),
             child: Text(RatingStrings.noRating, style: TextStyle(height: 1.4)),
           ),
-        for (final r in personal) _ratingCard(r, onAssess: r.sport == null ? null : () => _assess(r.sport!)),
+        for (final r in personal) _ratingCard(r),
         if (missing.isNotEmpty) ...[
           const SizedBox(height: 8),
           _section(RatingStrings.sportsWithoutRating),
@@ -155,7 +156,7 @@ class _MyEloScreenState extends State<MyEloScreen> {
     child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
   );
 
-  Widget _ratingCard(SportRating r, {String? title, VoidCallback? onAssess}) => Card(
+  Widget _ratingCard(SportRating r, {String? title}) => Card(
     margin: const EdgeInsets.only(bottom: 8),
     child: Padding(
       padding: const EdgeInsets.all(14),
@@ -209,7 +210,6 @@ class _MyEloScreenState extends State<MyEloScreen> {
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (onAssess != null) TextButton(onPressed: onAssess, child: const Text(RatingStrings.retakeAssessment)),
               if (r.sport != null)
                 TextButton(
                   onPressed: () => _openLeaderboard(sport: r.sport, type: r.type),

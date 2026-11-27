@@ -173,6 +173,25 @@ class ApiWalletRepository implements WalletRepository {
   Future<void> removeBankAccount(String accountId) async =>
       throw const WalletException(WalletStrings.featureInDevelopment);
 
+  static const String withdrawalConfigPath = '/api/v1/wallet/withdrawals/config';
+
+  /// GET /wallet/withdrawals/config → {minAmount, fee, balance, canWithdraw, blockedCode, blockedReason}.
+  @override
+  Future<WithdrawalConfig?> getWithdrawalConfig() async {
+    if (!supportsWithdrawal) return null;
+    final data = await _call(() => _api.get(withdrawalConfigPath));
+    if (data is! Map) return null;
+    String? str(Object? v) => v == null || '$v'.trim().isEmpty ? null : '$v';
+    return WithdrawalConfig(
+      minAmount: _money(data['minAmount']),
+      fee: _money(data['fee']),
+      balance: _money(data['balance']),
+      canWithdraw: data['canWithdraw'] == true,
+      blockedCode: str(data['blockedCode']),
+      blockedReason: str(data['blockedReason']),
+    );
+  }
+
   /// BE rút về tài khoản đã lưu; [account] chỉ để hiển thị. Chặn khi chưa lưu tài khoản, số dư không đủ,
   /// ví âm hoặc đang có lệnh chờ xử lý (BE trả câu tiếng Việt).
   @override

@@ -115,7 +115,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     final now = _now();
     bool isPast(LfgMatch m) => const [LfgStatus.cancelled, LfgStatus.completed].contains(m.status(now));
 
-    final mine = (await _all(me.id)).where((m) => m.isMember(me.id)).toList();
+    final mine = (await _all(me.id)).where((m) => m.isMember(me.id) || m.myStatus != null).toList();
     final upcoming = mine.where((m) => !isPast(m)).toList()..sort((a, b) => a.start.compareTo(b.start));
     final past = mine.where(isPast).toList()..sort((a, b) => b.start.compareTo(a.start));
     return [...upcoming, ...past];
@@ -134,7 +134,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     if (existing != null) {
       return LfgClaim(claimId: existing.id, match: match, amount: match.depositPerSlot, expiresAt: existing.expiresAt);
     }
-    if (match.isMember(me.id)) throw const LfgException(LfgStrings.alreadyJoined);
+    if (match.isMember(me.id) || match.myStatus != null) throw const LfgException(LfgStrings.alreadyJoined);
     if (match.status(now) != LfgStatus.open || !now.isBefore(match.fillDeadline)) {
       throw const LfgException(LfgStrings.closed);
     }
@@ -167,6 +167,25 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
       throw const LfgException(LfgStrings.closed);
     }
 
+    // Kèo cần duyệt: chỉ gửi yêu cầu, chưa trừ Điểm (trừ khi chủ kèo duyệt).
+    if (match.requireApproval) {
+      _claims.remove(claim);
+      final updated = match.copyWith(
+        pendingMembers: [
+          ...match.pendingMembers,
+          LfgMember(
+            userId: me.id,
+            name: me.name,
+            fairPlayScore: await _myFairPlay(),
+            joinedAt: now,
+            status: LfgMemberStatus.pending,
+          ),
+        ],
+      );
+      await _saveMatch(updated);
+      return _withHeldSlots(updated, me.id);
+    }
+
     final amount = match.depositPerSlot;
     await _pay(me.id, amount, TransactionType.flashClaim, 'Cọc Flash Claim ${match.sport.label} • ${match.facilityName}', match.id);
     _claims.remove(claim);
@@ -197,6 +216,7 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     SkillLevel? skillLevel,
     String? hostTeamId,
     int? sideSize,
+    bool requireApproval = false,
   }) async {
     await _delay();
     final me = await _requireUser();
@@ -231,10 +251,103 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
       createdAt: now,
       note: note.trim(),
       skillLevel: skillLevel,
+      requireApproval: requireApproval,
     );
     await _saveMatch(match);
     await _recordPayment(id, me.id, deposit);
     return match;
+  }
+
+  // ---- Chủ kèo quản lý người / sửa kèo ----
+
+  /// Duyệt: giữ Điểm của người xin vào. Chỉ trừ được khi có ví riêng từng người ([walletOf]); demo một máy thì
+  /// người xin vào là người giả lập (không có ví) nên bỏ qua bước trừ, giống "giả lập có người vào kèo".
+  @override
+  Future<LfgMatch> approveRequest(String matchId, String userId) async {
+    final (me, match) = await _managedMatch(matchId);
+    final request = match.pendingMembers.where((p) => p.userId == userId).firstOrNull;
+    if (request == null) throw const LfgException(LfgStrings.requestNotFound);
+    if (match.slotsLeft <= 0) throw const LfgException(LfgStrings.full);
+    if (walletOf != null) {
+      await _pay(
+        userId,
+        match.depositPerSlot,
+        TransactionType.flashClaim,
+        'Cọc Flash Claim ${match.sport.label} • ${match.facilityName}',
+        match.id,
+      );
+      await _recordPayment(match.id, userId, match.depositPerSlot);
+    }
+    final updated = match.copyWith(
+      members: [...match.members, request.withStatus(LfgMemberStatus.accepted)],
+      pendingMembers: match.pendingMembers.where((p) => p.userId != userId).toList(),
+    );
+    await _saveMatch(updated);
+    return _withHeldSlots(updated, me);
+  }
+
+  @override
+  Future<LfgMatch> rejectRequest(String matchId, String userId) async {
+    final (me, match) = await _managedMatch(matchId);
+    final request = match.pendingMembers.where((p) => p.userId == userId).firstOrNull;
+    if (request == null) throw const LfgException(LfgStrings.requestNotFound);
+    final updated = match.copyWith(
+      pendingMembers: match.pendingMembers.where((p) => p.userId != userId).toList(),
+      pastMembers: [...match.pastMembers, request.withStatus(LfgMemberStatus.rejected)],
+    );
+    await _saveMatch(updated);
+    return _withHeldSlots(updated, me);
+  }
+
+  /// Loại người đã vào: hoàn 100% số họ đã trả, chỗ mở lại.
+  @override
+  Future<LfgMatch> removeMember(String matchId, String userId) async {
+    final (me, match) = await _managedMatch(matchId);
+    final member = match.members.where((m) => m.userId == userId && !m.isHost).firstOrNull;
+    if (member == null) throw const LfgException(LfgStrings.notMember);
+    final payments = await _payments();
+    final paid = payments[matchId]?.remove(userId);
+    await _savePayments(payments);
+    if (paid != null && paid > 0) {
+      await _walletFor(userId).creditRefund(
+        amount: paid,
+        description: 'Hoàn 100% cọc • bị chủ kèo loại khỏi kèo ${match.sport.label} • ${match.facilityName}',
+        reference: matchId,
+      );
+    }
+    final updated = match.copyWith(
+      members: match.members.where((m) => m.userId != userId).toList(),
+      pastMembers: [...match.pastMembers, member.withStatus(LfgMemberStatus.removed)],
+    );
+    await _saveMatch(updated);
+    return _withHeldSlots(updated, me);
+  }
+
+  @override
+  Future<LfgMatch> updateMatch(String matchId, LfgMatchUpdate update) async {
+    final (me, match) = await _managedMatch(matchId);
+    final needed = update.slotsNeeded;
+    if (needed != null && (needed < 1 || needed < match.joinerCount)) {
+      throw const LfgException(LfgStrings.slotsBelowJoined);
+    }
+    final updated = match.copyWith(
+      totalSlotsOverride: needed == null ? match.totalSlotsOverride : needed + 1,
+      skillLevel: update.skillLevel,
+      note: update.note.trim(),
+      requireApproval: update.requireApproval,
+    );
+    await _saveMatch(updated);
+    return _withHeldSlots(updated, me);
+  }
+
+  /// Kèo của chính người dùng, còn quản lý được (chưa hủy, chưa tới giờ chơi).
+  Future<(String, LfgMatch)> _managedMatch(String matchId) async {
+    await _delay();
+    final me = await _requireUser();
+    final match = await _find(matchId, me.id);
+    if (!match.isHostedBy(me.id)) throw const LfgException(LfgStrings.hostOnly);
+    if (!match.canManage(_now())) throw const LfgException(LfgStrings.alreadyEnded);
+    return (me.id, match);
   }
 
   // ---- Khác biệt với BE thật ----
@@ -288,6 +401,17 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     await _delay();
     final me = await _requireUser();
     final match = await _find(matchId, me.id);
+    // Rút yêu cầu đang chờ duyệt: chưa trả gì nên không hoàn.
+    final request = match.pendingMembers.where((p) => p.userId == me.id).firstOrNull;
+    if (request != null) {
+      await _saveMatch(
+        match.copyWith(
+          pendingMembers: match.pendingMembers.where((p) => p.userId != me.id).toList(),
+          pastMembers: [...match.pastMembers, request.withStatus(LfgMemberStatus.cancelled)],
+        ),
+      );
+      return 0;
+    }
     if (!match.isMember(me.id)) throw const LfgException(LfgStrings.notMember);
     _ensureNotEnded(match);
     // Trước T−48h ai cũng rời được (kể cả kèo đã đủ người), hoàn 100%.
@@ -336,17 +460,19 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     final match = await _find(matchId, me?.id);
     if (match.status(_now()) != LfgStatus.open || match.isFull) throw const LfgException(LfgStrings.full);
 
-    final taken = match.members.map((m) => m.userId).toSet();
-    final guest = _guestPool.firstWhere((g) => !taken.contains(g.id));
-    final updated = match.copyWith(members: [
-      ...match.members,
-      LfgMember(
-        userId: guest.id,
-        name: match.format.isTeam ? guest.team : guest.name,
-        fairPlayScore: guest.fairPlay,
-        joinedAt: _now(),
-      ),
-    ]);
+    final taken = {...match.members, ...match.pendingMembers, ...match.pastMembers}.map((m) => m.userId).toSet();
+    final guest = _guestPool.where((g) => !taken.contains(g.id)).firstOrNull;
+    if (guest == null) throw const LfgException(LfgStrings.full);
+    final player = LfgMember(
+      userId: guest.id,
+      name: match.format.isTeam ? guest.team : guest.name,
+      fairPlayScore: guest.fairPlay,
+      joinedAt: _now(),
+    );
+    // Kèo cần duyệt: người giả lập gửi yêu cầu để chủ kèo thử duyệt / từ chối.
+    final updated = match.requireApproval
+        ? match.copyWith(pendingMembers: [...match.pendingMembers, player.withStatus(LfgMemberStatus.pending)])
+        : match.copyWith(members: [...match.members, player]);
     await _saveMatch(updated);
     return _withHeldSlots(updated, me?.id);
   }
@@ -426,9 +552,12 @@ class MockLfgRepository implements LfgRepository, SandboxLfgSimulator {
     _claims.removeWhere((c) => !c.expiresAt.isAfter(now));
   }
 
+  /// Kèm số chỗ người khác đang giữ và trạng thái chờ duyệt của người dùng hiện tại.
+  /// Danh sách chờ duyệt / đã rời vẫn giữ nguyên (dữ liệu được lưu lại từ đây); màn hình chỉ hiện cho chủ kèo.
   LfgMatch _withHeldSlots(LfgMatch match, String? myId) {
     final held = _claims.where((c) => c.matchId == match.id && c.userId != myId).length;
-    return match.copyWith(heldSlots: held);
+    final waiting = myId != null && match.pendingMembers.any((p) => p.userId == myId);
+    return match.copyWith(heldSlots: held, myStatus: waiting ? LfgMyStatus.pendingApproval : null);
   }
 
   Future<LfgMatch> _find(String matchId, String? myId) async {

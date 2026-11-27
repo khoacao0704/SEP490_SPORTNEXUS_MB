@@ -130,4 +130,15 @@ abstract class AuthRepository {
   /// Xóa tài khoản (xóa mềm). Chặn nếu còn lịch đặt sân sắp diễn ra hoặc ví còn tiền. Thành công thì đăng xuất.
   /// Tài khoản chưa có mật khẩu thì không cần [password].
   Future<void> deleteAccount({String? password, String? reason});
+
+  // ---------------- Bảo mật ----------------
+
+  /// Thu hồi mọi phiên đăng nhập trên tất cả thiết bị (kể cả máy này), rồi xóa phiên trên máy.
+  Future<void> logoutAllDevices();
+
+  /// Gửi mã OTP 6 số tới email của tài khoản. Trả mã thử nghiệm nếu BE / bản giả lập cho xem (không thì `null`).
+  Future<String?> sendEmailOtp();
+
+  /// Xác thực email bằng mã OTP vừa gửi.
+  Future<void> verifyEmail(String otpCode);
 }

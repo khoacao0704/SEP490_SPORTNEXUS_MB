@@ -7,10 +7,10 @@ import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_player_profile_repository.dart';
 import 'package:test1/data/mock/mock_rating_repository.dart';
 import 'package:test1/data/repositories/team_repository.dart';
+import 'package:test1/models/player_survey.dart';
 import 'package:test1/models/sport.dart';
 import 'package:test1/screens/rating/leaderboard_screen.dart';
 import 'package:test1/screens/rating/my_elo_screen.dart';
-import 'package:test1/screens/rating/skill_assessment_screen.dart';
 import 'package:test1/widgets/common/rating_required.dart';
 
 void main() {
@@ -32,16 +32,22 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('Elo của tôi: thấy Elo cầu lông có sẵn; môn chưa có Elo thì làm khảo sát, nộp xong có Elo', (tester) async {
+  testWidgets('Elo của tôi: môn đã có Elo không làm lại khảo sát; môn chưa có Elo thì làm, nộp xong có Elo', (tester) async {
+    final survey = await AppRepositories.playerProfile.getSurvey();
+    await AppRepositories.playerProfile.saveSurvey(
+      survey.copyWith(sports: [...survey.sports, const SurveySport(sport: Sport.tennis, level: SkillLevel.beginner)]),
+    );
     await pump(tester, const MyEloScreen());
     expect(find.textContaining('1240', findRichText: true), findsOneWidget);
     expect(find.text('Bạc'), findsOneWidget);
-    // Khảo sát người chơi demo chỉ có cầu lông → không còn môn chưa có Elo.
-    expect(find.text(RatingStrings.sportsWithoutRating), findsNothing);
+    // Cầu lông đã có Elo → chỉ có nút bảng xếp hạng; tennis chưa có Elo → một nút làm khảo sát.
+    expect(find.text(RatingStrings.sportsWithoutRating), findsOneWidget);
+    expect(find.text(RatingStrings.takeAssessment), findsOneWidget);
+    expect(find.text('Xem / làm lại khảo sát'), findsNothing);
 
-    await tester.tap(find.text(RatingStrings.retakeAssessment));
+    await tester.tap(find.text(RatingStrings.takeAssessment));
     await tester.pumpAndSettle();
-    expect(find.byType(SkillAssessmentScreen), findsOneWidget);
+    expect(find.text(RatingStrings.assessmentTitle(Sport.tennis.label)), findsOneWidget);
 
     // Chưa trả lời đủ thì không nộp.
     await tester.tap(find.text(RatingStrings.submit));
@@ -69,6 +75,9 @@ void main() {
 
     expect(find.byType(MyEloScreen), findsOneWidget);
     expect(find.textContaining('1400', findRichText: true), findsOneWidget);
+    // Tennis đã có Elo → hết môn chưa có Elo, không còn nút khảo sát nào.
+    expect(find.text(RatingStrings.sportsWithoutRating), findsNothing);
+    expect(find.text(RatingStrings.takeAssessment), findsNothing);
   });
 
   testWidgets('Bảng xếp hạng: vị trí #1.., đổi sang Đội; kéo xuống tải trang tiếp', (tester) async {

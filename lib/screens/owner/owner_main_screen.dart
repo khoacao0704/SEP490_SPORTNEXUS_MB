@@ -6,15 +6,18 @@ import '../../models/app_user.dart';
 import '../../models/facility.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/notification/notification_bell.dart';
+import '../../models/organized_tournament.dart';
 import '../../widgets/owner/facility_selector.dart';
+import '../../widgets/owner/owner_shell.dart';
 import 'owner_account_screen.dart';
 import 'owner_facilities_screen.dart';
 import 'owner_notifications.dart';
 import 'owner_overview_screen.dart';
 import 'owner_scan_screen.dart';
 import 'owner_schedule_screen.dart';
+import 'owner_tournament_hub_screen.dart';
 
-/// Khung chính của Chủ sân: Tổng quan · Lịch đặt · Quét QR · Cơ sở · Tài khoản.
+/// Khung chính của Chủ sân: Tổng quan · Lịch đặt · Quét QR · Cơ sở · Tài khoản, và menu trái (Giải đấu).
 /// Nút "Quét QR" mở màn camera riêng (không giữ camera chạy nền trong tab).
 class OwnerMainScreen extends StatefulWidget {
   final AppUser user;
@@ -29,6 +32,7 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
   static final int _scanIndex = OwnerTab.scan.index;
 
   int _currentIndex = 0;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   List<Facility> _facilities = [];
   bool _loading = true;
   String? _error;
@@ -85,6 +89,19 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
   }
 
   void _selectTab(OwnerTab tab) => setState(() => _currentIndex = tab.index);
+
+  /// Giải đấu tại cơ sở đang quản lý (menu trái).
+  void _openTournaments() {
+    final f = _facilities.where((x) => x.id == _facilityId).firstOrNull ?? _facilities.firstOrNull;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OwnerTournamentHubScreen(
+          facility: f == null ? null : FacilityOption(id: f.id, name: f.name, address: f.address),
+        ),
+      ),
+    );
+  }
 
 
   Future<void> _onTap(int index) async {
@@ -161,7 +178,12 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
     ];
 
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: pages),
+      key: _scaffoldKey,
+      drawer: OwnerDrawer(onOpenTournaments: _openTournaments),
+      body: OwnerShell(
+        openDrawer: () => _scaffoldKey.currentState?.openDrawer(),
+        child: IndexedStack(index: _currentIndex, children: pages),
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -2))],

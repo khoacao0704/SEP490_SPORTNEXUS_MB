@@ -14,6 +14,11 @@ import '../../widgets/review/pending_review_banner.dart';
 import '../lfg/lfg_screen.dart';
 import 'split_booking_screen.dart';
 import 'split_payment_screen.dart';
+import '../../core/strings/report_strings.dart';
+import '../report/support_center_screen.dart';
+import '../../core/strings/player_shop_strings.dart';
+import '../../widgets/shop/player_shop.dart';
+import 'check_in_history_view.dart';
 
 /// Tab "Lịch Đặt & QR": sân đã đặt (vé QR, hủy đặt) và kèo LFG của tôi (rời / yêu cầu hủy trong chi tiết kèo).
 class MyBookingsScreen extends StatefulWidget {
@@ -26,7 +31,7 @@ class MyBookingsScreen extends StatefulWidget {
 }
 
 class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+  late final TabController _tabs = TabController(length: 3, vsync: this, initialIndex: widget.initialTab);
   int _revision = 0;
 
   @override
@@ -62,7 +67,11 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerPr
           unselectedLabelColor: AppColors.textSecondary,
           indicatorColor: AppColors.primaryGreen,
           labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-          tabs: const [Tab(text: BookingStrings.tabBookings), Tab(text: BookingStrings.tabLfg)],
+          tabs: const [
+            Tab(text: BookingStrings.tabBookings),
+            Tab(text: BookingStrings.tabLfg),
+            Tab(text: PlayerShopStrings.historyTabShort),
+          ],
         ),
       ),
       body: Column(
@@ -74,6 +83,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> with SingleTickerPr
               children: [
                 _BookingsView(revision: _revision),
                 MyLfgMatchesView(revision: _revision, onChanged: () => setState(() => _revision++)),
+                CheckInHistoryView(revision: _revision),
               ],
             ),
           ),
@@ -506,8 +516,45 @@ class _BookingsViewState extends State<_BookingsView> {
               ),
             ],
           ],
+          _complainButton(b),
         ],
       ),
+    );
+  }
+
+  /// Hàng nút phụ cuối thẻ: "Đặt đồ tại sân" (đơn [shopFor] còn mở shop: chưa check-in, biết mã cơ sở)
+  /// và lối tắt khiếu nại đơn [b] (mở Trợ giúp & Khiếu nại với đơn chọn sẵn; BE kiểm tra đơn có khiếu nại được không).
+  Widget _complainButton(Booking b, {Booking? shopFor}) {
+    final shop = shopFor ?? b;
+    final facilityId = shop.facilityId;
+    final showShop = facilityId != null &&
+        shop.allowsShopAt(facilityId: facilityId, facilityName: shop.facilityName, now: DateTime.now());
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 4,
+      children: [
+        if (showShop)
+          TextButton.icon(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => FacilityShopScreen(facilityId: facilityId, facilityName: shop.facilityName),
+              ),
+            ),
+            icon: const Icon(Icons.storefront_outlined, size: 16),
+            label: const Text(PlayerShopStrings.openShop),
+            style: TextButton.styleFrom(foregroundColor: AppColors.primaryGreen, visualDensity: VisualDensity.compact),
+          ),
+        TextButton.icon(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => SupportCenterScreen(initialBookingId: b.id)),
+          ),
+          icon: const Icon(Icons.flag_outlined, size: 16),
+          label: const Text(ReportStrings.bookingComplaintShort),
+          style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary, visualDensity: VisualDensity.compact),
+        ),
+      ],
     );
   }
 
@@ -594,6 +641,12 @@ class _BookingsViewState extends State<_BookingsView> {
               ),
             ),
           ],
+          // Gói: chọn sẵn buổi gần nhất đã bắt đầu (chưa có thì buổi đầu); trong form vẫn đổi được buổi khác.
+          _complainButton(
+            p.sessions.where((b) => !b.start.isAfter(now)).fold<Booking?>(null, (_, b) => b) ?? first,
+            // Shop theo buổi sắp tới gần nhất của gói.
+            shopFor: p.sessions.where((b) => b.status(now) == BookingStatus.upcoming).firstOrNull,
+          ),
         ],
       ),
     );

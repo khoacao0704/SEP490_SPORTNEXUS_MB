@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/strings/api_strings.dart';
 import '../../core/strings/auth_strings.dart';
 import '../../core/strings/profile_strings.dart';
+import '../../core/strings/security_strings.dart';
 import '../../models/app_user.dart';
 import '../../models/user_role.dart';
 import '../repositories/auth_repository.dart';
@@ -330,6 +331,30 @@ class MockAuthRepository implements AuthRepository {
   Future<void> setPassword({required String newPassword, required String confirmPassword}) async {
     await _delay();
     throw const AuthException(ProfileStrings.alreadyHasPassword);
+  }
+
+  // ---------------- Bảo mật ----------------
+
+  /// Bản giả lập chỉ có một máy: đăng xuất mọi thiết bị = đăng xuất máy này.
+  @override
+  Future<void> logoutAllDevices() async {
+    await _delay();
+    await logout();
+  }
+
+  /// Mã luôn là [mockOtp] (không trả mã thử nghiệm, giống các luồng OTP khác của bản giả lập).
+  @override
+  Future<String?> sendEmailOtp() async {
+    await _delay();
+    final account = await _me();
+    if (account.user.email.isEmpty) throw const AuthException(SecurityStrings.noEmail);
+    return null;
+  }
+
+  @override
+  Future<void> verifyEmail(String otpCode) async {
+    await _delay();
+    if (otpCode.trim() != mockOtp) throw const AuthException(AuthStrings.wrongOtp);
   }
 
   @override

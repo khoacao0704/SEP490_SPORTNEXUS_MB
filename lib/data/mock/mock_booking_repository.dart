@@ -99,23 +99,26 @@ class MockBookingRepository implements BookingRepository {
         final slot = slots[i];
         final kept = await _facility.transferHold(hold.holdId, until: slot.end, slotIds: [slot.id]);
         _holds[idFor(i)] = kept.holdId;
-        bookings.add(Booking(
-          id: idFor(i),
-          bookerId: me.id,
-          facilityName: facilityName,
-          location: location,
-          sportLabel: sportLabel,
-          courtName: slot.courtName,
-          schedule: Formatters.slotLabel(slot.start, slot.end),
-          start: slot.start,
-          end: slot.end,
-          totalPrice: priceOf(slot),
-          paymentType: paymentType,
-          payments: [BookingPayment(userId: me.id, name: me.name, amount: priceOf(slot))],
-          createdAt: now,
-          recurringGroupId: groupId,
-          originalPrice: priceOf(slot) != slot.price ? slot.price : null,
-        ));
+        bookings.add(
+          Booking(
+            id: idFor(i),
+            bookerId: me.id,
+            facilityName: facilityName,
+            facilityId: slot.facilityId,
+            location: location,
+            sportLabel: sportLabel,
+            courtName: slot.courtName,
+            schedule: Formatters.slotLabel(slot.start, slot.end),
+            start: slot.start,
+            end: slot.end,
+            totalPrice: priceOf(slot),
+            paymentType: paymentType,
+            payments: [BookingPayment(userId: me.id, name: me.name, amount: priceOf(slot))],
+            createdAt: now,
+            recurringGroupId: groupId,
+            originalPrice: priceOf(slot) != slot.price ? slot.price : null,
+          ),
+        );
       }
     } on FacilityException catch (e) {
       // Chỗ giữ vừa hết hạn: nhả các khung đã chuyển và hoàn lại toàn bộ.
@@ -339,13 +342,27 @@ class MockBookingRepository implements BookingRepository {
     final now = _now();
     final hour = DateTime(now.year, now.month, now.day, now.hour);
     const me = (id: 'u-player-001', name: 'Khoa Cao');
-    Booking seed(String id, String facility, String location, String sport, DateTime start, Duration length, int total,
-        BookingPaymentType type) {
+    const facilityIds = {
+      'Sân Cầu Lông Thiên Triều': 'f-hcm-thientrieu',
+      'Sân Bóng Hoa Lư': 'f-hcm-hoalu',
+      'Eco Sport Quận 7': 'f-hcm-eco-q7',
+    };
+    Booking seed(
+      String id,
+      String facility,
+      String location,
+      String sport,
+      DateTime start,
+      Duration length,
+      int total,
+      BookingPaymentType type,
+    ) {
       final end = start.add(length);
       return Booking(
         id: id,
         bookerId: me.id,
         facilityName: facility,
+        facilityId: facilityIds[facility],
         location: location,
         sportLabel: sport,
         schedule: Formatters.slotLabel(start, end),

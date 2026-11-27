@@ -20,6 +20,7 @@ import '../../widgets/facility/facility_map.dart';
 import '../../widgets/facility/slot_picker.dart';
 import '../../widgets/facility/sport_icon.dart';
 import '../../widgets/review/facility_reviews_section.dart';
+import '../../widgets/shop/player_shop.dart';
 import '../booking/booking_checkout_screen.dart';
 
 class FacilityDetailScreen extends StatefulWidget {
@@ -491,6 +492,8 @@ class _FacilityDetailScreenState extends State<FacilityDetailScreen> {
                     ),
                   ),
                 _buildAboutSection(),
+                // Chỉ hiện khi người dùng có đơn ở cơ sở này, chưa check-in.
+                FacilityShopSection(facilityId: _facility.id, facilityName: _facility.name),
                 FacilityReviewsSection(facilityId: _facility.id, facilityName: _facility.name),
                 const SizedBox(height: 24),
               ],

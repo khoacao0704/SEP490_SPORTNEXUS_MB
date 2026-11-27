@@ -37,12 +37,14 @@ void main() {
   });
 
   group('Validators.password', () {
-    test('yêu cầu tối thiểu 8 ký tự, có chữ và số', () {
+    test('như BE: chỉ kiểm độ dài 6–64, không bắt chữ / số / ký tự đặc biệt', () {
       expect(Validators.password('Player@123'), isNull);
-      expect(Validators.password('abc12345'), isNull);
-      expect(Validators.password('abc123'), AuthStrings.passwordNotMet);
-      expect(Validators.password('abcdefgh'), AuthStrings.passwordNotMet);
-      expect(Validators.password('12345678'), AuthStrings.passwordNotMet);
+      expect(Validators.password('abc123'), isNull);
+      expect(Validators.password('abcdef'), isNull);
+      expect(Validators.password('123456'), isNull);
+      expect(Validators.password('abc12'), AuthStrings.passwordNotMet);
+      expect(Validators.password('a' * 64), isNull);
+      expect(Validators.password('a' * 65), AuthStrings.pwRuleMaxLength);
     });
   });
 

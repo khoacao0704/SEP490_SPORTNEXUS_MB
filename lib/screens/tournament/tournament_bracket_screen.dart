@@ -109,9 +109,9 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
                           const SizedBox(height: 8),
                         ],
                         if (_showStandings)
-                          for (final g in _standings) _StandingTable(group: g)
+                          for (final g in _standings) StandingTable(group: g)
                         else
-                        for (final round in _rounds(matches)) ...[
+                        for (final round in groupBracketRounds(matches)) ...[
                           Padding(
                             padding: const EdgeInsets.only(top: 8, bottom: 8),
                             child: Text(
@@ -119,7 +119,7 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
                               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain),
                             ),
                           ),
-                          for (final m in round.matches) _MatchCard(match: m),
+                          for (final m in round.matches) BracketMatchCard(match: m),
                         ],
                       ],
               ),
@@ -127,8 +127,10 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
     );
   }
 
-  /// Gom theo bảng (vòng bảng) hoặc tên vòng (loại trực tiếp), giữ thứ tự xuất hiện (BE trả mảng phẳng).
-  static List<({String name, List<BracketMatch> matches})> _rounds(List<BracketMatch> matches) {
+}
+
+/// Gom theo bảng (vòng bảng) hoặc tên vòng (loại trực tiếp), giữ thứ tự xuất hiện (BE trả mảng phẳng).
+List<({String name, List<BracketMatch> matches})> groupBracketRounds(List<BracketMatch> matches) {
     final order = <String>[];
     final byRound = <String, List<BracketMatch>>{};
     for (final m in matches) {
@@ -139,25 +141,28 @@ class _TournamentBracketScreenState extends State<TournamentBracketScreen> {
       byRound.putIfAbsent(key, () => []).add(m);
     }
     return [for (final name in order) (name: name, matches: byRound[name]!)];
-  }
 }
 
-class _MatchCard extends StatelessWidget {
+/// Một trận trong sơ đồ: hai bên, tỉ số, người thắng, sân / giờ.
+/// [absent]: tên các bên chưa điểm danh (màn BTC hiện chữ "chưa điểm danh").
+class BracketMatchCard extends StatelessWidget {
   final BracketMatch match;
+  final Set<String> absent;
 
-  const _MatchCard({required this.match});
+  /// Bấm để nhập tỉ số (màn BTC); null = chỉ xem.
+  final VoidCallback? onTap;
+
+  const BracketMatchCard({super.key, required this.match, this.absent = const {}, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final m = match;
     final start = m.start;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+    final card = Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.cardBorder),
+        border: Border.all(color: onTap != null ? AppColors.primaryGreen : AppColors.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -185,6 +190,14 @@ class _MatchCard extends StatelessWidget {
         ],
       ),
     );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(borderRadius: BorderRadius.circular(12), onTap: onTap, child: card),
+      ),
+    );
   }
 
   Widget _side(String name, List<int> scores, bool winner) {
@@ -195,7 +208,11 @@ class _MatchCard extends StatelessWidget {
         const SizedBox(width: 6),
         Expanded(
           child: Text(
-            unknown ? 'Chưa xác định' : name,
+            unknown
+                ? 'Chưa xác định'
+                : absent.contains(name) && match.winner == null
+                ? '$name (chưa điểm danh)'
+                : name,
             style: TextStyle(
               fontWeight: winner ? FontWeight.bold : FontWeight.w500,
               color: unknown ? AppColors.textSecondary : AppColors.textMain,
@@ -218,10 +235,11 @@ class _MatchCard extends StatelessWidget {
 }
 
 /// Bảng xếp hạng một bảng đấu: hạng, tên, số trận, thắng-hoà-thua, hiệu số, điểm.
-class _StandingTable extends StatelessWidget {
+/// Bảng xếp hạng một bảng (dùng ở màn sơ đồ và màn BTC).
+class StandingTable extends StatelessWidget {
   final StandingGroup group;
 
-  const _StandingTable({required this.group});
+  const StandingTable({super.key, required this.group});
 
   @override
   Widget build(BuildContext context) {

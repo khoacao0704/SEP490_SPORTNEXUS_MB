@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/owner/owner_shell.dart';
 
 import '../../core/strings/owner_facility_strings.dart';
 import '../../core/strings/owner_strings.dart';
@@ -85,6 +86,7 @@ class _OwnerFacilitiesScreenState extends State<OwnerFacilitiesScreen> {
         backgroundColor: AppColors.white,
         elevation: 0.5,
         automaticallyImplyLeading: false,
+        leading: const OwnerMenuButton(),
         title: const Text(
           OwnerFacilityStrings.title,
           style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 18),

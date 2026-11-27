@@ -47,14 +47,10 @@ void main() {
   Future<Tournament> seededTournament() async =>
       (await AppRepositories.organizer.getOrganizedTournaments()).firstWhere((t) => t.id == seeded);
 
-  testWidgets('tab Tài khoản mở Giải đấu của tôi', (tester) async {
+  testWidgets('Giải đấu đã chuyển sang menu trái: tab Tài khoản không còn dòng Giải đấu', (tester) async {
     final user = (await AppRepositories.auth.getCurrentUser())!;
     await pump(tester, OwnerAccountScreen(user: user));
-    await tester.tap(find.text(OwnerStrings.menuTournaments));
-    await tester.pumpAndSettle();
-    expect(find.text(OwnerTournamentStrings.title), findsOneWidget);
-    expect(find.text('Hoa Lư Cup – Bóng Đá 5 Người'), findsOneWidget);
-    expect(find.text(OwnerTournamentStrings.create), findsOneWidget);
+    expect(find.text(OwnerStrings.menuTournaments), findsNothing);
   });
 
   testWidgets('tạo giải mới từ form', (tester) async {

@@ -1,4 +1,4 @@
-/// Luật hồ sơ eKYC của BE (POST /api/v1/owner/verification).
+/// Luật hồ sơ eKYC của BE (POST /api/v1/me/verification).
 class IdentityRules {
   IdentityRules._();
 

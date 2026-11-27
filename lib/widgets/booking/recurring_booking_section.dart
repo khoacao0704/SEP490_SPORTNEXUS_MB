@@ -174,12 +174,26 @@ class RecurringBookingSection extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _title(BookingStrings.recurringWeeksTitle),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
+        // BE (27/11): tối thiểu 4 buổi, không có tối đa. Tuần chưa mở lịch hiện đỏ bên dưới và không cho đặt.
+        Row(
           children: [
-            for (var n = RecurringBookingRules.minSessions; n <= RecurringBookingRules.maxSessions; n++)
-              _chip(BookingStrings.recurringWeeks(n), n == weeks, () => onWeeksChanged(n)),
+            IconButton.outlined(
+              tooltip: BookingStrings.recurringFewerWeeks,
+              onPressed: weeks > RecurringBookingRules.minSessions ? () => onWeeksChanged(weeks - 1) : null,
+              icon: const Icon(Icons.remove),
+            ),
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(BookingStrings.recurringWeeks(weeks),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textMain)),
+              ),
+            ),
+            IconButton.outlined(
+              tooltip: BookingStrings.recurringMoreWeeks,
+              onPressed: () => onWeeksChanged(weeks + 1),
+              icon: const Icon(Icons.add),
+            ),
           ],
         ),
         const SizedBox(height: 10),

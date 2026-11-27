@@ -9,6 +9,8 @@ import '../../models/review.dart';
 import '../../models/sport_rating.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/review/star_rating.dart';
+import '../../core/strings/report_strings.dart';
+import '../report/support_center_screen.dart';
 
 /// Chấm từng người chơi cùng trận, kèm đánh giá sân nếu BE cho phép (đã check-in, chưa đánh giá sân này).
 /// Pop về `true` khi gửi thành công.
@@ -341,6 +343,16 @@ class _SubmitReviewScreenState extends State<SubmitReviewScreen> {
                     ),
                   ),
                 ],
+                // Báo cáo người chơi đặt cạnh từng người như màn đánh giá sau trận của Web.
+                TextButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ReportPlayerScreen(userId: player.userId, name: player.name)),
+                  ),
+                  icon: const Icon(Icons.flag_outlined, size: 16),
+                  label: const Text(ReportStrings.reportPlayer),
+                  style: TextButton.styleFrom(foregroundColor: Colors.red, visualDensity: VisualDensity.compact),
+                ),
               ],
             ),
             const SizedBox(height: 8),

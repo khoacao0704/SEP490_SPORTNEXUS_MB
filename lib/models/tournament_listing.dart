@@ -20,13 +20,13 @@ enum TournamentPhase {
 
 /// Hình thức đăng ký của một bảng con.
 enum DivisionType {
-  singles('SINGLES', 'Đơn'),
+  singles('SINGLES', 'Đấu đơn'),
 
   /// Đội / đôi lập sẵn: đăng ký bằng một đội.
   premadeTeams('PREMADE_TEAMS', 'Đội / đôi cố định'),
 
   /// Đăng ký cá nhân, ban tổ chức ghép cặp sau.
-  randomDoubles('RANDOM_DOUBLES', 'Ghép đôi ngẫu nhiên');
+  randomDoubles('RANDOM_DOUBLES', 'Đôi bốc thăm');
 
   const DivisionType(this.apiValue, this.label);
 
@@ -72,6 +72,18 @@ class TournamentListItem {
   /// Có ít nhất một bảng con đang mở và chưa quá hạn đăng ký.
   final bool isRegistrationOpen;
 
+  // ---- Giải 1 tầng (luồng 26/11): thông tin giải hiện ở màn chi tiết ----
+  final String organizerName;
+
+  /// Giới thiệu giải.
+  final String description;
+
+  /// Thể thức: SINGLE_ELIMINATION | ROUND_ROBIN | GROUP_STAGE_KNOCKOUT (BE có thể trả tên khác).
+  final String format;
+  final int? minRating;
+  final int? maxRating;
+  final int? minRatedMatches;
+
   const TournamentListItem({
     required this.id,
     required this.name,
@@ -90,7 +102,15 @@ class TournamentListItem {
     this.endDate,
     this.registrationDeadline,
     this.isRegistrationOpen = false,
+    this.organizerName = '',
+    this.description = '',
+    this.format = '',
+    this.minRating,
+    this.maxRating,
+    this.minRatedMatches,
   });
+
+  bool get hasEloCondition => minRating != null || maxRating != null || minRatedMatches != null;
 
   String get sportLabel => sport?.label ?? sportName;
 
@@ -125,6 +145,12 @@ class TournamentDivision {
   final bool isRegistrationOpen;
   final List<TournamentPrizeItem> prizes;
 
+  /// Số người (giải đội: số đội) đã đăng ký.
+  final int registeredCount;
+
+  /// BE báo đã đủ người.
+  final bool isFull;
+
   const TournamentDivision({
     required this.id,
     required this.name,
@@ -138,6 +164,8 @@ class TournamentDivision {
     required this.phase,
     required this.isRegistrationOpen,
     this.prizes = const [],
+    this.registeredCount = 0,
+    this.isFull = false,
   });
 
   String get typeLabel => typeName.isNotEmpty ? typeName : type.label;
@@ -311,7 +339,11 @@ class TournamentRegistrationItem {
     this.registrationDeadline,
     this.isRegistrationOpen = false,
     this.imageUrl,
+    this.isCheckedIn = false,
   });
+
+  /// Đã được điểm danh tại giải.
+  final bool isCheckedIn;
 
   /// Rút trước hạn đăng ký thì được hoàn 100%, sau hạn thì không.
   bool refundableAt(DateTime now) {
@@ -338,6 +370,18 @@ class MyTournamentMatch {
   final String opponent;
   final String? winner;
 
+  /// Lúc trận có kết quả (để biết còn trong 15 phút khiếu nại không); `null` = chưa có / BE không trả.
+  final DateTime? resultAt;
+
+  /// Như luồng 26/11: khiếu nại kết quả trong 15 phút sau khi trận có kết quả.
+  static const Duration complaintWindow = Duration(minutes: 15);
+
+  bool canComplainAt(DateTime now) {
+    final hasResult = winner != null || status.toUpperCase() == 'FINISHED';
+    final at = resultAt ?? end;
+    return hasResult && at != null && !now.isBefore(at) && now.difference(at) <= complaintWindow;
+  }
+
   const MyTournamentMatch({
     required this.matchId,
     required this.tournamentName,
@@ -352,6 +396,7 @@ class MyTournamentMatch {
     required this.mySide,
     required this.opponent,
     this.winner,
+    this.resultAt,
   });
 }
 
@@ -369,7 +414,11 @@ class TournamentTicket {
     required this.fullName,
     this.teamName,
     required this.qrCode,
+    this.isCheckedIn = false,
   });
+
+  /// Đã điểm danh: vé mờ đi, hiện "Đã check-in".
+  final bool isCheckedIn;
 }
 
 class TournamentSearchQuery {
@@ -397,7 +446,7 @@ class TournamentPage {
 
 /// Cấp độ giải.
 enum TournamentTier {
-  amateur('AMATEUR', 'Nghiệp dư'),
+  amateur('AMATEUR', 'Phong trào'),
   semiPro('SEMI_PRO', 'Bán chuyên'),
   pro('PRO', 'Chuyên nghiệp');
 
@@ -413,7 +462,7 @@ enum TournamentTier {
 enum TournamentPurpose {
   exchange('EXCHANGE', 'Giao lưu'),
   commercial('COMMERCIAL', 'Thương mại'),
-  development('DEVELOPMENT', 'Phát triển phong trào'),
+  development('DEVELOPMENT', 'Phát triển chuyên môn'),
   internal('INTERNAL', 'Nội bộ');
 
   const TournamentPurpose(this.apiValue, this.label);

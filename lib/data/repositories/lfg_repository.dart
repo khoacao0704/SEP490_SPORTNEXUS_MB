@@ -58,7 +58,22 @@ abstract class LfgRepository {
     SkillLevel? skillLevel,
     String? hostTeamId,
     int? sideSize,
+    bool requireApproval = false,
   });
+
+  // ---------- Chủ kèo quản lý người / sửa kèo (khi [LfgMatch.canManage]) ----------
+
+  /// Duyệt người đang chờ: BE giữ Điểm của họ lúc này và đưa họ vào kèo (hết chỗ / thiếu Điểm thì BE báo lỗi).
+  Future<LfgMatch> approveRequest(String matchId, String userId);
+
+  /// Từ chối người đang chờ (họ chưa bị trừ Điểm).
+  Future<LfgMatch> rejectRequest(String matchId, String userId);
+
+  /// Loại người đã vào kèo: hoàn 100% cho họ, mở lại 1 suất.
+  Future<LfgMatch> removeMember(String matchId, String userId);
+
+  /// Sửa số người cần tìm, trình độ, ghi chú, chế độ duyệt (BE kiểm tra lại).
+  Future<LfgMatch> updateMatch(String matchId, LfgMatchUpdate update);
 
   /// true: tạo / nhận kèo Đội vs Đội được ([createMatch] với [hostTeamId] + [sideSize], [confirmClaim] với teamId).
   /// Đội phải có đúng [sideSize] thành viên, đúng môn, không bị khóa, người gọi là đội trưởng (BE kiểm tra).
@@ -71,6 +86,7 @@ abstract class LfgRepository {
   /// Rời kèo trước T−48h: hoàn 100% cọc, chỗ mở lại, kèo vẫn ở lại để ghép tiếp.
   /// Host rời thì quyền host chuyển cho người vào sớm nhất; host là người cuối cùng thì kèo bị hủy.
   /// Sau T−48h: xem [lateLeaveAllowed]. [reason] lấy từ [getLeaveReasons] (BE bắt buộc khi đã vào kèo).
+  /// Đang chờ chủ kèo duyệt ([LfgMyStatus.pendingApproval]) thì là rút yêu cầu (chưa trả gì, trả về 0).
   /// Trả về số tiền được hoàn.
   Future<int> leaveMatch(String matchId, {String? reason});
 

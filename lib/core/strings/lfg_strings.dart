@@ -1,3 +1,4 @@
+import '../../models/lfg_match.dart' show LfgMemberStatus;
 import '../utils/formatters.dart';
 
 /// Chuỗi hiển thị cho ghép trận LFG.
@@ -164,6 +165,56 @@ class LfgStrings {
   static const String tooLateNote = 'Đã qua hạn tự rời kèo (48 giờ trước giờ chơi). '
       'Vắng mặt hoặc trễ quá 15 phút sẽ mất cọc và bị trừ 10 điểm Fair Play.';
   static const String simulateJoin = 'Giả lập có người vào kèo';
+
+  // ---- Kèo cần duyệt người (B1) ----
+  static const String approvalTitle = 'Chế độ duyệt người tham gia';
+  static const String approvalOn =
+      'BẬT: Người tham gia gửi yêu cầu, bạn có quyền Duyệt hoặc Từ chối. Điểm cọc của họ chỉ bị giữ khi bạn duyệt.';
+  static const String approvalOff = 'TẮT: Người tham gia chọn suất là trừ Điểm và vào kèo ngay (kèo công khai trực tiếp).';
+  static const String needsApproval = 'Cần duyệt người';
+  static const String autoJoin = 'Tự động vào';
+  static const String sendRequest = 'GỬI YÊU CẦU';
+  static const String sendRequestLong = 'Gửi Yêu Cầu Vào Kèo';
+  static const String requestDialogTitle = 'Kèo cần chủ kèo duyệt';
+  static String requestDialogMessage(int deposit) =>
+      'Bạn chỉ gửi yêu cầu tham gia tới chủ kèo, chưa bị trừ Điểm. Khi chủ kèo duyệt, '
+      '${Formatters.vnd(deposit)} cọc sẽ được giữ từ Ví điểm của bạn và bạn có vé QR.';
+  static const String requestSent = 'Đã gửi yêu cầu! Yêu cầu của bạn đã tới chủ kèo, Điểm cọc chỉ bị giữ khi chủ kèo duyệt.';
+  static const String pendingSection = 'Chờ duyệt';
+  static const String pastSection = 'Đã rời / bị loại / bị từ chối';
+  static String pendingCountLabel(int n) => '$n người chờ duyệt';
+  static const String approve = 'Duyệt';
+  static const String reject = 'Từ chối';
+  static const String remove = 'Loại';
+  static String approvedMessage(String name) => 'Đã duyệt $name vào kèo. Điểm cọc của họ đã được tạm giữ.';
+  static String rejectedMessage(String name) => 'Đã từ chối yêu cầu tham gia của $name.';
+  static const String removeTitle = 'Loại khỏi kèo?';
+  static String removeMessage(String name) =>
+      'Xác nhận loại $name khỏi kèo? Hoàn 100% Điểm cho họ và mở lại 1 suất trống.';
+  static String removedMessage(String name) =>
+      'Đã loại $name khỏi kèo. Họ được hoàn 100% Điểm và kèo mở lại 1 suất trống.';
+  static String memberStatus(LfgMemberStatus s) => switch (s) {
+        LfgMemberStatus.accepted => 'Đã vào kèo',
+        LfgMemberStatus.pending => 'Đang chờ duyệt',
+        LfgMemberStatus.rejected => 'Bị từ chối',
+        LfgMemberStatus.left => 'Đã rời kèo',
+        LfgMemberStatus.removed => 'Bị chủ kèo loại',
+        LfgMemberStatus.cancelled => 'Đã hủy',
+      };
+  static const String requestNotFound = 'Yêu cầu này không còn chờ duyệt.';
+  static const String hostOnly = 'Chỉ chủ kèo mới làm được việc này.';
+
+  // ---- Sửa kèo (B2) ----
+  static const String editMatch = 'Sửa kèo';
+  static const String editTitle = 'Chỉnh Sửa Kèo';
+  static const String lockedInfo = 'Không đổi được sân, ca, thể thức và giá sau khi đã tạo kèo.';
+  static const String stepSlotsNeeded = 'Số người cần tìm thêm (không tính bạn)';
+  static String slotsNeededNote(int joined) =>
+      joined == 0 ? 'Chưa có ai vào kèo.' : 'Đã có $joined người vào kèo nên không giảm thấp hơn số này.';
+  static const String teamSlotsLocked = 'Kèo Đội vs Đội: không đổi được số người mỗi đội.';
+  static const String saveEdit = 'LƯU THAY ĐỔI KÈO';
+  static const String editSaved = 'Đã lưu thay đổi kèo.';
+  static const String slotsBelowJoined = 'Số người cần tìm không được ít hơn số người đã vào kèo.';
 
   // Thanh toán cọc
   static const String paymentTitle = 'Thanh Toán Cọc';

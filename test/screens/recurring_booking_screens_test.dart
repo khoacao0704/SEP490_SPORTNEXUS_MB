@@ -408,6 +408,44 @@ void main() {
     expect(tester.widget<ElevatedButton>(bookButton).onPressed, isNull);
   });
 
+  testWidgets('Số tuần đặt cố định: tối thiểu 4, không có tối đa như BE (tăng quá 8 được)', (tester) async {
+    var weeks = 4;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: StatefulBuilder(
+            builder: (context, setState) => RecurringBookingSection(
+              enabled: true,
+              onToggle: (_) {},
+              discountPercent: 10,
+              patternValid: true,
+              startDate: DateTime.now().add(const Duration(days: 3)),
+              slotsPerDay: 1,
+              weekdays: const {1},
+              onWeekdayToggled: (_) {},
+              weeks: weeks,
+              onWeeksChanged: (n) => setState(() => weeks = n),
+              plan: null,
+              planning: false,
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    final fewer = find.byTooltip(BookingStrings.recurringFewerWeeks);
+    final more = find.byTooltip(BookingStrings.recurringMoreWeeks);
+    expect(tester.widget<IconButton>(find.ancestor(of: find.byIcon(Icons.remove), matching: find.byType(IconButton))).onPressed, isNull);
+    for (var i = 0; i < 6; i++) {
+      await tester.tap(more);
+      await tester.pump();
+    }
+    expect(find.text(BookingStrings.recurringWeeks(10)), findsOneWidget);
+    await tester.tap(fewer);
+    await tester.pump();
+    expect(find.text(BookingStrings.recurringWeeks(9)), findsOneWidget);
+  });
+
   testWidgets('Lịch đặt: các buổi gom thành một gói; hủy là hủy cả gói, hoàn theo bậc tới buổi đầu', (tester) async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day + 5);

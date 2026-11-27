@@ -16,6 +16,9 @@ import 'team_picker.dart';
 Future<LfgMatch?> flashClaimMatch(BuildContext context, LfgMatch match) async {
   if (!await ensureCanJoinLfg(context) || !context.mounted) return null;
 
+  // Kèo cần duyệt: chỉ gửi yêu cầu, chưa trừ Điểm → không qua màn thanh toán.
+  if (match.requireApproval && !match.isTeamMatch) return _requestToJoin(context, match);
+
   // Kèo Đội vs Đội: đội trưởng chọn đội của mình để nhận kèo thay cả đội.
   Team? team;
   if (match.isTeamMatch) {
@@ -73,6 +76,42 @@ Future<LfgMatch?> flashClaimMatch(BuildContext context, LfgMatch match) async {
     );
   }
   return joined;
+}
+
+/// Gửi yêu cầu vào kèo cần chủ kèo duyệt. Trả về kèo (myStatus = chờ duyệt) hoặc `null`.
+Future<LfgMatch?> _requestToJoin(BuildContext context, LfgMatch match) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      icon: const Icon(Icons.verified_user_outlined, color: AppColors.tagOrangeText, size: 36),
+      title: const Text(LfgStrings.requestDialogTitle, textAlign: TextAlign.center),
+      content: Text(LfgStrings.requestDialogMessage(match.depositPerSlot)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text(LfgStrings.cancel)),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.authPrimary, foregroundColor: Colors.white),
+          child: const Text(LfgStrings.sendRequestLong),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return null;
+  try {
+    final claim = await AppRepositories.lfg.claimSlot(match.id);
+    final sent = await AppRepositories.lfg.confirmClaim(claim.claimId);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(LfgStrings.requestSent)));
+    }
+    return sent;
+  } on LfgException catch (e) {
+    if (context.mounted && !await handleOnboardingRequired(context, e) && context.mounted) {
+      showLfgError(context, e.message);
+    }
+  } catch (_) {
+    if (context.mounted) showLfgError(context, LfgStrings.loadError);
+  }
+  return null;
 }
 
 /// Hộp xác nhận rời / xin hủy kèo kèm chọn lý do ([LfgRepository.getLeaveReasons]).
@@ -155,7 +194,7 @@ Future<String?> confirmLfgWithReason(
                   if (picked?.isCustom ?? false)
                     TextField(
                       controller: noteController,
-                      maxLength: 200,
+                      maxLength: 500,
                       onChanged: (_) => setDialogState(() {}),
                       decoration: const InputDecoration(hintText: LfgStrings.reasonHint, isDense: true),
                     ),

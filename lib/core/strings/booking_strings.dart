@@ -93,6 +93,8 @@ class BookingStrings {
   static String recurringStartFrom(String date) => 'Bắt đầu từ $date';
   static const String recurringWeeksTitle = 'Số tuần (tính từ ngày bắt đầu)';
   static String recurringWeeks(int n) => '$n tuần';
+  static const String recurringFewerWeeks = 'Bớt 1 tuần';
+  static const String recurringMoreWeeks = 'Thêm 1 tuần';
   static String recurringCount(int days, int slots, int courts, int weeks, int total) =>
       '$days thứ × $slots khung${courts > 1 ? ' (trên $courts sân)' : ''} × $weeks tuần = $total lượt đặt';
   static String recurringPartialFail(int done, int total, String error) =>

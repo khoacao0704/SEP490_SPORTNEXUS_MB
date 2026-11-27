@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:test1/core/strings/auth_strings.dart';
 import 'package:test1/core/strings/profile_strings.dart';
+import 'package:test1/core/strings/security_strings.dart';
+import 'package:test1/screens/profile/security_screen.dart';
 import 'package:test1/data/app_repositories.dart';
 import 'package:test1/data/mock/mock_auth_repository.dart';
 import 'package:test1/data/mock/mock_review_repository.dart';
@@ -37,7 +39,7 @@ void main() {
     expect(find.text('Khoa Cao'), findsOneWidget);
     expect(find.text('@player1'), findsOneWidget);
     expect(find.text('C'), findsOneWidget); // chưa có ảnh: chữ cái đầu của tên
-    expect(find.text(ProfileStrings.changePassword), findsOneWidget);
+    expect(find.text(SecurityStrings.menu), findsOneWidget); // đổi mật khẩu nằm trong Bảo mật
 
     await tester.tap(find.byTooltip(ProfileStrings.editProfile));
     await tester.pumpAndSettle();
@@ -115,8 +117,11 @@ void main() {
     expect(await SessionStore.readUser(), isNull);
   });
 
-  testWidgets('Xóa tài khoản: cảnh báo → nhập mật khẩu; sai thì báo lỗi, đúng thì về màn đăng nhập', (tester) async {
+  testWidgets('Xóa tài khoản (ở Bảo mật, không còn ở Sửa hồ sơ): cảnh báo → nhập mật khẩu; sai báo lỗi, đúng về đăng nhập', (tester) async {
     await pump(tester, EditProfileScreen(user: (await SessionStore.readUser())!));
+    expect(find.text(ProfileStrings.deleteAccount), findsNothing);
+    await pump(tester, const SecurityScreen());
+    expect(find.text(SecurityStrings.dangerSection), findsOneWidget);
     await tester.ensureVisible(find.text(ProfileStrings.deleteAccount));
     await tester.tap(find.text(ProfileStrings.deleteAccount));
     await tester.pumpAndSettle();
